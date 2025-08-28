@@ -2,7 +2,6 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { marked } = require('marked');
 
 exports.handler = async (event, context) => {
-  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -10,21 +9,42 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Get the API key from Netlify Environment Variables
-  const geminiApiKey = process.env.gemini_api_key;
-  if (!geminiApiKey) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ message: 'Missing Gemini API key.' }),
-    };
-  }
-
-  const genAI = new GoogleGenerativeAI(geminiApiKey);
-
   try {
     const { feature, userGoal, textToSpeak } = JSON.parse(event.body);
 
-    // This is the main part that handles each request type
+    // This object maps each 'feature' to its corresponding API key variable name
+    const keyMap = {
+      'plan': process.env.FIRST_API_KEY,
+      'pep_talk': process.env.SECOND_API_KEY,
+      'vision_prompt': process.env.THIRD_API_KEY,
+      'obstacle_analysis': process.env.FOURTH_API_KEY,
+      'tts': process.env.FIFTH_API_KEY,
+      // Add your other features and their corresponding API key names here
+      'feature_six': process.env.SIXTH_API_KEY,
+      'feature_seven': process.env.SEVENTH_API_KEY,
+      'feature_eight': process.env.EIGHTH_API_KEY,
+      'feature_nine': process.env.NINTH_API_KEY,
+      'feature_ten': process.env.TENTH_API_KEY,
+      'feature_eleven': process.env.ELEVENTH_API_KEY,
+      'feature_twelve': process.env.TWELFTH_API_KEY,
+      'feature_thirteen': process.env.THIRTEENTH_API_KEY,
+      'feature_fourteen': process.env.FOURTEENTH_API_KEY,
+      'feature_fifteen': process.env.FIFTEENTH_API_KEY,
+      'feature_sixteen': process.env.SIXTEENTH_API_KEY,
+      'feature_seventeen': process.env.SEVENTEENTH_API_KEY,
+      'feature_eighteen': process.env.EIGHTEENTH_API_KEY
+    };
+
+    const geminiApiKey = keyMap[feature];
+
+    if (!geminiApiKey) {
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ message: `Missing or incorrect API key for feature: ${feature}` }),
+        };
+    }
+
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
     let prompt = '';
     let response;
 
@@ -105,6 +125,6 @@ exports.handler = async (event, context) => {
         message: 'Error generating content.',
         error: error.message,
       }),
-    };
+    });
   }
 };
