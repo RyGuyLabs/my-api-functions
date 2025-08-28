@@ -8,7 +8,7 @@ exports.handler = async function(event, context) {
     // This is the case for your first feature
     case 'RyGuy- Dreamer': // <-- Your chosen feature name
       apiKey = process.env.FIRST_API_KEY; // <-- Your API key name from Netlify
-      apiURL = 'https://api.your-service.com/some-endpoint'; // <-- You MUST replace this with your real API's URL
+      apiURL = 'Https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent'; // <-- You MUST replace this with your real API's URL
       break;
     default:
       return {
