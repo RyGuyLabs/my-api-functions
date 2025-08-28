@@ -39,7 +39,7 @@ exports.handler = async function(event, context) {
             };
         }
 
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
         let response = null;
 
         switch (feature) {
