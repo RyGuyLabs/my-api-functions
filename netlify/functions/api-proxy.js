@@ -1,7 +1,22 @@
 exports.handler = async function(event, context) {
-  const apiKey = process.env.YOUR_API_KEY;
-  const apiURL = 'https://api.example.com/endpoint'; // Replace with your API's URL
+  const feature = event.queryStringParameters.feature;
 
+  let apiKey;
+  let apiURL;
+
+  switch(feature) {
+    // This is the case for your first feature
+    case 'RyGuy- Dreamer': // <-- Your chosen feature name
+      apiKey = process.env.FIRST_API_KEY; // <-- Your API key name from Netlify
+      apiURL = 'https://api.your-service.com/some-endpoint'; // <-- You MUST replace this with your real API's URL
+      break;
+    default:
+      return {
+        statusCode: 400,
+        body: 'Invalid feature requested.'
+      };
+  }
+ 
   try {
     const response = await fetch(apiURL, {
       method: 'GET',
@@ -10,22 +25,13 @@ exports.handler = async function(event, context) {
         'Content-Type': 'application/json'
       }
     });
-
-    if (!response.ok) {
-      throw new Error(`API response was not ok: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify(data),
-    };
-
+   
+    // ... rest of the code is the same
+   
   } catch (error) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to fetch data' }),
+      body: JSON.stringify({ error: `Failed to fetch data for ${feature}` }),
     };
   }
 };
