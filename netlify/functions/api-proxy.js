@@ -6,12 +6,20 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 405,
       body: JSON.stringify({ message: 'Method Not Allowed' }),
+      headers: {
+        'Access-Control-Allow-Origin': '*'
+      }
     };
   }
+ 
+  // Add the CORS header to all responses from the function
+  const headers = {
+    'Access-Control-Allow-Origin': '*'
+  };
 
   try {
     const { feature, userGoal, textToSpeak } = JSON.parse(event.body);
-
+   
     // This object maps each 'feature' to its corresponding API key variable name
     const keyMap = {
       'plan': process.env.FIRST_API_KEY,
@@ -19,7 +27,6 @@ exports.handler = async (event, context) => {
       'vision_prompt': process.env.THIRD_API_KEY,
       'obstacle_analysis': process.env.FOURTH_API_KEY,
       'tts': process.env.FIFTH_API_KEY,
-      // Add your other features and their corresponding API key names here
       'feature_six': process.env.SIXTH_API_KEY,
       'feature_seven': process.env.SEVENTH_API_KEY,
       'feature_eight': process.env.EIGHTH_API_KEY,
@@ -41,13 +48,14 @@ exports.handler = async (event, context) => {
         return {
             statusCode: 500,
             body: JSON.stringify({ message: `Missing or incorrect API key for feature: ${feature}` }),
+            headers
         };
     }
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     let prompt = '';
     let response;
-
+   
     switch (feature) {
       case 'plan':
         prompt = `You are RyGuy, a motivational coach who is friendly, personable, and subtly humorous. A user has described a future they hope to achieve. Their goal is: "${userGoal}". Your task is to provide a thoughtful, empathetic, and encouraging plan to help them achieve this goal. Structure your response in a well-written, easy-to-read format. Your response must include the following elements: 1. An opening that acknowledges their goal in an encouraging tone. 2. A short, actionable plan with 3-5 steps. 3. The tone must be thoughtful, empathetic, encouraging, personable, friendly, and subtly humorous. 4. A unique motivational quote from RyGuy that is unique to him and will resonate with the user. 5. The final sentence of the entire response MUST be the exact text: "You Got This with RyGuy Labs". Do not add any extra punctuation or text after this line. Example response structure: Hey there! That's an awesome goal... Here's a little plan to get you started: 1. ... 2. ... 3. ... RyGuy's words of wisdom: "Your journey isn't a race, it's a wonderfully weird hike. Enjoy the views, even the quirky ones." You Got This with RyGuy Labs`;
@@ -101,30 +109,34 @@ exports.handler = async (event, context) => {
           body: JSON.stringify({
             audioData: audioPart.data,
             mimeType: audioPart.mimeType
-          })
+          }),
+          headers
         };
      
       default:
         return {
           statusCode: 400,
           body: JSON.stringify({ message: 'Invalid feature requested.' }),
+          headers
         };
     }
-
     const jsonResponse = response.response;
     return {
       statusCode: 200,
       body: JSON.stringify(jsonResponse),
+      headers
     };
 
   } catch (error) {
     console.error('Error in proxy:', error);
     return {
-      statusCode: 500,
+      statusCode: error.response?.status || 500,
       body: JSON.stringify({
         message: 'Error generating content.',
         error: error.message,
+        details: error.response?.data?.error?.message || 'No additional details.'
       }),
-    });
+      headers
+    };
   }
 };
