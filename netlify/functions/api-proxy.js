@@ -11,43 +11,20 @@ exports.handler = async (event, context) => {
       }
     };
   }
- 
-  // Add the CORS header to all responses from the function
+
   const headers = {
     'Access-Control-Allow-Origin': '*'
   };
 
   try {
     const { feature, userGoal, textToSpeak } = JSON.parse(event.body);
-   
-    // This object maps each 'feature' to its corresponding API key variable name
-    const keyMap = {
-      'plan': process.env.FIRST_API_KEY,
-      'pep_talk': process.env.SECOND_API_KEY,
-      'vision_prompt': process.env.THIRD_API_KEY,
-      'obstacle_analysis': process.env.FOURTH_API_KEY,
-      'tts': process.env.FIFTH_API_KEY,
-      'feature_six': process.env.SIXTH_API_KEY,
-      'feature_seven': process.env.SEVENTH_API_KEY,
-      'feature_eight': process.env.EIGHTH_API_KEY,
-      'feature_nine': process.env.NINTH_API_KEY,
-      'feature_ten': process.env.TENTH_API_KEY,
-      'feature_eleven': process.env.ELEVENTH_API_KEY,
-      'feature_twelve': process.env.TWELFTH_API_KEY,
-      'feature_thirteen': process.env.THIRTEENTH_API_KEY,
-      'feature_fourteen': process.env.FOURTEENTH_API_KEY,
-      'feature_fifteen': process.env.FIFTEENTH_API_KEY,
-      'feature_sixteen': process.env.SIXTEENTH_API_KEY,
-      'feature_seventeen': process.env.SEVENTEENTH_API_KEY,
-      'feature_eighteen': process.env.EIGHTEENTH_API_KEY
-    };
 
-    const geminiApiKey = keyMap[feature];
+    const geminiApiKey = process.env.FIRST_API_KEY;
 
     if (!geminiApiKey) {
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: `Missing or incorrect API key for feature: ${feature}` }),
+            body: JSON.stringify({ message: `Missing API key.` }),
             headers
         };
     }
@@ -55,7 +32,7 @@ exports.handler = async (event, context) => {
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     let prompt = '';
     let response;
-   
+
     switch (feature) {
       case 'plan':
         prompt = `You are RyGuy, a motivational coach who is friendly, personable, and subtly humorous. A user has described a future they hope to achieve. Their goal is: "${userGoal}". Your task is to provide a thoughtful, empathetic, and encouraging plan to help them achieve this goal. Structure your response in a well-written, easy-to-read format. Your response must include the following elements: 1. An opening that acknowledges their goal in an encouraging tone. 2. A short, actionable plan with 3-5 steps. 3. The tone must be thoughtful, empathetic, encouraging, personable, friendly, and subtly humorous. 4. A unique motivational quote from RyGuy that is unique to him and will resonate with the user. 5. The final sentence of the entire response MUST be the exact text: "You Got This with RyGuy Labs". Do not add any extra punctuation or text after this line. Example response structure: Hey there! That's an awesome goal... Here's a little plan to get you started: 1. ... 2. ... 3. ... RyGuy's words of wisdom: "Your journey isn't a race, it's a wonderfully weird hike. Enjoy the views, even the quirky ones." You Got This with RyGuy Labs`;
@@ -80,7 +57,7 @@ exports.handler = async (event, context) => {
         const obstacleModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
         response = await obstacleModel.generateContent(prompt);
         break;
-     
+
       case 'tts':
         const audioModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-tts' });
         const textParts = marked.parse(textToSpeak).split('</p>').map(p => ({ text: p.replace(/<[^>]*>/g, '').trim() })).filter(p => p.text.length > 0);
@@ -98,12 +75,12 @@ exports.handler = async (event, context) => {
             }
           },
         });
-       
+
         const audioPart = ttsResponse?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
         if (!audioPart) {
           throw new Error("Invalid audio response format from TTS API.");
         }
-       
+
         return {
           statusCode: 200,
           body: JSON.stringify({
@@ -112,7 +89,7 @@ exports.handler = async (event, context) => {
           }),
           headers
         };
-     
+
       default:
         return {
           statusCode: 400,
