@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-const fetch = require('node-fetch');
 
 exports.handler = async function(event, context) {
     // 1. Define the headers object at the top.
@@ -29,7 +28,7 @@ exports.handler = async function(event, context) {
 
     try {
         const body = JSON.parse(event.body);
-        const { feature, userGoal, textToSpeak } = body;
+        const { feature, userGoal } = body;
 
         if (!feature) {
             return {
@@ -39,8 +38,7 @@ exports.handler = async function(event, context) {
             };
         }
 
-        // Your API key is now safely stored as a single environment variable.
-        const geminiApiKey = process.env.FIRST_API_KEY; 
+        const geminiApiKey = process.env.FIRST_API_KEY;
         if (!geminiApiKey) {
             return {
                 statusCode: 500,
@@ -52,7 +50,6 @@ exports.handler = async function(event, context) {
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         let response = null;
 
-        // The logic for handling different features is correct.
         switch (feature) {
             case "plan":
                 const planModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -70,46 +67,6 @@ exports.handler = async function(event, context) {
                 const obstacleModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 response = await obstacleModel.generateContent(`Provide a list of potential obstacles the user might encounter while pursuing their dream, and provide a single, concise strategy for overcoming each one. The user's dream is: ${userGoal}`);
                 break;
-            case "tts":
-                if (!textToSpeak) {
-                    return {
-                        statusCode: 400,
-                        headers,
-                        body: JSON.stringify({ message: 'Missing "textToSpeak" for TTS request.' })
-                    };
-                }
-                const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/text-to-speech/21m00TzPtYqRk8iKq5Da', {
-                    method: 'POST',
-                    headers: {
-                        'Accept': 'audio/mpeg',
-                        'Content-Type': 'application/json',
-                        'xi-api-key': process.env.ELEVENLABS_API_KEY
-                    },
-                    body: JSON.stringify({
-                        text: textToSpeak,
-                        model_id: "eleven_multilingual_v2",
-                        voice_settings: {
-                            stability: 0.5,
-                            similarity_boost: 0.75
-                        }
-                    })
-                });
-
-                if (!elevenLabsResponse.ok) {
-                    return {
-                        statusCode: elevenLabsResponse.status,
-                        headers,
-                        body: JSON.stringify({ message: `ElevenLabs API error: ${elevenLabsResponse.statusText}` })
-                    };
-                }
-
-                const audioBuffer = await elevenLabsResponse.buffer();
-                const audioData = audioBuffer.toString('base64');
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify({ audioData, mimeType: 'audio/mpeg' })
-                };
             default:
                 return {
                     statusCode: 400,
@@ -118,7 +75,6 @@ exports.handler = async function(event, context) {
                 };
         }
 
-        // Return the final response with the correct headers.
         if (response) {
             return {
                 statusCode: 200,
