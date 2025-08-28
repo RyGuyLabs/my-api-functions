@@ -1,1 +1,2 @@
-/.netlify/functions/*Access-Control-Allow-Origin:*
+/.netlify/functions/*
+  Access-Control-Allow-Origin: * 
