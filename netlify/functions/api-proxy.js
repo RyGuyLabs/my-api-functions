@@ -27,7 +27,6 @@ exports.handler = async function(event, context) {
         const body = JSON.parse(event.body);
         const { feature, userGoal } = body;
 
-        // Validation checks
         if (!feature || !userGoal) {
             return {
                 statusCode: 400,
@@ -51,29 +50,13 @@ exports.handler = async function(event, context) {
 
         switch (feature) {
             case "positive_spin":
-                apiResponse = await model.generateContent(`You are a motivational coach named RyGuy. Your task is to transform a negative thought or situation into a positive and actionable mindset for a sales professional. Your response must be:
-1. Short and punchy.
-2. Directly address the negative thought.
-3. Provide a single, concrete action or reframe.
-4. Do not use bullet points or lists.
-5. Example: If the user says "I failed to hit my quota this month," you would respond "This isn't a failure, it's a data point. What can you learn from this month to crush it next month? Analyze your process, not your result."
-User's negative thought: "${userGoal}"`);
+                apiResponse = await model.generateContent(`Turn the following negative thought into a positive mindset. Be concise, actionable, and focus on reframing the situation. The user's negative thought is: "${userGoal}"`);
                 break;
             case "mindset_reset":
-                apiResponse = await model.generateContent(`You are a motivational coach named RyGuy. A sales professional feels stuck and needs actionable advice to shift their energy. The response should be a list of 3-5 concrete, simple steps they can take right now. The tone should be direct and motivating. Use a markdown list.
-Example: If the user says "I can't seem to make progress on this project," you would respond with a markdown list like:
-* **Take a 15-minute break:** Step away from the screen. Walk, stretch, or just grab some water. Reset your focus.
-* **Break it down:** This project is too big. Identify the single, smallest task you can complete in the next 10 minutes and do only that.
-* **Change your environment:** Move to a new location. A fresh perspective can lead to fresh ideas.
-User's feeling: "${userGoal}"`);
+                apiResponse = await model.generateContent(`Provide actionable advice to help the user shift their energy when they feel stuck. The user describes their feeling as: "${userGoal}"`);
                 break;
             case "objection_handler":
-                apiResponse = await model.generateContent(`You are a sales coach named RyGuy. Provide three distinct, actionable response strategies to a common sales objection. The tone should be confident and helpful. Format the response as a markdown list with clear headings for each strategy.
-Example: If the user says "I don't have time to talk right now," you would respond with a markdown list like:
-* **Strategy 1: Empathy and a Quick Pivot.** Acknowledge their time is valuable and offer to schedule.
-* **Strategy 2: The '30-Second Summary'.** Respect their time and give them a very concise, high-value reason to stay on the call.
-* **Strategy 3: The 'Pattern Interrupt'.** Say something unexpected but relevant to grab their attention and re-engage them.
-User's objection: "${userGoal}"`);
+                apiResponse = await model.generateContent(`Provide a concise, empathetic, and highly actionable response to the following sales question or objection. The objection is: "${userGoal}"`);
                 break;
             case "plan":
                 apiResponse = await model.generateContent(`Create a highly actionable, detailed, and motivating step-by-step plan for the user's dream. Be specific and break it down into manageable tasks. Format the plan using clear headers and bullet points. The user's dream is: ${userGoal}`);
@@ -94,9 +77,8 @@ User's objection: "${userGoal}"`);
                     body: JSON.stringify({ message: 'Invalid "feature" specified.' })
                 };
         }
-        
-        // This is the CRUCIAL change.
-        if (apiResponse && apiResponse.text) {
+
+        if (apiResponse) {
             const textResponse = apiResponse.text();
             return {
                 statusCode: 200,
@@ -110,7 +92,6 @@ User's objection: "${userGoal}"`);
                 body: JSON.stringify({ message: "An unexpected error occurred or the response was empty." })
             };
         }
-
     } catch (error) {
         console.error("Internal server error:", error);
         return {
