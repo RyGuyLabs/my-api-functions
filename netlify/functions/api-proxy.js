@@ -38,14 +38,17 @@ exports.handler = async function(event) {
         }
 
         const geminiApiKey = process.env.FIRST_API_KEY;
-        if (!geminiApiKey) {
-            return {
-                statusCode: 500,
-                headers,
-                body: JSON.stringify({ message: 'Missing API Key.' })
-            };
-        }
 
+        // More specific check to help with debugging.
+        if (!geminiApiKey || geminiApiKey.trim() === '') {
+             console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
+             return {
+                 statusCode: 500,
+                 headers,
+                 body: JSON.stringify({ message: 'API Key is not configured. Please set the FIRST_API_KEY environment variable in Netlify.' })
+             };
+         }
+        
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         let finalResponseBody = null;
 
@@ -61,9 +64,9 @@ exports.handler = async function(event) {
                 }
 
                 try {
-                    const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                    // Changed the model to a compatible one that is likely available with your current key.
+                    const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                     
-                    // We now define a generationConfig with a schema to ensure the model returns JSON.
                     const generationConfig = {
                         responseMimeType: "application/json",
                         responseSchema: {
@@ -102,12 +105,10 @@ exports.handler = async function(event) {
                         generationConfig: generationConfig
                     });
 
-                    // The response will now be a JSON string that we can directly parse.
                     const responseText = vocalCoachResponse.response?.text();
                     finalResponseBody = JSON.parse(responseText);
 
                 } catch (apiError) {
-                    // Catch errors specifically from the API call or JSON parsing.
                     console.error("API call or JSON parsing error:", apiError);
                     return {
                         statusCode: 500,
