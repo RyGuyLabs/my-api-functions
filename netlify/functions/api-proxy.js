@@ -70,24 +70,21 @@ exports.handler = async function(event, context) {
                     // Safely get the text, and return an error if it's missing.
                     responseText = vocalCoachResponse.response?.text();
                     if (!responseText) {
-                         return {
-                             statusCode: 500,
-                             headers,
-                             body: JSON.stringify({ message: "API returned no text." })
-                         };
+                         // The API returned no text, so we'll treat this as an error.
+                         finalResponseBody = { error: "API returned no text." };
+                         break; // This will proceed to the final return block
                     }
 
                     // Attempt to parse the JSON and catch any errors.
                     finalResponseBody = JSON.parse(responseText.replace(/```json/g, '').replace(/```/g, '').trim());
                 } catch (jsonError) {
+                    // This block now sets a valid JSON body with error details,
+                    // which will be returned with a 200 status.
                     console.error("Error parsing vocal coach response:", jsonError);
                     console.log("Original response text:", responseText);
-                    
-                    // Return a proper 500 error on parsing failure.
-                    return {
-                        statusCode: 500,
-                        headers,
-                        body: JSON.stringify({ message: `Internal server error: Failed to parse API response as JSON.` })
+                    finalResponseBody = { 
+                        error: "Failed to parse API response as JSON.",
+                        details: responseText // Include the raw text for debugging
                     };
                 }
                 break;
