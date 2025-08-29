@@ -66,13 +66,29 @@ exports.handler = async function(event, context) {
                         },
                     };
                     const vocalCoachResponse = await vocalCoachModel.generateContent([prompt, audioPart]);
+                    
+                    // Safely get the text, and return an error if it's missing.
                     responseText = vocalCoachResponse.response?.text();
+                    if (!responseText) {
+                         return {
+                             statusCode: 500,
+                             headers,
+                             body: JSON.stringify({ message: "API returned no text." })
+                         };
+                    }
+
+                    // Attempt to parse the JSON and catch any errors.
                     finalResponseBody = JSON.parse(responseText.replace(/```json/g, '').replace(/```/g, '').trim());
                 } catch (jsonError) {
-                    // Log the error and the problematic response for debugging
                     console.error("Error parsing vocal coach response:", jsonError);
                     console.log("Original response text:", responseText);
-                    finalResponseBody = { text: "Error parsing vocal coach response." };
+                    
+                    // Return a proper 500 error on parsing failure.
+                    return {
+                        statusCode: 500,
+                        headers,
+                        body: JSON.stringify({ message: `Internal server error: Failed to parse API response as JSON.` })
+                    };
                 }
                 break;
             
