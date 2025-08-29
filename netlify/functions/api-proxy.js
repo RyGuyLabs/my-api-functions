@@ -1,12 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-exports.handler = async function(event, context) {
-    const headers = {
-        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-    };
+// Standard headers for CORS (Cross-Origin Resource Sharing).
+const headers = {
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
 
+exports.handler = async function(event) {
+    // Handle pre-flight OPTIONS requests for CORS.
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -25,7 +27,7 @@ exports.handler = async function(event, context) {
 
     try {
         const body = JSON.parse(event.body);
-        const { feature, userGoal, audio, prompt } = body; 
+        const { feature, userGoal, audio, prompt, mimeType } = body;
 
         if (!feature) {
             return {
@@ -46,45 +48,71 @@ exports.handler = async function(event, context) {
 
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         let finalResponseBody = null;
-        let responseText = null;
 
         switch (feature) {
             case "vocal_coach":
-                if (!audio || !prompt) {
+                // Check if audio and prompt data exist.
+                if (!audio || !prompt || !mimeType) {
                     return {
                         statusCode: 400,
                         headers,
-                        body: JSON.stringify({ message: 'Missing "audio" or "prompt" data for vocal coach.' })
+                        body: JSON.stringify({ message: 'Missing "audio", "prompt", or "mimeType" data for vocal coach.' })
                     };
                 }
+
                 try {
                     const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                    
+                    // We now define a generationConfig with a schema to ensure the model returns JSON.
+                    const generationConfig = {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                analysis: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            point: { "type": "STRING" },
+                                            feedback: { "type": "STRING" }
+                                        }
+                                    }
+                                },
+                                summary: { "type": "STRING" },
+                                recommendations: { "type": "STRING" }
+                            }
+                        }
+                    };
+                    
                     const audioPart = {
                         inlineData: {
                             data: audio,
-                            mimeType: 'audio/webm',
+                            mimeType: mimeType, // Use the dynamic mimeType from the client.
                         },
                     };
-                    const vocalCoachResponse = await vocalCoachModel.generateContent([prompt, audioPart]);
-                    
-                    // Safely get the text, and return an error if it's missing.
-                    responseText = vocalCoachResponse.response?.text();
-                    if (!responseText) {
-                         // The API returned no text, so we'll treat this as an error.
-                         finalResponseBody = { error: "API returned no text." };
-                         break; // This will proceed to the final return block
-                    }
 
-                    // Attempt to parse the JSON and catch any errors.
-                    finalResponseBody = JSON.parse(responseText.replace(/```json/g, '').replace(/```/g, '').trim());
-                } catch (jsonError) {
-                    // This block now sets a valid JSON body with error details,
-                    // which will be returned with a 200 status.
-                    console.error("Error parsing vocal coach response:", jsonError);
-                    console.log("Original response text:", responseText);
-                    finalResponseBody = { 
-                        error: "Failed to parse API response as JSON.",
-                        details: responseText // Include the raw text for debugging
+                    const vocalCoachResponse = await vocalCoachModel.generateContent({
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                audioPart
+                            ]
+                        }],
+                        generationConfig: generationConfig
+                    });
+
+                    // The response will now be a JSON string that we can directly parse.
+                    const responseText = vocalCoachResponse.response?.text();
+                    finalResponseBody = JSON.parse(responseText);
+
+                } catch (apiError) {
+                    // Catch errors specifically from the API call or JSON parsing.
+                    console.error("API call or JSON parsing error:", apiError);
+                    return {
+                        statusCode: 500,
+                        headers,
+                        body: JSON.stringify({ message: `Failed to get vocal coach feedback: ${apiError.message}` })
                     };
                 }
                 break;
@@ -102,7 +130,7 @@ exports.handler = async function(event, context) {
                 finalResponseBody = { text: textResponse.response.text() };
                 break;
             
-            // Your existing cases are kept here and will work as before
+            // The following cases are preserved and will work as before
             case "positive_spin":
             case "mindset_reset":
             case "objection_handler":
