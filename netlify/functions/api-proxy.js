@@ -25,8 +25,7 @@ exports.handler = async function(event, context) {
 
     try {
         const body = JSON.parse(event.body);
-        // Corrected: Added 'audio' to destructuring
-        const { feature, userGoal, audio } = body; 
+        const { feature, userGoal, audio, prompt } = body; 
 
         if (!feature) {
             return {
@@ -47,42 +46,49 @@ exports.handler = async function(event, context) {
 
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         let finalResponseBody = null;
+        let responseText = null;
 
         switch (feature) {
-            // New case for vocal coach
             case "vocal_coach":
-                if (!audio) {
+                if (!audio || !prompt) {
                     return {
                         statusCode: 400,
                         headers,
-                        body: JSON.stringify({ message: 'Missing "audio" data for vocal coach.' })
+                        body: JSON.stringify({ message: 'Missing "audio" or "prompt" data for vocal coach.' })
                     };
                 }
-                const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-                const audioPart = {
-                    inlineData: {
-                        data: audio,
-                        mimeType: 'audio/webm',
-                    },
-                };
-                const vocalCoachResponse = await vocalCoachModel.generateContent([userGoal, audioPart]);
-                
                 try {
-                    const responseText = vocalCoachResponse.response.text();
-                    // Correctly parse the JSON response from the model
+                    const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                    const audioPart = {
+                        inlineData: {
+                            data: audio,
+                            mimeType: 'audio/webm',
+                        },
+                    };
+                    const vocalCoachResponse = await vocalCoachModel.generateContent([prompt, audioPart]);
+                    responseText = vocalCoachResponse.response?.text();
                     finalResponseBody = JSON.parse(responseText.replace(/```json/g, '').replace(/```/g, '').trim());
                 } catch (jsonError) {
+                    // Log the error and the problematic response for debugging
+                    console.error("Error parsing vocal coach response:", jsonError);
+                    console.log("Original response text:", responseText);
                     finalResponseBody = { text: "Error parsing vocal coach response." };
                 }
                 break;
             
-            // New case for generating text
             case "generate_text":
+                if (!prompt) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
+                    };
+                }
                 const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-                const textResponse = await generateTextModel.generateContent(userGoal);
+                const textResponse = await generateTextModel.generateContent(prompt);
                 finalResponseBody = { text: textResponse.response.text() };
                 break;
-
+            
             // Your existing cases are kept here and will work as before
             case "positive_spin":
             case "mindset_reset":
@@ -104,7 +110,6 @@ exports.handler = async function(event, context) {
                 };
         }
 
-        // Corrected: The final return statement is now universal
         if (finalResponseBody) {
             return {
                 statusCode: 200,
