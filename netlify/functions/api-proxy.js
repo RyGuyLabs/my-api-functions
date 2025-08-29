@@ -67,6 +67,18 @@ exports.handler = async function(event, context) {
                 const obstacleModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 response = await obstacleModel.generateContent(`Provide a list of potential obstacles the user might encounter while pursuing their dream, and provide a single, concise strategy for overcoming each one. The user's dream is: ${userGoal}`);
                 break;
+            case "positive_spin":
+                const positiveSpinModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                response = await positiveSpinModel.generateContent(`Turn the following negative thought into a positive mindset. Be concise, actionable, and focus on reframing the situation. The user's negative thought is: "${userGoal}"`);
+                break;
+            case "mindset_reset":
+                const mindsetResetModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                response = await mindsetResetModel.generateContent(`Provide actionable advice to help the user shift their energy when they feel stuck. The user describes their feeling as: "${userGoal}"`);
+                break;
+            case "objection_handler":
+                const objectionHandlerModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                response = await objectionHandlerModel.generateContent(`Provide a concise, empathetic, and highly actionable response to the following sales question or objection. The objection is: "${userGoal}"`);
+                break;
             default:
                 return {
                     statusCode: 400,
