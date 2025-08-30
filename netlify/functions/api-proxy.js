@@ -27,7 +27,7 @@ exports.handler = async function(event) {
 
     try {
         const body = JSON.parse(event.body);
-        const { feature, prompt, audio, mimeType } = body;
+        const { feature, prompt, audio, mimeType, userGoal } = body;
 
         if (!feature) {
             return {
@@ -114,6 +114,18 @@ exports.handler = async function(event) {
                 const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 const textResponse = await generateTextModel.generateContent(prompt);
                 finalResponseBody = { text: textResponse.response.text() };
+                break;
+            
+            case "positive_spin":
+            case "mindset_reset":
+            case "objection_handler":
+            case "plan":
+            case "pep_talk":
+            case "vision_prompt":
+            case "obstacle_analysis":
+                const textOnlyModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                const generalResponse = await textOnlyModel.generateContent(userGoal);
+                finalResponseBody = { text: generalResponse.response.text() };
                 break;
             
             default:
