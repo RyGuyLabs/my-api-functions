@@ -112,7 +112,8 @@ exports.handler = async function(event) {
                         body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
                     };
                 }
-                const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
+                // Changed the model to a more broadly available one
+                const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 const textResponse = await generateTextModel.generateContent(prompt);
                 finalResponseBody = { text: textResponse.response.text() };
                 break;
