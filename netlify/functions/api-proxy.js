@@ -39,22 +39,20 @@ exports.handler = async function(event) {
 
         const geminiApiKey = process.env.FIRST_API_KEY;
 
-        // More specific check to help with debugging.
         if (!geminiApiKey || geminiApiKey.trim() === '') {
-             console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
-             return {
-                 statusCode: 500,
-                 headers,
-                 body: JSON.stringify({ message: 'API Key is not configured. Please set the FIRST_API_KEY environment variable in Netlify.' })
-             };
-         }
+            console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ message: 'API Key is not configured. Please set the FIRST_API_KEY environment variable in Netlify.' })
+            };
+        }
         
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         let finalResponseBody = null;
 
         switch (feature) {
             case "vocal_coach":
-                // Check if audio and prompt data exist.
                 if (!audio || !prompt || !mimeType) {
                     return {
                         statusCode: 400,
@@ -64,48 +62,36 @@ exports.handler = async function(event) {
                 }
 
                 try {
-                    // Changed the model to a compatible one that is likely available with your current key.
-                    const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+
+                    // The system instruction gives the model a clear role and persona.
+                    const systemInstruction = "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps.";
                     
                     const generationConfig = {
                         responseMimeType: "application/json",
-                        responseSchema: {
-                            type: "OBJECT",
-                            properties: {
-                                analysis: {
-                                    type: "ARRAY",
-                                    items: {
-                                        type: "OBJECT",
-                                        properties: {
-                                            point: { "type": "STRING" },
-                                            feedback: { "type": "STRING" }
-                                        }
-                                    }
-                                },
-                                summary: { "type": "STRING" },
-                                recommendations: { "type": "STRING" }
-                            }
-                        }
                     };
                     
                     const audioPart = {
                         inlineData: {
                             data: audio,
-                            mimeType: mimeType, // Use the dynamic mimeType from the client.
+                            mimeType: mimeType,
                         },
                     };
 
-                    const vocalCoachResponse = await vocalCoachModel.generateContent({
-                        contents: [{
-                            parts: [
-                                { text: prompt },
-                                audioPart
-                            ]
-                        }],
-                        generationConfig: generationConfig
+                    const result = await vocalCoachModel.generateContent({
+                        contents: [
+                            {
+                                parts: [
+                                    { text: prompt },
+                                    audioPart
+                                ]
+                            }
+                        ],
+                        systemInstruction: { parts: [{ text: systemInstruction }] },
+                        generationConfig: generationConfig,
                     });
 
-                    const responseText = vocalCoachResponse.response?.text();
+                    const responseText = result.response?.text();
                     finalResponseBody = JSON.parse(responseText);
 
                 } catch (apiError) {
@@ -126,12 +112,11 @@ exports.handler = async function(event) {
                         body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
                     };
                 }
-                const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
                 const textResponse = await generateTextModel.generateContent(prompt);
                 finalResponseBody = { text: textResponse.response.text() };
                 break;
             
-            // The following cases are preserved and will work as before
             case "positive_spin":
             case "mindset_reset":
             case "objection_handler":
