@@ -1,6 +1,6 @@
-import fetch from 'node-fetch';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Standard headers for CORS (Cross-Origin Resource Sharing).
+// Standard headers for CORS (Cross-Origin-Resource Sharing).
 const headers = {
     'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -26,10 +26,20 @@ exports.handler = async function(event) {
     }
 
     try {
-        const payload = JSON.parse(event.body);
-        const apiKey = process.env.FIRST_API_KEY;
+        const body = JSON.parse(event.body);
+        const { feature, prompt, audio, mimeType } = body;
 
-        if (!apiKey || apiKey.trim() === '') {
+        if (!feature) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ message: 'Missing "feature" in request body.' })
+            };
+        }
+
+        const geminiApiKey = process.env.FIRST_API_KEY;
+
+        if (!geminiApiKey || geminiApiKey.trim() === '') {
             console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
             return {
                 statusCode: 500,
@@ -38,31 +48,95 @@ exports.handler = async function(event) {
             };
         }
 
-        const model = payload.model;
-        const contents = payload.contents;
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
+        let finalResponseBody = null;
 
-        const apiPayload = {
-            contents: contents,
-            generationConfig: payload.generationConfig || {},
-            systemInstruction: payload.systemInstruction || {}
-        };
-        
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(apiPayload)
-        });
+        switch (feature) {
+            case "vocal_coach":
+                if (!audio || !prompt || !mimeType) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({ message: 'Missing "audio", "prompt", or "mimeType" data for vocal coach.' })
+                    };
+                }
 
-        const data = await response.json();
+                try {
+                    const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
 
-        return {
-            statusCode: response.status,
-            headers,
-            body: JSON.stringify(data)
-        };
+                    const systemInstruction = "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps.";
+                    
+                    const generationConfig = {
+                        responseMimeType: "application/json",
+                    };
+                    
+                    const audioPart = {
+                        inlineData: {
+                            data: audio,
+                            mimeType: mimeType,
+                        },
+                    };
+
+                    const result = await vocalCoachModel.generateContent({
+                        contents: [
+                            {
+                                parts: [
+                                    { text: prompt },
+                                    audioPart
+                                ]
+                            }
+                        ],
+                        systemInstruction: { parts: [{ text: systemInstruction }] },
+                        generationConfig: generationConfig,
+                    });
+
+                    const responseText = result.response?.text();
+                    finalResponseBody = JSON.parse(responseText);
+
+                } catch (apiError) {
+                    console.error("API call or JSON parsing error:", apiError);
+                    return {
+                        statusCode: 500,
+                        headers,
+                        body: JSON.stringify({ message: `Failed to get vocal coach feedback: ${apiError.message}` })
+                    };
+                }
+                break;
+            
+            case "generate_text":
+                if (!prompt) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
+                    };
+                }
+                const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                const textResponse = await generateTextModel.generateContent(prompt);
+                finalResponseBody = { text: textResponse.response.text() };
+                break;
+            
+            default:
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ message: 'Invalid "feature" specified.' })
+                };
+        }
+
+        if (finalResponseBody) {
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify(finalResponseBody)
+            };
+        } else {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ message: "An unexpected error occurred." })
+            };
+        }
     } catch (error) {
         console.error("Internal server error:", error);
         return {
