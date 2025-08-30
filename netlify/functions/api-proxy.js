@@ -63,6 +63,8 @@ exports.handler = async function(event) {
 
                 try {
                     const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                    
+                    const systemInstruction = "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps.";
 
                     const generationConfig = {
                         responseMimeType: "application/json",
@@ -74,16 +76,19 @@ exports.handler = async function(event) {
                             mimeType: mimeType,
                         },
                     };
+                    
+                    const textPart = { text: `The user has recorded themselves saying the following: "${prompt}"` };
 
                     const result = await vocalCoachModel.generateContent({
                         contents: [
                             {
                                 parts: [
-                                    { text: prompt },
+                                    textPart,
                                     audioPart
                                 ]
                             }
                         ],
+                        systemInstruction: { parts: [{ text: systemInstruction }] },
                         generationConfig: generationConfig,
                     });
 
