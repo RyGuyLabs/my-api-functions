@@ -1,12 +1,7 @@
-[[headers]]
-  for = "/.netlify/functions/*"
-  [headers.values]
-    Access-Control-Allow-Origin = "*"
+[build]
+functions = "netlify/functions/"
 
 [[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-  force = true
-
-
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200
