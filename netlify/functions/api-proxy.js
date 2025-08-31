@@ -116,7 +116,7 @@ exports.handler = async (event, context) => {
                         statusCode: 400,
                         headers,
                         body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
-                    };
+                    });
                 }
                 const textResult = await callGeminiAPI(API_URL_1_0_PRO, { contents: [{ parts: [{ text: prompt }] }] });
                 finalResponseBody = { text: textResult?.candidates?.[0]?.content?.parts?.[0]?.text };
@@ -164,7 +164,7 @@ exports.handler = async (event, context) => {
                 statusCode: 500,
                 headers,
                 body: JSON.stringify({ message: "An unexpected error occurred." })
-            });
+            };
         }
     } catch (error) {
         console.error("Internal server error:", error);
