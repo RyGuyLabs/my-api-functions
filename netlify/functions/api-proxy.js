@@ -34,8 +34,8 @@ async function callGeminiAPI(url, payload) {
 
 // Prompt templates for the "Dream Planner" features to ensure unique responses
 const promptTemplates = {
-    "positive_spin": "Take the following user goal or statement and reframe it with a positive, uplifting spin. The focus should be on an opportunity for growth and success, not a problem: ",
-    "mindset_reset": "Provide a quick, empowering, and actionable mindset reset based on the following challenge or thought: ",
+    "positive_spin": "You are a friendly and encouraging life coach. For the following user goal or statement, provide a positive and empowering reframe. Start with a bolded headline, then write a short paragraph, and finally provide a couple of action-oriented bullet points that turn the challenge into a growth opportunity. Your response should feel like you are speaking directly to the user to guide them. User statement:",
+    "mindset_reset": "You are a wise and supportive mentor. For the following user challenge, provide a thoughtful and actionable mindset reset. Your response must be substantive and follow this structure precisely: 1. A short, bolded headline. 2. A paragraph that explains the core mindset shift. 3. A list of 2-3 specific, actionable steps the user can take today. User challenge:",
     "objection_handler": "Act as a sales expert. Provide a confident and effective way to handle the following objection: ",
     "plan": "Help me create a detailed, step-by-step plan to achieve the following goal. The plan should be highly actionable and easy to follow: ",
     "pep_talk": "Deliver a short, motivational pep talk based on the following challenge: ",
@@ -135,7 +135,7 @@ exports.handler = async (event, context) => {
                         statusCode: 400,
                         headers,
                         body: JSON.stringify({ message: 'Missing "userGoal" data for Dream Planner feature.' })
-                    };
+                    });
                 }
                 
                 // Use a specific prompt template based on the feature
@@ -164,7 +164,7 @@ exports.handler = async (event, context) => {
                 statusCode: 500,
                 headers,
                 body: JSON.stringify({ message: "An unexpected error occurred." })
-            };
+            });
         }
     } catch (error) {
         console.error("Internal server error:", error);
