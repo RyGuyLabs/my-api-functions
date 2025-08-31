@@ -99,13 +99,28 @@ exports.handler = async function(event) {
         if (candidate && candidate.content?.parts?.[0]?.text) {
             let responseText = candidate.content.parts[0].text;
             
-            // Note: The vocal coach JSON parsing is not needed with the new API schema
-            // but is kept for compatibility with the old client-side code.
-            const feedback = JSON.parse(responseText.replace(/```json|```/g, ''));
-            return {
-                statusCode: 200,
-                body: JSON.stringify(feedback)
-            };
+            // Check if the feature is the vocal coach before attempting JSON parsing.
+            if (feature === "vocal_coach") {
+                try {
+                    const feedback = JSON.parse(responseText.replace(/```json|```/g, ''));
+                    return {
+                        statusCode: 200,
+                        body: JSON.stringify(feedback)
+                    };
+                } catch (jsonError) {
+                    console.error("JSON parsing error for vocal coach:", jsonError);
+                    return {
+                        statusCode: 500,
+                        body: JSON.stringify({ error: `Internal Server Error: Failed to parse vocal coach feedback.` })
+                    };
+                }
+            } else {
+                // Return text as is for all other features.
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify({ text: responseText })
+                };
+            }
         } else {
             throw new Error("Could not get a valid response from the Gemini API.");
         }
