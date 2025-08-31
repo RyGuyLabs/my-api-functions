@@ -5,7 +5,8 @@
 [build]
   # Specifies the publish directory for your site's files.
   # If your front-end code is in a folder like 'dist' or 'public',
-  # you would change this. For most projects, the root directory is correct.
+  # change this line to reflect that directory.
+  # For example: publish = "dist"
   publish = "."
 
 # This section configures the settings for Netlify's serverless functions.
