@@ -9,6 +9,10 @@ const headers = {
     'Access-Control-Allow-Headers': 'Content-Type'
 };
 
+// Gemini API URLs
+const API_URL_TEXT_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
+const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=`;
+
 exports.handler = async function(event) {
     // Handle pre-flight OPTIONS requests for CORS.
     if (event.httpMethod === 'OPTIONS') {
@@ -35,46 +39,94 @@ exports.handler = async function(event) {
         // The user's API key is stored securely as an environment variable in Netlify.
         // It's not exposed to the client-side.
         const apiKey = process.env.FIRST_API_KEY || "";
-        console.log(`API Key Loaded: ${apiKey ? "Yes" : "No"}`);
+        if (!apiKey) {
+            throw new Error("API key not configured in environment variables.");
+        }
         
         let geminiPayload;
         let model;
-        let systemInstruction;
 
         switch (feature) {
             case "generate_text":
-                model = "gemini-1.0-pro";
+                model = "gemini-2.5-flash-preview-05-20";
+                const textPrompt = "Please write a concise, one-paragraph text (around 30-40 words) for a professional to read. The text should be suitable for a sales pitch, job interview, or a professional presentation, and should be designed to be read with a confident, calm, and persuasive tone.";
+
                 geminiPayload = {
                     contents: [{
-                        parts: [{ text: payload.prompt }]
+                        parts: [{ text: textPrompt }]
                     }]
                 };
-                break;
+                
+                // Call the Gemini API with the constructed payload
+                const genTextResponse = await fetch(`${API_URL_TEXT_FLASH}${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(geminiPayload)
+                });
+
+                if (!genTextResponse.ok) {
+                    const errorData = await genTextResponse.json().catch(() => ({}));
+                    throw new Error(`Gemini API error: ${genTextResponse.status} - ${errorData.error?.message || genTextResponse.statusText}`);
+                }
+
+                const genTextResult = await genTextResponse.json();
+                const generatedText = genTextResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!generatedText) {
+                    throw new Error("Could not get a valid response for text generation.");
+                }
+                
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({ text: generatedText.trim() })
+                };
+
             case "vocal_coach":
-                model = "gemini-1.5-flash";
-                systemInstruction = {
-                    parts: [{
-                        text: "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps."
-                    }]
-                };
-                geminiPayload = {
+                model = "gemini-2.5-flash-preview-05-20";
+                const { audio, mimeType, prompt } = payload;
+                
+                // Call Gemini to get the analysis (score and text)
+                const textPayload = {
                     contents: [{
+                        role: "user",
                         parts: [
-                            { text: payload.prompt },
+                            { text: prompt },
                             {
                                 inlineData: {
-                                    mimeType: payload.mimeType,
-                                    data: payload.audio
+                                    mimeType: mimeType,
+                                    data: audio
                                 }
                             }
                         ]
                     }],
-                    systemInstruction,
                     generationConfig: {
-                        responseMimeType: "application/json"
-                    }
+                         responseMimeType: "application/json"
+                    },
                 };
-                break;
+
+                const textResponse = await fetch(`${API_URL_TEXT_FLASH}${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(textPayload)
+                });
+
+                const textResult = await textResponse.json();
+                const analysisText = textResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (!analysisText) {
+                    throw new Error("Failed to get analysis from Gemini.");
+                }
+
+                // Clean the text by removing markdown code fences before parsing
+                const cleanedAnalysisText = analysisText.replace(/```json|```/g, '').trim();
+                const feedback = JSON.parse(cleanedAnalysisText);
+
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify(feedback)
+                };
             case "positive_spin":
             case "mindset_reset":
             case "objection_handler":
@@ -82,66 +134,39 @@ exports.handler = async function(event) {
             case "pep_talk":
             case "vision_prompt":
             case "obstacle_analysis":
-                model = "gemini-1.5-flash";
+                model = "gemini-2.5-flash-preview-05-20";
                 geminiPayload = {
                     contents: [{
                         parts: [{ text: payload.userGoal }]
                     }]
                 };
-                break;
+                
+                const otherFeatureResponse = await fetch(`${API_URL_TEXT_FLASH}${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(geminiPayload)
+                });
+
+                if (!otherFeatureResponse.ok) {
+                    const errorData = await otherFeatureResponse.json().catch(() => ({}));
+                    throw new Error(`Gemini API error: ${otherFeatureResponse.status} - ${errorData.error?.message || otherFeatureResponse.statusText}`);
+                }
+
+                const otherFeatureResult = await otherFeatureResponse.json();
+                const otherFeatureText = otherFeatureResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({ text: otherFeatureText })
+                };
+
             default:
                 return {
                     statusCode: 400,
                     headers,
                     body: JSON.stringify({ error: "Invalid feature requested." })
                 };
-        }
-
-        // Call the Gemini API with the constructed payload and the correct model URL
-        const apiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(geminiPayload)
-        });
-
-        if (!apiResponse.ok) {
-            const errorData = await apiResponse.json().catch(() => ({}));
-            throw new Error(`Gemini API error: ${apiResponse.status} - ${errorData.error?.message || apiResponse.statusText}`);
-        }
-
-        const result = await apiResponse.json();
-        const candidate = result.candidates?.[0];
-
-        if (candidate && candidate.content?.parts?.[0]?.text) {
-            let responseText = candidate.content.parts[0].text;
-            
-            // Check if the feature is the vocal coach before attempting JSON parsing.
-            if (feature === "vocal_coach") {
-                try {
-                    const feedback = JSON.parse(responseText.replace(/```json|```/g, ''));
-                    return {
-                        statusCode: 200,
-                        headers,
-                        body: JSON.stringify(feedback)
-                    };
-                } catch (jsonError) {
-                    console.error("JSON parsing error for vocal coach:", jsonError);
-                    return {
-                        statusCode: 500,
-                        headers,
-                        body: JSON.stringify({ error: `Internal Server Error: Failed to parse vocal coach feedback.` })
-                    };
-                }
-            } else {
-                // Return text as is for all other features.
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify({ text: responseText })
-                };
-            }
-        } else {
-            throw new Error("Could not get a valid response from the Gemini API.");
         }
     } catch (error) {
         console.error("Serverless Function Error:", error);
