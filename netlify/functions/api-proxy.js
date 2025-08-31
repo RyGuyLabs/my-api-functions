@@ -32,6 +32,18 @@ async function callGeminiAPI(url, payload) {
     }
 }
 
+// Prompt templates for the "Dream Planner" features to ensure unique responses
+const promptTemplates = {
+    "positive_spin": "Take the following user goal or statement and reframe it with a positive, uplifting spin. The focus should be on an opportunity for growth and success, not a problem: ",
+    "mindset_reset": "Provide a quick, empowering, and actionable mindset reset based on the following challenge or thought: ",
+    "objection_handler": "Act as a sales expert. Provide a confident and effective way to handle the following objection: ",
+    "plan": "Help me create a detailed, step-by-step plan to achieve the following goal. The plan should be highly actionable and easy to follow: ",
+    "pep_talk": "Deliver a short, motivational pep talk based on the following challenge: ",
+    "vision_prompt": "Expand on the following idea to help me build a clearer, more inspiring vision for my project or life. Use vivid language: ",
+    "obstacle_analysis": "Analyze the following obstacle and break down potential solutions and a clear path forward. Focus on practical, creative ways to overcome it: "
+};
+
+
 exports.handler = async (event, context) => {
     // Handle pre-flight OPTIONS requests for CORS.
     if (event.httpMethod === 'OPTIONS') {
@@ -125,7 +137,11 @@ exports.handler = async (event, context) => {
                         body: JSON.stringify({ message: 'Missing "userGoal" data for Dream Planner feature.' })
                     };
                 }
-                const generalResult = await callGeminiAPI(API_URL_1_5_FLASH, { contents: [{ parts: [{ text: userGoal }] }] });
+                
+                // Use a specific prompt template based on the feature
+                const dreamPlannerPrompt = promptTemplates[feature] + userGoal;
+
+                const generalResult = await callGeminiAPI(API_URL_1_5_FLASH, { contents: [{ parts: [{ text: dreamPlannerPrompt }] }] });
                 finalResponseBody = { text: generalResult?.candidates?.[0]?.content?.parts?.[0]?.text };
                 break;
 
