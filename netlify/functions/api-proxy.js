@@ -1,7 +1,7 @@
 // This code will run on your Netlify serverless function.
 // It acts as an intermediary between your client-side HTML and the Gemini API.
 
-const API_KEY = process.env.GEMINI_API_KEY; // This should be set in your Netlify environment variables
+const API_KEY = process.env.FIRST_API_KEY; // This should be set in your Netlify environment variables
 const API_URL_TEXT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
 const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-preview-tts:generateContent?key=${API_KEY}`;
 
