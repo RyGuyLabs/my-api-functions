@@ -4,7 +4,7 @@
 
 // Standard headers for CORS (Cross-Origin Resource Sharing).
 const headers = {
-    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
 };
