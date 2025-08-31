@@ -3,11 +3,20 @@
 
 # This section configures the build settings.
 [build]
-  # By setting the publish directory to '.', we ensure that Netlify
-  # looks in the project root for files like '_headers'.
+  # Specifies the publish directory for your site's files.
+  # If your front-end code is in a folder like 'dist' or 'public',
+  # you would change this. For most projects, the root directory is correct.
   publish = "."
 
 # This section configures the settings for Netlify's serverless functions.
 [functions]
   # Specifies the directory where your functions are located.
   directory = "netlify/functions"
+
+# This section sets up headers for all serverless functions.
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type"
