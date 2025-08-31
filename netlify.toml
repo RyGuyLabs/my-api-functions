@@ -1,20 +1,13 @@
 # This file configures Netlify's build process and other settings.
 # It is required to be in the root of your project.
 
+# This section configures the build settings.
+[build]
+  # By setting the publish directory to '.', we ensure that Netlify
+  # looks in the project root for files like '_headers'.
+  publish = "."
+
 # This section configures the settings for Netlify's serverless functions.
 [functions]
   # Specifies the directory where your functions are located.
   directory = "netlify/functions"
-
-# This section sets up headers for specific paths on your site.
-[[headers]]
-  # This applies the headers to the specific function endpoint.
-  # This is more secure than allowing all origins with a wildcard.
-  for = "/.netlify/functions/api-proxy"
-  [headers.values]
-    # This header is crucial for allowing requests from your domain.
-    # It must exactly match your site's URL.
-    Access-Control-Allow-Origin = "https://www.ryguylabs.com"
-    # These headers are necessary for POST requests.
-    Access-Control-Allow-Methods = "GET, POST, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type"
