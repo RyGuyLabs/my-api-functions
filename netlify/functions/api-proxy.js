@@ -51,7 +51,7 @@ exports.handler = async function(event) {
                 };
                 break;
             case "vocal_coach":
-                model = "gemini-1.5-pro-latest";
+                model = "gemini-1.5-flash";
                 systemInstruction = {
                     parts: [{
                         text: "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps."
