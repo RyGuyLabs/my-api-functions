@@ -2,13 +2,28 @@
 // ensuring your API key remains secure on the server side.
 // It uses the native fetch API to avoid module loading errors.
 
+// Standard headers for CORS (Cross-Origin Resource Sharing).
+const headers = {
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 exports.handler = async function(event) {
-    // Netlify will handle CORS headers based on the _headers file, so they are not set here.
-    
+    // Handle pre-flight OPTIONS requests for CORS.
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers,
+            body: ''
+        };
+    }
+
     // Ensure the request is a POST request
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
+            headers,
             body: JSON.stringify({ error: "Method Not Allowed" })
         };
     }
@@ -77,6 +92,7 @@ exports.handler = async function(event) {
             default:
                 return {
                     statusCode: 400,
+                    headers,
                     body: JSON.stringify({ error: "Invalid feature requested." })
                 };
         }
@@ -105,12 +121,14 @@ exports.handler = async function(event) {
                     const feedback = JSON.parse(responseText.replace(/```json|```/g, ''));
                     return {
                         statusCode: 200,
+                        headers,
                         body: JSON.stringify(feedback)
                     };
                 } catch (jsonError) {
                     console.error("JSON parsing error for vocal coach:", jsonError);
                     return {
                         statusCode: 500,
+                        headers,
                         body: JSON.stringify({ error: `Internal Server Error: Failed to parse vocal coach feedback.` })
                     };
                 }
@@ -118,6 +136,7 @@ exports.handler = async function(event) {
                 // Return text as is for all other features.
                 return {
                     statusCode: 200,
+                    headers,
                     body: JSON.stringify({ text: responseText })
                 };
             }
@@ -128,6 +147,7 @@ exports.handler = async function(event) {
         console.error("Serverless Function Error:", error);
         return {
             statusCode: 500,
+            headers,
             body: JSON.stringify({ error: `Internal Server Error: ${error.message}` })
         };
     }
