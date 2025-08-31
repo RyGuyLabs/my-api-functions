@@ -1,155 +1,194 @@
-// This file acts as a serverless function to proxy requests to the Gemini API,
-// ensuring your API key remains secure on the server side.
-// It uses the native fetch API to avoid module loading errors.
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Gemini API URLs
-const API_URL_TEXT_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
-const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=`;
+
+// Standard headers for CORS (Cross-Origin Resource Sharing).
+const headers = {
+   'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+   'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 
 exports.handler = async function(event) {
-    // Handle pre-flight OPTIONS requests for CORS.
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, body: '' };
-    }
+   // Handle pre-flight OPTIONS requests for CORS.
+   if (event.httpMethod === 'OPTIONS') {
+       return {
+           statusCode: 200,
+           headers,
+           body: ''
+       };
+   }
 
-    // Ensure the request is a POST request
-    if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: JSON.stringify({ error: "Method Not Allowed" }) };
-    }
 
-    try {
-        const payload = JSON.parse(event.body);
-        const feature = payload.feature;
+   if (event.httpMethod !== 'POST') {
+       return {
+           statusCode: 405,
+           headers,
+           body: JSON.stringify({ message: "Method Not Allowed" })
+       };
+   }
 
-        // The user's API key is stored securely as an environment variable in Netlify.
-        // It's not exposed to the client-side.
-        const apiKey = process.env.FIRST_API_KEY || "";
-        if (!apiKey) {
-            throw new Error("API key not configured in environment variables.");
-        }
-        
-        let geminiPayload;
 
-        switch (feature) {
-            case "generate_text":
-                const textPrompt = "Please write a concise, one-paragraph text (around 30-40 words) for a professional to read. The text should be suitable for a sales pitch, job interview, or a professional presentation, and should be designed to be read with a confident, calm, and persuasive tone.";
+   try {
+       const body = JSON.parse(event.body);
+       const { feature, userGoal, audio, prompt, mimeType } = body;
 
-                geminiPayload = {
-                    contents: [{
-                        parts: [{ text: textPrompt }]
-                    }]
-                };
-                
-                // Call the Gemini API with the constructed payload
-                const genTextResponse = await fetch(`${API_URL_TEXT_FLASH}${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(geminiPayload)
-                });
 
-                if (!genTextResponse.ok) {
-                    const errorData = await genTextResponse.json().catch(() => ({}));
-                    throw new Error(`Gemini API error: ${genTextResponse.status} - ${errorData.error?.message || genTextResponse.statusText}`);
-                }
+       if (!feature) {
+           return {
+               statusCode: 400,
+               headers,
+               body: JSON.stringify({ message: 'Missing "feature" in request body.' })
+           };
+       }
 
-                const genTextResult = await genTextResponse.json();
-                const generatedText = genTextResult?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-                if (!generatedText) {
-                    throw new Error("Could not get a valid response for text generation.");
-                }
-                
-                return {
-                    statusCode: 200,
-                    body: JSON.stringify({ text: generatedText.trim() })
-                };
+       const geminiApiKey = process.env.FIRST_API_KEY;
 
-            case "vocal_coach":
-                const { audio, mimeType, prompt } = payload;
-                
-                // Call Gemini to get the analysis (score and text)
-                const textPayload = {
-                    contents: [{
-                        role: "user",
-                        parts: [
-                            { text: prompt },
-                            {
-                                inlineData: {
-                                    mimeType: mimeType,
-                                    data: audio
-                                }
-                            }
-                        ]
-                    }],
-                    generationConfig: {
-                         responseMimeType: "application/json"
-                    },
-                };
 
-                const textResponse = await fetch(`${API_URL_TEXT_FLASH}${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(textPayload)
-                });
+       if (!geminiApiKey || geminiApiKey.trim() === '') {
+           console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
+           return {
+               statusCode: 500,
+               headers,
+               body: JSON.stringify({ message: 'API Key is not configured. Please set the FIRST_API_KEY environment variable in Netlify.' })
+           };
+       }
+      
+       const genAI = new GoogleGenerativeAI(geminiApiKey);
+       let finalResponseBody = null;
 
-                const textResult = await textResponse.json();
-                const analysisText = textResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-                
-                if (!analysisText) {
-                    throw new Error("Failed to get analysis from Gemini.");
-                }
 
-                // Clean the text by removing markdown code fences before parsing
-                const cleanedAnalysisText = analysisText.replace(/```json|```/g, '').trim();
-                const feedback = JSON.parse(cleanedAnalysisText);
+       switch (feature) {
+           case "vocal_coach":
+               if (!audio || !prompt || !mimeType) {
+                   return {
+                       statusCode: 400,
+                       headers,
+                       body: JSON.stringify({ message: 'Missing "audio", "prompt", or "mimeType" data for vocal coach.' })
+                   };
+               }
 
-                return {
-                    statusCode: 200,
-                    body: JSON.stringify(feedback)
-                };
-            case "positive_spin":
-            case "mindset_reset":
-            case "objection_handler":
-            case "plan":
-            case "pep_talk":
-            case "vision_prompt":
-            case "obstacle_analysis":
-                geminiPayload = {
-                    contents: [{
-                        parts: [{ text: payload.userGoal }]
-                    }]
-                };
-                
-                const otherFeatureResponse = await fetch(`${API_URL_TEXT_FLASH}${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(geminiPayload)
-                });
 
-                if (!otherFeatureResponse.ok) {
-                    const errorData = await otherFeatureResponse.json().catch(() => ({}));
-                    throw new Error(`Gemini API error: ${otherFeatureResponse.status} - ${errorData.error?.message || otherFeatureResponse.statusText}`);
-                }
+               try {
+                   const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
 
-                const otherFeatureResult = await otherFeatureResponse.json();
-                const otherFeatureText = otherFeatureResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-                
-                return {
-                    statusCode: 200,
-                    body: JSON.stringify({ text: otherFeatureText })
-                };
 
-            default:
-                return {
-                    statusCode: 400,
-                    body: JSON.stringify({ error: "Invalid feature requested." })
-                };
-        }
-    } catch (error) {
-        console.error("Serverless Function Error:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: `Internal Server Error: ${error.message}` })
-        };
-    }
+                   // The system instruction gives the model a clear role and persona.
+                   const systemInstruction = "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps.";
+                  
+                   const generationConfig = {
+                       responseMimeType: "application/json",
+                   };
+                  
+                   const audioPart = {
+                       inlineData: {
+                           data: audio,
+                           mimeType: mimeType,
+                       },
+                   };
+
+
+                   const result = await vocalCoachModel.generateContent({
+                       contents: [
+                           {
+                               parts: [
+                                   { text: prompt },
+                                   audioPart
+                               ]
+                           }
+                       ],
+                       systemInstruction: { parts: [{ text: systemInstruction }] },
+                       generationConfig: generationConfig,
+                   });
+
+
+                   const responseText = result.response?.text();
+                   finalResponseBody = JSON.parse(responseText);
+
+
+               } catch (apiError) {
+                   console.error("API call or JSON parsing error:", apiError);
+                   return {
+                       statusCode: 500,
+                       headers,
+                       body: JSON.stringify({ message: `Failed to get vocal coach feedback: ${apiError.message}` })
+                   };
+               }
+               break;
+          
+           case "generate_text":
+               if (!prompt) {
+                   return {
+                       statusCode: 400,
+                       headers,
+                       body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
+                   };
+               }
+               const generateTextModel = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
+               const textResponse = await generateTextModel.generateContent(prompt);
+               finalResponseBody = { text: textResponse.response.text() };
+               break;
+          
+           case "positive_spin":
+           case "mindset_reset":
+           case "objection_handler":
+           case "plan":
+           case "pep_talk":
+           case "vision_prompt":
+           case "obstacle_analysis":
+               const textOnlyModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+               const generalResponse = await textOnlyModel.generateContent(userGoal);
+               finalResponseBody = { text: generalResponse.response.text() };
+               break;
+          
+           default:
+               return {
+                   statusCode: 400,
+                   headers,
+                   body: JSON.stringify({ message: 'Invalid "feature" specified.' })
+               };
+       }
+
+
+       if (finalResponseBody) {
+           return {
+               statusCode: 200,
+               headers,
+               body: JSON.stringify(finalResponseBody)
+           };
+       } else {
+           return {
+               statusCode: 500,
+               headers,
+               body: JSON.stringify({ message: "An unexpected error occurred." })
+           };
+       }
+   } catch (error) {
+       console.error("Internal server error:", error);
+       return {
+           statusCode: 500,
+           headers,
+           body: JSON.stringify({ message: `Internal server error: ${error.message}` })
+       };
+   }
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
