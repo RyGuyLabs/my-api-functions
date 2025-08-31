@@ -37,6 +37,7 @@ exports.handler = async function(event, context) {
         // The user's API key is stored securely as an environment variable in Netlify.
         // It's not exposed to the client-side.
         const apiKey = process.env.FIRST_API_KEY || "";
+        console.log(`API Key Loaded: ${apiKey ? "Yes" : "No"}`);
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
         let geminiPayload;
