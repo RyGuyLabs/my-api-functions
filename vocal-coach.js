@@ -123,7 +123,7 @@ const withExponentialBackoff = async (func, maxRetries = 5, delay = 1000) => {
 // Makes a direct API call to the Netlify function.
 const callNetlifyFunction = async (payload) => {
     return withExponentialBackoff(async () => {
-        const response = await fetch('https://www.ryguylabs.com/.netlify/functions/api-proxy', {
+        const response = await fetch('/.netlify/functions/api-proxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
