@@ -2,9 +2,6 @@
 // ensuring your API key remains secure on the server side.
 // It uses the native fetch API to avoid module loading errors.
 
-// This file is now configured to work with the Netlify.toml file.
-// All CORS headers are handled by Netlify's server.
-
 // Gemini API URLs
 const API_URL_TEXT_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
 const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=`;
@@ -12,18 +9,12 @@ const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gem
 exports.handler = async function(event) {
     // Handle pre-flight OPTIONS requests for CORS.
     if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            body: ''
-        };
+        return { statusCode: 200, body: '' };
     }
 
     // Ensure the request is a POST request
     if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            body: JSON.stringify({ error: "Method Not Allowed" })
-        };
+        return { statusCode: 405, body: JSON.stringify({ error: "Method Not Allowed" }) };
     }
 
     try {
@@ -38,11 +29,9 @@ exports.handler = async function(event) {
         }
         
         let geminiPayload;
-        let model;
 
         switch (feature) {
             case "generate_text":
-                model = "gemini-2.5-flash-preview-05-20";
                 const textPrompt = "Please write a concise, one-paragraph text (around 30-40 words) for a professional to read. The text should be suitable for a sales pitch, job interview, or a professional presentation, and should be designed to be read with a confident, calm, and persuasive tone.";
 
                 geminiPayload = {
@@ -76,7 +65,6 @@ exports.handler = async function(event) {
                 };
 
             case "vocal_coach":
-                model = "gemini-2.5-flash-preview-05-20";
                 const { audio, mimeType, prompt } = payload;
                 
                 // Call Gemini to get the analysis (score and text)
@@ -126,7 +114,6 @@ exports.handler = async function(event) {
             case "pep_talk":
             case "vision_prompt":
             case "obstacle_analysis":
-                model = "gemini-2.5-flash-preview-05-20";
                 geminiPayload = {
                     contents: [{
                         parts: [{ text: payload.userGoal }]
