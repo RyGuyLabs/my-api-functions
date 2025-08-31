@@ -1,53 +1,21 @@
-// This serverless function acts as a unified proxy for multiple AI-powered features.
-// It handles API calls for text generation, audio analysis, and more, based on a 'feature' parameter.
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Standard headers for CORS (Cross-Origin Resource Sharing).
 const headers = {
-    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json'
 };
 
-// Define API URLs and the environment variable key for security and organization.
-const API_URL_TEXT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${process.env.FIRST_API_KEY}`;
-const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${process.env.FIRST_API_KEY}`;
-const API_URL_1_0_PRO = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=${process.env.FIRST_API_KEY}`;
-const API_URL_1_5_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.FIRST_API_KEY}`;
-
-// Helper function to handle fetch calls with error handling
-async function callGeminiAPI(url, payload) {
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result.error?.message || "Gemini API call failed.");
-        }
-        return result;
-    } catch (error) {
-        throw new Error(`API call error: ${error.message}`);
-    }
-}
-
-// Prompt templates for the "Dream Planner" features to ensure unique responses
-const promptTemplates = {
-    "positive_spin": "You are a friendly and encouraging life coach. For the following user goal or statement, provide a positive and empowering reframe. Start with a bolded headline, then write a short paragraph, and finally provide a couple of action-oriented bullet points that turn the challenge into a growth opportunity. Your response should feel like you are speaking directly to the user to guide them. User statement:",
-    "mindset_reset": "You are a wise and supportive mentor. For the following user challenge, provide a thoughtful and actionable mindset reset. Your response must be substantive and follow this structure precisely: 1. A short, bolded headline. 2. A paragraph that explains the core mindset shift. 3. A list of 2-3 specific, actionable steps the user can take today. User challenge:",
-    "objection_handler": "Act as a sales expert. Provide a confident and effective way to handle the following objection: ",
-    "plan": "Help me create a detailed, step-by-step plan to achieve the following goal. The plan should be highly actionable and easy to follow: ",
-    "pep_talk": "Deliver a short, motivational pep talk based on the following challenge: ",
-    "vision_prompt": "Expand on the following idea to help me build a clearer, more inspiring vision for my project or life. Use vivid language: ",
-    "obstacle_analysis": "Analyze the following obstacle and break down potential solutions and a clear path forward. Focus on practical, creative ways to overcome it: "
-};
-
-
-exports.handler = async (event, context) => {
+exports.handler = async function(event) {
     // Handle pre-flight OPTIONS requests for CORS.
     if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers, body: '' };
+        return {
+            statusCode: 200,
+            headers,
+            body: ''
+        };
     }
 
     if (event.httpMethod !== 'POST') {
@@ -60,7 +28,7 @@ exports.handler = async (event, context) => {
 
     try {
         const body = JSON.parse(event.body);
-        const { feature, userGoal, audio, prompt, mimeType } = body;
+        const { feature, userGoal } = body;
 
         if (!feature) {
             return {
@@ -70,81 +38,54 @@ exports.handler = async (event, context) => {
             };
         }
 
+        const geminiApiKey = process.env.FIRST_API_KEY;
+
+        if (!geminiApiKey || geminiApiKey.trim() === '') {
+            console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ message: 'API Key is not configured.' })
+            };
+        }
+      
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
         let finalResponseBody = null;
 
-        switch (feature) {
-            case "vocal_coach":
-                if (!audio || !prompt || !mimeType) {
-                    return {
-                        statusCode: 400,
-                        headers,
-                        body: JSON.stringify({ message: 'Missing "audio", "prompt", or "mimeType" data for vocal coach.' })
-                    };
-                }
-
-                // The system instruction gives the model a clear role and persona.
-                const systemInstruction = "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps.";
-
-                const vocalCoachPayload = {
-                    contents: [{
-                        parts: [
-                            { text: prompt },
-                            { inlineData: { data: audio, mimeType: mimeType } }
-                        ]
-                    }],
-                    systemInstruction: { parts: [{ text: systemInstruction }] },
-                    generationConfig: { responseMimeType: "application/json" }
-                };
-
-                const vocalCoachResult = await callGeminiAPI(API_URL_1_5_FLASH, vocalCoachPayload);
-                const responseText = vocalCoachResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (!responseText) {
-                    throw new Error("Failed to get analysis from Gemini.");
-                }
-
-                try {
-                    finalResponseBody = JSON.parse(responseText);
-                } catch (parseError) {
-                    throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
-                }
-                break;
-
-            case "generate_text":
-                if (!prompt) {
-                    return {
-                        statusCode: 400,
-                        headers,
-                        body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
-                    });
-                }
-                const textResult = await callGeminiAPI(API_URL_1_0_PRO, { contents: [{ parts: [{ text: prompt }] }] });
-                finalResponseBody = { text: textResult?.candidates?.[0]?.content?.parts?.[0]?.text };
-                break;
-
-            case "positive_spin":
-            case "mindset_reset":
-            case "objection_handler":
-            case "plan":
-            case "pep_talk":
-            case "vision_prompt":
-            case "obstacle_analysis":
-                // All "Dream Planner" features
-                if (!userGoal) {
-                    return {
-                        statusCode: 400,
-                        headers,
-                        body: JSON.stringify({ message: 'Missing "userGoal" data for Dream Planner feature.' })
-                    });
-                }
+        const textOnlyModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 
-                // Use a specific prompt template based on the feature
-                const dreamPlannerPrompt = promptTemplates[feature] + userGoal;
+        let systemInstructionText = "";
+        if (!userGoal) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ message: 'Missing "userGoal" data.' })
+            };
+        }
 
-                const generalResult = await callGeminiAPI(API_URL_1_5_FLASH, { contents: [{ parts: [{ text: dreamPlannerPrompt }] }] });
-                finalResponseBody = { text: generalResult?.candidates?.[0]?.content?.parts?.[0]?.text };
+        switch (feature) {
+            case "positive_spin":
+                systemInstructionText = "You are a sales coach. Reframe a user's negative thought or challenge into a positive, empowering sales-oriented mindset. Keep the response concise and action-focused.";
                 break;
-
+            case "mindset_reset":
+                systemInstructionText = "You are a sales coach. Provide a short, actionable strategy to help a user reset their mindset after a difficult sales call or day.";
+                break;
+            case "objection_handler":
+                systemInstructionText = "You are a sales expert. Take a user's stated customer objection and provide a clear, empathetic, and persuasive response to handle it effectively.";
+                break;
+            case "plan":
+                systemInstructionText = "You are a strategic sales planner. Take a user's high-level goal and break it down into a simple, three-step action plan to achieve it. Use bullet points for each step.";
+                break;
+            case "pep_talk":
+                systemInstructionText = "You are an encouraging mentor. Provide a brief, uplifting pep talk to motivate a user. The tone should be inspiring and positive.";
+                break;
+            case "vision_prompt":
+                systemInstructionText = "You are a visionary coach. Prompt the user with a powerful, forward-looking question to help them visualize their future success.";
+                break;
+            case "obstacle_analysis":
+                systemInstructionText = "You are a problem-solving analyst. Help the user break down a single sales-related obstacle into its core components to find a solution.";
+                break;
+          
             default:
                 return {
                     statusCode: 400,
@@ -153,6 +94,21 @@ exports.handler = async (event, context) => {
                 };
         }
 
+        try {
+            const generalResponse = await textOnlyModel.generateContent({
+                contents: [{ parts: [{ text: userGoal }] }],
+                systemInstruction: { parts: [{ text: systemInstructionText }] }
+            });
+            finalResponseBody = { text: generalResponse.response.text() };
+        } catch (apiError) {
+            console.error("Text generation API call error:", apiError);
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ message: `Failed to get response: ${apiError.message}` })
+            };
+        }
+        
         if (finalResponseBody) {
             return {
                 statusCode: 200,
