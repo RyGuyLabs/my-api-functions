@@ -1,93 +1,161 @@
+// This serverless function acts as a unified proxy for multiple AI-powered features.
+// It handles API calls for text generation, audio analysis, and more, based on a 'feature' parameter.
+
+// Standard headers for CORS (Cross-Origin Resource Sharing).
+const headers = {
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
+
+// Define API URLs and the environment variable key for security and organization.
+const API_URL_TEXT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${process.env.FIRST_API_KEY}`;
+const API_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${process.env.FIRST_API_KEY}`;
+const API_URL_1_0_PRO = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=${process.env.FIRST_API_KEY}`;
+const API_URL_1_5_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.FIRST_API_KEY}`;
+
+// Helper function to handle fetch calls with error handling
+async function callGeminiAPI(url, payload) {
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error?.message || "Gemini API call failed.");
+        }
+        return result;
+    } catch (error) {
+        throw new Error(`API call error: ${error.message}`);
+    }
+}
+
 exports.handler = async (event, context) => {
+    // Handle pre-flight OPTIONS requests for CORS.
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers, body: '' };
+    }
+
     if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
+        return {
+            statusCode: 405,
+            headers,
+            body: JSON.stringify({ message: "Method Not Allowed" })
+        };
     }
 
     try {
-        const { base64Audio, mimeType } = JSON.parse(event.body);
+        const body = JSON.parse(event.body);
+        const { feature, userGoal, audio, prompt, mimeType } = body;
 
-        // Define the prompt for Gemini to analyze the tone
-        const promptText = `As a professional, motivating, resonating, memorable, insightful, detailed, and thorough vocal coach, analyze the tone, pace, clarity, and confidence of the sales pitch provided in the audio. Your analysis must be reflective of a world-class coach. Provide a score from 0 to 100 based on the overall delivery. The output MUST be a single JSON object with the keys 'score' (number) and 'analysis' (string). The 'score' must be an integer from 0 to 100. The 'analysis' should be a detailed, professional, and actionable summary of the performance. Example: {"score": 85, "analysis": "Your tone was masterful and your clarity was excellent. To make your pitch more memorable, try incorporating a pause before your key value proposition to create emphasis. Continue to practice varying your pace to maintain a resonant and engaging delivery throughout the entire pitch."}`;
-
-        // Call Gemini to get the analysis (score and text)
-        const textPayload = {
-            contents: [{
-                role: "user",
-                parts: [
-                    { text: promptText },
-                    {
-                        inlineData: {
-                            mimeType: mimeType,
-                            data: base64Audio
-                        }
-                    }
-                ]
-            }],
-            generationConfig: {
-                 responseMimeType: "application/json"
-            },
-        };
-
-        const textResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${process.env.FIRST_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(textPayload)
-        });
-
-        const textResult = await textResponse.json();
-        const analysisText = textResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-        
-        if (!analysisText) {
-            throw new Error("Failed to get analysis from Gemini.");
+        if (!feature) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ message: 'Missing "feature" in request body.' })
+            };
         }
 
-        const { score, analysis } = JSON.parse(analysisText);
-        
-        // Call Gemini TTS to get the audio feedback
-        const ttsPayload = {
-            contents: [{
-                parts: [{ text: `Your score is ${score} percent. ${analysis}` }]
-            }],
-            generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: "Rasalgethi" } }
+        let finalResponseBody = null;
+
+        switch (feature) {
+            case "vocal_coach":
+                if (!audio || !prompt || !mimeType) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({ message: 'Missing "audio", "prompt", or "mimeType" data for vocal coach.' })
+                    };
                 }
-            },
-        };
 
-        const ttsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${process.env.FIRST_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(ttsPayload)
-        });
+                // The system instruction gives the model a clear role and persona.
+                const systemInstruction = "You are a professional vocal coach. Your goal is to provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone based on the goals of being confident, calm, and persuasive. Format your response as a JSON object with a score from 1-100 for confidence and clarity, a 1-2 sentence summary, and bullet points for strengths, improvements, and next steps.";
 
-        const ttsResult = await ttsResponse.json();
-        const ttsPart = ttsResult?.candidates?.[0]?.content?.parts?.[0];
-        
-        if (!ttsPart || !ttsPart.inlineData || !ttsPart.inlineData.data) {
-            throw new Error("Failed to get audio feedback from Gemini TTS.");
+                const vocalCoachPayload = {
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            { inlineData: { data: audio, mimeType: mimeType } }
+                        ]
+                    }],
+                    systemInstruction: { parts: [{ text: systemInstruction }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                };
+
+                const vocalCoachResult = await callGeminiAPI(API_URL_1_5_FLASH, vocalCoachPayload);
+                const responseText = vocalCoachResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!responseText) {
+                    throw new Error("Failed to get analysis from Gemini.");
+                }
+
+                try {
+                    finalResponseBody = JSON.parse(responseText);
+                } catch (parseError) {
+                    throw new Error(`Failed to parse Gemini response: ${parseError.message}`);
+                }
+                break;
+
+            case "generate_text":
+                if (!prompt) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
+                    };
+                }
+                const textResult = await callGeminiAPI(API_URL_1_0_PRO, { contents: [{ parts: [{ text: prompt }] }] });
+                finalResponseBody = { text: textResult?.candidates?.[0]?.content?.parts?.[0]?.text };
+                break;
+
+            case "positive_spin":
+            case "mindset_reset":
+            case "objection_handler":
+            case "plan":
+            case "pep_talk":
+            case "vision_prompt":
+            case "obstacle_analysis":
+                // All "Dream Planner" features
+                if (!userGoal) {
+                    return {
+                        statusCode: 400,
+                        headers,
+                        body: JSON.stringify({ message: 'Missing "userGoal" data for Dream Planner feature.' })
+                    };
+                }
+                const generalResult = await callGeminiAPI(API_URL_1_5_FLASH, { contents: [{ parts: [{ text: userGoal }] }] });
+                finalResponseBody = { text: generalResult?.candidates?.[0]?.content?.parts?.[0]?.text };
+                break;
+
+            default:
+                return {
+                    statusCode: 400,
+                    headers,
+                    body: JSON.stringify({ message: 'Invalid "feature" specified.' })
+                };
         }
 
-        const audioData = ttsPart.inlineData.data;
-        const audioMimeType = ttsPart.inlineData.mimeType;
-
-        return {
-            statusCode: 200,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                score,
-                analysis,
-                audioData,
-                mimeType: audioMimeType
-            })
-        };
-
+        if (finalResponseBody) {
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify(finalResponseBody)
+            };
+        } else {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ message: "An unexpected error occurred." })
+            };
+        }
     } catch (error) {
-        console.error("Error in serverless function:", error);
+        console.error("Internal server error:", error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: error.message || "Internal Server Error" })
+            headers,
+            body: JSON.stringify({ message: `Internal server error: ${error.message}` })
         };
     }
 };
