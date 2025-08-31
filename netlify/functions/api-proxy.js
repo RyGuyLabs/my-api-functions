@@ -2,12 +2,8 @@
 // ensuring your API key remains secure on the server side.
 // It uses the native fetch API to avoid module loading errors.
 
-// Standard headers for CORS (Cross-Origin Resource Sharing).
-const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-};
+// This file is now configured to work with the Netlify.toml file.
+// All CORS headers are handled by Netlify's server.
 
 // Gemini API URLs
 const API_URL_TEXT_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=`;
@@ -18,7 +14,6 @@ exports.handler = async function(event) {
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers,
             body: ''
         };
     }
@@ -27,7 +22,6 @@ exports.handler = async function(event) {
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers,
             body: JSON.stringify({ error: "Method Not Allowed" })
         };
     }
@@ -78,7 +72,6 @@ exports.handler = async function(event) {
                 
                 return {
                     statusCode: 200,
-                    headers,
                     body: JSON.stringify({ text: generatedText.trim() })
                 };
 
@@ -124,7 +117,6 @@ exports.handler = async function(event) {
 
                 return {
                     statusCode: 200,
-                    headers,
                     body: JSON.stringify(feedback)
                 };
             case "positive_spin":
@@ -157,14 +149,12 @@ exports.handler = async function(event) {
                 
                 return {
                     statusCode: 200,
-                    headers,
                     body: JSON.stringify({ text: otherFeatureText })
                 };
 
             default:
                 return {
                     statusCode: 400,
-                    headers,
                     body: JSON.stringify({ error: "Invalid feature requested." })
                 };
         }
@@ -172,7 +162,6 @@ exports.handler = async function(event) {
         console.error("Serverless Function Error:", error);
         return {
             statusCode: 500,
-            headers,
             body: JSON.stringify({ error: `Internal Server Error: ${error.message}` })
         };
     }
