@@ -26,7 +26,7 @@ exports.handler = async function(event) {
 
     try {
         const body = JSON.parse(event.body);
-        const { feature, userGoal, prompt } = body;
+        const { feature, userGoal, prompt, audio, mimeType } = body;
         
         const geminiApiKey = process.env.FIRST_API_KEY;
 
@@ -40,10 +40,61 @@ exports.handler = async function(event) {
         }
       
         const genAI = new GoogleGenerativeAI(geminiApiKey);
-        const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         let finalResponseBody = {};
 
         switch (feature) {
+            case "vocal_coach": {
+                if (!audio || !prompt || !mimeType) {
+                    return {
+                        statusCode: 400,
+                        headers: CORS_HEADERS,
+                        body: JSON.stringify({ message: 'Missing "audio", "prompt", or "mimeType" data for vocal coach.' })
+                    };
+                }
+
+                // Use the multimodal model for vocal analysis
+                const vocalCoachModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-05-20" });
+
+                const systemInstruction = "You are a professional sales vocal coach. Provide concise, structured, and encouraging feedback on a user's vocal performance. Analyze their tone, confidence, persuasiveness, and enunciation. Your response MUST be a single JSON object with a score (1-100) and a detailed analysis.";
+                
+                // Configure the response to be a JSON object
+                const generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "score": { "type": "NUMBER" },
+                            "analysis": { "type": "STRING" }
+                        }
+                    }
+                };
+                
+                // Construct the payload with both the text prompt and the audio data
+                const audioPart = {
+                    inlineData: {
+                        data: audio,
+                        mimeType: mimeType,
+                    },
+                };
+                
+                const result = await vocalCoachModel.generateContent({
+                    contents: [
+                        {
+                            parts: [
+                                { text: prompt },
+                                audioPart
+                            ]
+                        }
+                    ],
+                    systemInstruction: { parts: [{ text: systemInstruction }] },
+                    generationConfig: generationConfig,
+                });
+
+                const responseText = result.response?.text();
+                finalResponseBody = JSON.parse(responseText);
+                break;
+            }
+            
             case "generate_text": {
                 if (!prompt) {
                     return {
@@ -52,6 +103,7 @@ exports.handler = async function(event) {
                         body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
                     };
                 }
+                const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 const textResponse = await textModel.generateContent(prompt);
                 finalResponseBody = { text: textResponse.response.text() };
                 break;
@@ -64,7 +116,6 @@ exports.handler = async function(event) {
             case "positive_spin":
             case "mindset_reset":
             case "objection_handler": {
-                // The `userGoal` field is used for all these features.
                 if (!userGoal) {
                     return {
                         statusCode: 400,
@@ -72,7 +123,8 @@ exports.handler = async function(event) {
                         body: JSON.stringify({ message: 'Missing "userGoal" data.' })
                     };
                 }
-
+                const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                
                 let systemInstructionText = "";
                 switch (feature) {
                     case "plan":
