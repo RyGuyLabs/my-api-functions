@@ -3,7 +3,25 @@
   "version": "1.0.0",
   "dependencies": {
     "@google/generative-ai": "^0.11.0",
+    "google-auth-library": "^10.3.0",
     "marked": "^4.3.0",
-    "node-fetch": "^3.3.2"
-  }
+    "node-fetch": "^3.3.2",
+    "uuid": "^11.1.0"
+  },
+  "main": "vocal-coach.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RyGuyLabs/my-api-functions.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RyGuyLabs/my-api-functions/issues"
+  },
+  "homepage": "https://github.com/RyGuyLabs/my-api-functions#readme",
+  "description": ""
 }
