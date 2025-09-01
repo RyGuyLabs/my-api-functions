@@ -1,15 +1,45 @@
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 exports.handler = async function (event, context) {
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: ''
+        };
+    }
+
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Method Not Allowed" })
+        };
+    }
+
     try {
         const body = JSON.parse(event.body);
-        const {
-            action,
-            base64Audio
-        } = body;
+        const { action, base64Audio, prompt } = body;
 
-        // API URL for Gemini Pro
-        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=";
-        const TTS_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=";
-        const apiKey = "AIzaSyDqUS0oYiPNOal7V38E0_odWh3XcUro_yk"; // API key is handled by the Canvas environment
+        // Use the API key from your Netlify environment variables
+        const apiKey = process.env.FIRST_API_KEY;
+
+        if (!apiKey) {
+            return {
+                statusCode: 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: "API key is not set." }),
+            };
+        }
+
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
 
         if (action === 'generate_script') {
             const systemPrompt = "You are a world-class sales copywriter. Generate a concise, professional, and persuasive sales script for a new software product. The script should be suitable for a brief cold call or a short pitch. Focus on a clear problem-solution structure and a strong call to action.";
@@ -40,22 +70,21 @@ exports.handler = async function (event, context) {
             const generatedScript = result.candidates[0].content.parts[0].text;
             return {
                 statusCode: 200,
+                headers: CORS_HEADERS,
                 body: JSON.stringify({
                     script: generatedScript
                 }),
             };
         } else if (action === 'analyze_audio') {
-            if (!base64Audio) {
+            if (!base64Audio || !prompt) {
                 return {
                     statusCode: 400,
-                    body: JSON.stringify({
-                        message: "Audio data is missing."
-                    })
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: "Audio data or prompt is missing." })
                 };
             }
-
+            
             // --- MOCK TRANSCRIPTION ---
-            // In a real scenario, this would be a call to a transcription service (e.g., Google Cloud Speech-to-Text).
             const transcribedText = "Hello, my name is Alex from Tech Solutions. I'm calling about your social media management. Are you currently looking for a more efficient way to handle your marketing?";
 
             // --- ANALYSIS & TTS Generation ---
@@ -99,6 +128,7 @@ exports.handler = async function (event, context) {
 
             return {
                 statusCode: 200,
+                headers: CORS_HEADERS,
                 body: JSON.stringify({
                     analysis: analysisText,
                     score: score,
@@ -109,6 +139,7 @@ exports.handler = async function (event, context) {
 
         return {
             statusCode: 400,
+            headers: CORS_HEADERS,
             body: JSON.stringify({
                 message: "Invalid action."
             }),
@@ -118,6 +149,7 @@ exports.handler = async function (event, context) {
         console.error("Error:", error);
         return {
             statusCode: 500,
+            headers: CORS_HEADERS,
             body: JSON.stringify({
                 message: "An internal server error occurred.",
                 error: error.message
