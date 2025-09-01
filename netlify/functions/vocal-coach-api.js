@@ -9,7 +9,7 @@ exports.handler = async function (event, context) {
         // API URL for Gemini Pro
         const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=";
         const TTS_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=";
-        const apiKey = ""; // API key is handled by the Canvas environment
+        const apiKey = "AIzaSyDqUS0oYiPNOal7V38E0_odWh3XcUro_yk"; // API key is handled by the Canvas environment
 
         if (action === 'generate_script') {
             const systemPrompt = "You are a world-class sales copywriter. Generate a concise, professional, and persuasive sales script for a new software product. The script should be suitable for a brief cold call or a short pitch. Focus on a clear problem-solution structure and a strong call to action.";
