@@ -40,6 +40,7 @@ exports.handler = async function(event) {
         }
       
         const genAI = new GoogleGenerativeAI(geminiApiKey);
+        const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         let finalResponseBody = {};
 
         switch (feature) {
@@ -51,7 +52,6 @@ exports.handler = async function(event) {
                         body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
                     };
                 }
-                const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 const textResponse = await textModel.generateContent(prompt);
                 finalResponseBody = { text: textResponse.response.text() };
                 break;
@@ -64,15 +64,15 @@ exports.handler = async function(event) {
             case "positive_spin":
             case "mindset_reset":
             case "objection_handler": {
+                // The `userGoal` field is used for all these features.
                 if (!userGoal) {
                     return {
                         statusCode: 400,
                         headers: CORS_HEADERS,
                         body: JSON.stringify({ message: 'Missing "userGoal" data.' })
-                    });
+                    };
                 }
-                const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-                
+
                 let systemInstructionText = "";
                 switch (feature) {
                     case "plan":
@@ -128,3 +128,5 @@ exports.handler = async function(event) {
         };
     }
 };
+
+
