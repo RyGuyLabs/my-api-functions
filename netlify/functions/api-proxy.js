@@ -1,56 +1,117 @@
-// /netlify/functions/vocal-coach-analysis.js
-
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-exports.handler = async (event) => {
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+};
+
+exports.handler = async function(event) {
+    // Handle pre-flight OPTIONS requests for CORS
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: ''
+        };
+    }
+
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            body: JSON.stringify({ message: 'Method Not Allowed' }),
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
 
     try {
-        const { prompt, audio } = JSON.parse(event.body);
+        const body = JSON.parse(event.body);
+        const { feature, userGoal, prompt } = body;
+        
+        const geminiApiKey = process.env.FIRST_API_KEY;
 
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-05-20" });
+        if (!geminiApiKey || geminiApiKey.trim() === '') {
+            console.error("Critical Error: FIRST_API_KEY environment variable is missing or empty.");
+            return {
+                statusCode: 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: 'API Key is not configured.' })
+            };
+        }
+      
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
+        const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        let finalResponseBody = {};
 
-        const requestPayload = {
-            contents: [{
-                role: "user",
-                parts: [
-                    { text: prompt },
-                    {
-                        inlineData: {
-                            mimeType: "audio/webm",
-                            data: audio
-                        }
-                    }
-                ]
-            }],
-            generationConfig: {
-                responseMimeType: "application/json"
+        switch (feature) {
+            case "generate_text": {
+                if (!prompt) {
+                    return {
+                        statusCode: 400,
+                        headers: CORS_HEADERS,
+                        body: JSON.stringify({ message: 'Missing "prompt" data for text generation.' })
+                    };
+                }
+                const textResponse = await textModel.generateContent(prompt);
+                finalResponseBody = { text: textResponse.response.text() };
+                break;
             }
-        };
 
-        const result = await model.generateContent(requestPayload);
-        const response = await result.response;
-        const feedback = JSON.parse(response.text());
+            case "plan":
+            case "pep_talk":
+            case "vision_prompt":
+            case "obstacle_analysis": {
+                if (!userGoal) {
+                    return {
+                        statusCode: 400,
+                        headers: CORS_HEADERS,
+                        body: JSON.stringify({ message: 'Missing "userGoal" data.' })
+                    };
+                }
+
+                let systemInstructionText = "";
+                switch (feature) {
+                    case "plan":
+                        systemInstructionText = "You are a world-class life coach and project manager named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed, step-by-step, and actionable plan to achieve the user's goal. Break the plan into a maximum of 5 distinct, numbered steps. Use clear, simple language and bold keywords for emphasis. The plan should be easy to understand and follow.";
+                        break;
+                    case "pep_talk":
+                        systemInstructionText = "You are a motivational speaker named RyGuy. Your tone is incredibly energetic, positive, and inspiring. Write a short, powerful pep talk for the user to help them achieve their goal. Use uplifting language and end with a strong, encouraging statement.";
+                        break;
+                    case "vision_prompt":
+                        systemInstructionText = "You are an imaginative guide named RyGuy. Your tone is creative and vivid. Provide a descriptive, single-paragraph prompt for the user to help them visualize their goal. The prompt should be a powerful mental image they can use for a vision board or meditation. Focus on sensory details.";
+                        break;
+                    case "obstacle_analysis":
+                        systemInstructionText = "You are a strategic consultant named RyGuy. Your tone is analytical and straightforward. Identify and describe a maximum of 3 potential obstacles or challenges the user might face in achieving their goal. For each obstacle, provide a practical, high-level solution or strategy to overcome it. Present this as a numbered list.";
+                        break;
+                }
+
+                const generalResponse = await textModel.generateContent({
+                    contents: [{ parts: [{ text: userGoal }] }],
+                    systemInstruction: { parts: [{ text: systemInstructionText }] }
+                });
+                finalResponseBody = { text: generalResponse.response.text() };
+                break;
+            }
+          
+            default:
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: `Invalid "feature" specified: ${feature}` })
+                };
+        }
 
         return {
             statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(feedback),
+            headers: CORS_HEADERS,
+            body: JSON.stringify(finalResponseBody)
         };
     } catch (error) {
-        console.error('API Error:', error);
+        console.error("Internal server error:", error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: 'Failed to analyze recording.', details: error.message }),
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Internal server error: ${error.message}` })
         };
     }
 };
-
