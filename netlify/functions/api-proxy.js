@@ -60,7 +60,11 @@ exports.handler = async function(event) {
             case "plan":
             case "pep_talk":
             case "vision_prompt":
-            case "obstacle_analysis": {
+            case "obstacle_analysis":
+            case "positive_spin":
+            case "mindset_reset":
+            case "objection_handler": {
+                // The `userGoal` field is used for all these features.
                 if (!userGoal) {
                     return {
                         statusCode: 400,
@@ -82,6 +86,15 @@ exports.handler = async function(event) {
                         break;
                     case "obstacle_analysis":
                         systemInstructionText = "You are a strategic consultant named RyGuy. Your tone is analytical and straightforward. Identify and describe a maximum of 3 potential obstacles or challenges the user might face in achieving their goal. For each obstacle, provide a practical, high-level solution or strategy to overcome it. Present this as a numbered list.";
+                        break;
+                    case "positive_spin":
+                        systemInstructionText = "You are an optimistic reframer. Your tone is positive and encouraging. Take the user's negative statement and rewrite it to highlight the opportunities and strengths within it. Your output should be a single, concise paragraph.";
+                        break;
+                    case "mindset_reset":
+                        systemInstructionText = "You are a pragmatic mindset coach named RyGuy. Your tone is direct, simple, and actionable. Provide a brief, powerful, and easy-to-follow mindset reset. Focus on shifting perspective from a problem to a solution. The response should be a single paragraph.";
+                        break;
+                    case "objection_handler":
+                        systemInstructionText = "You are a professional sales trainer. Your tone is confident and strategic. Given a sales objection from the user, provide a structured, two-part response. First, acknowledge and validate the objection. Second, provide a concise, effective strategy to counter the objection. Your response should be a single paragraph.";
                         break;
                 }
 
