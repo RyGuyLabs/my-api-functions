@@ -1,7 +1,3 @@
-const {
-    getAuth
-} = require('firebase-admin/auth');
-
 exports.handler = async function (event, context) {
     try {
         const body = JSON.parse(event.body);
