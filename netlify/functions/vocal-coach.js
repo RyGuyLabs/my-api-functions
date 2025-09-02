@@ -1,126 +1,107 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 exports.handler = async (event) => {
-  // Handle CORS preflight OPTIONS request
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-      body: ""
-    };
-  }
-
-  // Only allow POST for main logic
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-      },
-      body: JSON.stringify({ error: "Method Not Allowed, use POST" }),
-    };
-  }
-
-  // CORS headers to allow calls from your frontend
-  const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
-
-  try {
-    const body = JSON.parse(event.body);
-    const { action, base64Audio, prompt, mimeType } = body;
-
-    // Ensure API key is set in environment variables on Netlify
-    const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) {
-      console.error("API key not set in environment.");
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: "API key not configured." }),
-      };
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            body: ''
+        };
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
-    if (action === 'generate_script') {
-      // Prompt to generate a short, encouraging script
-      const scriptPrompt = "Generate a single, short, encouraging, and inspirational sentence for a salesperson to use as a vocal exercise. Keep it under 20 words. Do not use quotes.";
-
-      const result = await model.generateContent(scriptPrompt);
-      const script = await result.response.text();
-
-      return {
-        statusCode: 200,
-        headers: corsHeaders,
-        body: JSON.stringify({ script }),
-      };
-
-    } else if (action === 'analyze_audio') {
-      // Validate inputs for audio analysis
-      if (!base64Audio || !prompt || !mimeType) {
+    if (event.httpMethod !== 'POST') {
         return {
-          statusCode: 400,
-          headers: corsHeaders,
-          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
+            statusCode: 405,
+            body: 'Method Not Allowed'
         };
-      }
+    }
 
-      // Prepare payload combining prompt text + audio data for the model
-      const payload = {
-        contents: [{
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Audio,
-              }
+    try {
+        const body = JSON.parse(event.body);
+        const { action, base64Audio, prompt, mimeType } = body;
+
+        const apiKey = process.env.FIRST_API_KEY;
+        if (!apiKey) {
+            console.error("API key is not set in environment variables.");
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ error: "API key is not configured." }),
+            };
+        }
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+        if (action === 'generate_script') {
+            const scriptPrompt = "Generate a single, short, encouraging, and inspirational sentence for a salesperson to use as a vocal exercise. Keep it under 20 words. Do not use quotes.";
+            const result = await model.generateContent(scriptPrompt);
+            const script = await result.response.text();
+            return {
+                statusCode: 200,
+                body: JSON.stringify({ script }),
+            };
+        } else if (action === 'analyze_audio') {
+            if (!base64Audio || !prompt || !mimeType) {
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
+                };
             }
-          ]
-        }]
-      };
 
-      const result = await model.generateContent(payload);
-      const responseText = await result.response.text();
+            // Step 2: Updated prompt for JSON output
+            const analysisPrompt = `
+You are a vocal coach AI. Analyze the following audio and provide feedback strictly as a valid JSON object with these keys:
+- summary: a short summary of the user's vocal tone.
+- advice: constructive advice for improvement.
+- score: a number between 1 and 10 rating the vocal quality.
 
-      try {
-        // The model response should be JSON with feedback summary, parse it
-        const feedback = JSON.parse(responseText.trim().replace(/^`+|`+$/g, ''));
+Respond ONLY with valid JSON. No extra commentary.
+
+Text to analyze: "${prompt}"
+`;
+
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: analysisPrompt },
+                        {
+                            inlineData: {
+                                mimeType: mimeType,
+                                data: base64Audio,
+                            }
+                        }
+                    ]
+                }]
+            };
+
+            const result = await model.generateContent(payload);
+            const responseText = await result.response.text();
+
+            // Step 3: Parse JSON safely
+            try {
+                const feedback = JSON.parse(responseText.trim().replace(/^`+|`+$/g, ''));
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify(feedback),
+                };
+            } catch (jsonError) {
+                console.error("Failed to parse AI model response:", jsonError);
+                return {
+                    statusCode: 500,
+                    body: JSON.stringify({ error: "Invalid response from the AI model." }),
+                };
+            }
+        } else {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: "Invalid action specified." }),
+            };
+        }
+
+    } catch (error) {
+        console.error("Function error:", error);
         return {
-          statusCode: 200,
-          headers: corsHeaders,
-          body: JSON.stringify(feedback),
+            statusCode: 500,
+            body: JSON.stringify({ error: "An unexpected error occurred." }),
         };
-      } catch (jsonError) {
-        console.error("Failed to parse AI model response:", jsonError);
-        return {
-          statusCode: 500,
-          headers: corsHeaders,
-          body: JSON.stringify({ error: "Invalid response from the AI model." }),
-        };
-      }
-
-    } else {
-      return {
-        statusCode: 400,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: "Invalid action specified." }),
-      };
     }
-
-  } catch (error) {
-    console.error("Function error:", error);
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: "An unexpected error occurred." }),
-    };
-  }
 };
