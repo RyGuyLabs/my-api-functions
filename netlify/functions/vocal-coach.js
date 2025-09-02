@@ -1,23 +1,22 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*', // You can restrict this to your domain if you want
+  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Max-Age': '86400', // Cache preflight response for 1 day
 };
 
 exports.handler = async (event) => {
-  // Handle CORS preflight OPTIONS request
+  // Handle preflight OPTIONS request
   if (event.httpMethod === 'OPTIONS') {
     return {
-      statusCode: 204, // No Content
+      statusCode: 204, // No Content for preflight
       headers: CORS_HEADERS,
       body: '',
     };
   }
 
-  // Only allow POST for actual logic
+  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -52,16 +51,65 @@ exports.handler = async (event) => {
         headers: CORS_HEADERS,
         body: JSON.stringify({ script }),
       };
-      function extractJson(text) {
-        const jsonMatch = text.match(/```json([\s\S]*?)```/i)
-          || text.match(/```([\s\S]*?)```/)
-          || [null, text];
-        return jsonMatch[1] ? jsonMatch[1].trim() : text.trim();
+    }
+
+    else if (action === 'analyze_audio') {
+      if (!base64Audio || !prompt || !mimeType) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
+        };
       }
 
+      const systemInstruction = `
+You are a professional vocal coach and sales communication expert. You are analyzing a voice recording of a user reading a short sales script. Rate the user's performance using the following 10 categories, each scored from 1 to 10. The total score must equal 100.
+
+1. Tone – Is the tone warm, friendly, and engaging?
+2. Persuasiveness – Does the speaker sound convincing and emotionally compelling?
+3. Confidence – Does the speaker sound assured and in control?
+4. Clarity – Is the speech clear, well-articulated, and easy to understand?
+5. Sales Orientation – Does the delivery feel tailored to sales and persuasion?
+6. Professional Polish – Does the speaker sound refined and poised?
+7. Pacing & Rhythm – Is the pace natural, and does the speech flow well?
+8. Energy & Enthusiasm – Is there liveliness and passion in the voice?
+9. Audience Engagement – Does the delivery likely hold the listener’s attention?
+10. Message Alignment – Does the tone match the message content?
+
+Return the result as a JSON object with:
+- Individual scores for each category
+- Total score
+- A written summary of strengths and areas for improvement
+- Specific observations about the user's voice
+
+Format the output as valid JSON.
+`;
+
+      const payload = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Audio,
+                },
+              },
+            ],
+          },
+        ],
+        systemInstruction: {
+          parts: [{ text: systemInstruction }],
+        },
+      };
+
+      const result = await model.generateContent(payload);
+      const responseText = (await result.response.text()).trim();
+
       try {
-        const jsonText = extractJson(responseText);
-        const feedback = JSON.parse(jsonText);
+        const feedback = JSON.parse(responseText.replace(/^`+|`+$/g, ''));
         return {
           statusCode: 200,
           headers: CORS_HEADERS,
@@ -70,24 +118,24 @@ exports.handler = async (event) => {
       } catch (jsonError) {
         console.error("Failed to parse AI model response:", jsonError);
         console.log("Raw model output:", responseText);
-
         return {
-          statusCode: 200,
+          statusCode: 500,
           headers: CORS_HEADERS,
           body: JSON.stringify({
-            summary: responseText,
-            error: "Response was not valid JSON, showing raw text instead."
+            error: "Invalid response from the AI model.",
+            raw: responseText,
           }),
         };
       }
-    } else {
+    }
+
+    else {
       return {
         statusCode: 400,
         headers: CORS_HEADERS,
         body: JSON.stringify({ error: "Invalid action specified." }),
       };
     }
-
   } catch (error) {
     console.error("Function error:", error);
     return {
