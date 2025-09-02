@@ -1,7 +1,6 @@
-functions]
+[functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  included_files = ["*.env"]
 
-[functions."vocal-coach"]
+[functions.vocal-coach]
   environment = ["FIRST_API_KEY"]
