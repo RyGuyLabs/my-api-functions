@@ -4,6 +4,8 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Credentials': 'true',
+  'Content-Type': 'application/json',
 };
 
 exports.handler = async (event) => {
@@ -16,18 +18,26 @@ exports.handler = async (event) => {
     };
   }
 
-  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
       headers: CORS_HEADERS,
-      body: 'Method Not Allowed',
+      body: JSON.stringify({ error: 'Method Not Allowed' }),
     };
   }
 
   try {
+    console.log("Received event.body:", event.body);
     const body = JSON.parse(event.body);
     const { action, base64Audio, prompt, mimeType } = body;
+
+    if (!action || typeof action !== 'string') {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "Missing or invalid action." }),
+      };
+    }
 
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) {
@@ -51,14 +61,19 @@ exports.handler = async (event) => {
         headers: CORS_HEADERS,
         body: JSON.stringify({ script }),
       };
-    }
-
-    else if (action === 'analyze_audio') {
-      if (!base64Audio || !prompt || !mimeType) {
+    } else if (action === 'analyze_audio') {
+      if (
+        typeof base64Audio !== 'string' ||
+        typeof prompt !== 'string' ||
+        typeof mimeType !== 'string' ||
+        !base64Audio.trim() ||
+        !prompt.trim() ||
+        !mimeType.trim()
+      ) {
         return {
           statusCode: 400,
           headers: CORS_HEADERS,
-          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
+          body: JSON.stringify({ error: "Missing or invalid fields for audio analysis." }),
         };
       }
 
@@ -127,9 +142,7 @@ Format the output as valid JSON.
           }),
         };
       }
-    }
-
-    else {
+    } else {
       return {
         statusCode: 400,
         headers: CORS_HEADERS,
