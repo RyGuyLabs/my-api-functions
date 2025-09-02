@@ -7,6 +7,7 @@ const CORS_HEADERS = {
 };
 
 exports.handler = async (event) => {
+  // Handle preflight OPTIONS request for CORS
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -15,11 +16,12 @@ exports.handler = async (event) => {
     };
   }
 
+  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: 'Method Not Allowed' })
+      body: JSON.stringify({ error: 'Method Not Allowed' }),
     };
   }
 
@@ -29,15 +31,16 @@ exports.handler = async (event) => {
 
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) {
+      console.error("API key is not set in environment variables.");
       return {
         statusCode: 500,
         headers: CORS_HEADERS,
-        body: JSON.stringify({ error: 'API key is not configured.' }),
+        body: JSON.stringify({ error: "API key is not configured." }),
       };
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
     if (action === 'generate_script') {
       const scriptPrompt = "Generate a single, short, encouraging, and inspirational sentence for a salesperson to use as a vocal exercise. Keep it under 20 words. Do not use quotes.";
@@ -50,13 +53,12 @@ exports.handler = async (event) => {
         body: JSON.stringify({ script }),
       };
     }
-
-    if (action === 'analyze_audio') {
+    else if (action === 'analyze_audio') {
       if (!base64Audio || !prompt || !mimeType) {
         return {
           statusCode: 400,
           headers: CORS_HEADERS,
-          body: JSON.stringify({ error: 'Missing required fields for audio analysis.' }),
+          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
         };
       }
 
@@ -78,6 +80,7 @@ exports.handler = async (event) => {
       const responseText = await result.response.text();
 
       try {
+        // Try to parse AI response as JSON feedback
         const feedback = JSON.parse(responseText.trim().replace(/^`+|`+$/g, ''));
         return {
           statusCode: 200,
@@ -93,13 +96,13 @@ exports.handler = async (event) => {
         };
       }
     }
-
-    return {
-      statusCode: 400,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ error: "Invalid action specified." }),
-    };
-
+    else {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "Invalid action specified." }),
+      };
+    }
   } catch (error) {
     console.error("Function error:", error);
     return {
