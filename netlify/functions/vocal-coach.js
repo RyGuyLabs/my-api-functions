@@ -1,18 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Define CORS headers to allow cross-origin requests
-const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-};
-
 exports.handler = async (event) => {
     // Handle the preflight OPTIONS request from the browser
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers: CORS_HEADERS,
             body: ''
         };
     }
@@ -21,7 +13,6 @@ exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: CORS_HEADERS,
             body: 'Method Not Allowed'
         };
     }
@@ -36,7 +27,6 @@ exports.handler = async (event) => {
             console.error("API key is not set in environment variables.");
             return {
                 statusCode: 500,
-                headers: CORS_HEADERS,
                 body: JSON.stringify({ error: "API key is not configured." }),
             };
         }
@@ -52,7 +42,6 @@ exports.handler = async (event) => {
             
             return {
                 statusCode: 200,
-                headers: CORS_HEADERS,
                 body: JSON.stringify({ script }),
             };
         } else if (action === 'analyze_audio') {
@@ -60,7 +49,6 @@ exports.handler = async (event) => {
             if (!base64Audio || !prompt || !mimeType) {
                 return {
                     statusCode: 400,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
                 };
             }
@@ -86,14 +74,12 @@ exports.handler = async (event) => {
                 const feedback = JSON.parse(responseText.trim().replace(/^`+|`+$/g, ''));
                 return {
                     statusCode: 200,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify(feedback),
                 };
             } catch (jsonError) {
                 console.error("Failed to parse LLM response as JSON:", jsonError);
                 return {
                     statusCode: 500,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify({ error: "Invalid response from the AI model." }),
                 };
             }
@@ -101,7 +87,6 @@ exports.handler = async (event) => {
         } else {
             return {
                 statusCode: 400,
-                headers: CORS_HEADERS,
                 body: JSON.stringify({ error: "Invalid action specified." }),
             };
         }
@@ -110,7 +95,6 @@ exports.handler = async (event) => {
         console.error("Function error:", error);
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,
             body: JSON.stringify({ error: "An unexpected error occurred." }),
         };
     }
