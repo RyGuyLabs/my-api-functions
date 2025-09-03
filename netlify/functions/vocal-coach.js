@@ -6,26 +6,13 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function response(statusCode, body) {
-  return {
-    statusCode,
-    headers: CORS_HEADERS,
-    body: JSON.stringify(body),
-  };
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
-    // Preflight request
-    return {
-      statusCode: 204,
-      headers: CORS_HEADERS,
-      body: '',
-    };
+    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
   }
 
   if (event.httpMethod !== 'POST') {
-    return response(405, { error: 'Method Not Allowed' });
+    return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
   }
 
   try {
@@ -34,11 +21,15 @@ exports.handler = async (event) => {
 
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) {
-      return response(500, { error: 'API key is not configured.' });
+      return {
+        statusCode: 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "API key is not configured." }),
+      };
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
     if (action === 'generate_script') {
       const prompts = [
@@ -59,12 +50,20 @@ exports.handler = async (event) => {
       const result = await model.generateContent(promptText);
       const script = await result.response.text();
 
-      return response(200, { script: script.trim() });
+      return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ script: script.trim() }),
+      };
     }
 
     if (action === 'analyze_audio') {
       if (!base64Audio || !prompt || !mimeType) {
-        return response(400, { error: 'Missing required fields for audio analysis.' });
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
+        };
       }
 
       const systemInstruction = `
@@ -88,8 +87,8 @@ Also include:
 
 Respond ONLY in raw JSON format (no markdown, no formatting). Example:
 {
-  "scores": { "Tone": 7, "Persuasiveness": 8, "Confidence": 7, "Clarity": 8, "Professional Polish": 7, "Pacing & Rhythm": 6, "Energy & Enthusiasm": 7, "Audience Engagement": 6, "Message Alignment": 8 },
-  "totalScore": 64,
+  "scores": { "Tone": 7, ... },
+  "totalScore": 75,
   "summary": {
     "strengths": "Clarity and tone were strong.",
     "areasForImprovement": "More energy and pacing control needed."
@@ -101,7 +100,7 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
       const payload = {
         contents: [
           {
-            role: 'user',
+            role: "user",
             parts: [
               { text: prompt },
               {
@@ -121,23 +120,44 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
       const result = await model.generateContent(payload);
       const responseText = (await result.response.text()).trim();
 
-      console.log("Raw AI response:", responseText);
-      
       try {
-        const feedback = JSON.parse(responseText.replace(/^`+|`+$/g, ''));
-        return response(200, feedback);
+        // Fix: Clean markdown code block wrappers before JSON.parse
+        const cleanedResponseText = responseText
+          .replace(/^```json\s*/, '')   // Remove starting ```json (if present)
+          .replace(/```$/, '')           // Remove trailing ```
+          .trim();
+
+        const feedback = JSON.parse(cleanedResponseText);
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify(feedback),
+        };
       } catch (jsonError) {
-        console.error('Failed to parse AI model response:', jsonError);
-        return response(500, {
-          error: 'Invalid response from the AI model.',
-          raw: responseText,
-        });
+        console.error("Failed to parse AI model response:", jsonError);
+        return {
+          statusCode: 500,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            error: "Invalid response from the AI model.",
+            raw: responseText,
+          }),
+        };
       }
     }
 
-    return response(400, { error: 'Invalid action specified.' });
+    return {
+      statusCode: 400,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: "Invalid action specified." }),
+    };
+
   } catch (error) {
-    console.error('Function error:', error);
-    return response(500, { error: 'An unexpected error occurred.' });
+    console.error("Function error:", error);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: "An unexpected error occurred." }),
+    };
   }
 };
