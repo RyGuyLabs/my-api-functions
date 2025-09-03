@@ -121,6 +121,8 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
       const result = await model.generateContent(payload);
       const responseText = (await result.response.text()).trim();
 
+      console.log("Raw AI response:", responseText);
+      
       try {
         const feedback = JSON.parse(responseText.replace(/^`+|`+$/g, ''));
         return response(200, feedback);
