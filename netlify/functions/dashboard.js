@@ -1,82 +1,78 @@
-const fetch = require('node-fetch');
+// dashboard.js
+// Netlify serverless function for handling feature generation with better prompts
 
-exports.handler = async function(event, context) {
-  // --- Handle CORS preflight (OPTIONS requests) ---
-  if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      },
-      body: "OK"
-    };
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*"); // CORS enabled
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const { feature, data } = JSON.parse(event.body || '{}');
+    const { feature, data } = req.body;
 
-    if (!feature) {
-      return {
-        statusCode: 400,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: 'No feature specified.' })
-      };
+    let prompt = "";
+
+    // Polished prompts per feature
+    if (feature === "lead_idea") {
+      prompt = `
+You are a professional sales development rep.
+Your job is to write a short, personalized **opening idea** for contacting a prospect.
+It should be warm, conversational, and reference the prospect by name, company, or their purpose of contact.
+Tone: professional but approachable, like a top 10% SDR.
+
+Lead Name: ${data.name || "N/A"}
+Company: ${data.company || "N/A"}
+Purpose of Contact: ${data.purpose || "N/A"}
+
+Write 2 polished variations (1–2 sentences each) that could be spoken naturally on a sales call.`;
     }
 
-    let result = '';
+    if (feature === "nurturing_note") {
+      prompt = `
+You are a sales professional writing a short **relationship-nurturing follow-up note**.
+It should be personalized, professional, and lightly value-driven — not generic or spammy.
+Mention the lead’s name, company, and purpose of contact. Keep it to 2–3 sentences max.
+Tone: thoughtful and consultative.
 
-    switch (feature) {
-      case 'lead_idea':
-        result = `💡 Powerful Lead Idea:\n\nHi ${data.name}, imagine unlocking real growth at ${data.company}. I’d love to connect about ${data.purpose}—let’s make this a success story worth remembering.`;
-        break;
+Lead Name: ${data.name || "N/A"}
+Company: ${data.company || "N/A"}
+Purpose of Contact: ${data.purpose || "N/A"}
 
-      case 'daily_inspiration':
-        result = "🔥 Daily Inspiration:\n\nSmall wins stack into big victories. Stay consistent, keep moving forward, and today will be a breakthrough moment.";
-        break;
-
-      case 'goals_summary':
-        const morning = data.morning || '';
-        const afternoon = data.afternoon || '';
-        const evening = data.evening || '';
-        result = `📊 Today's Goals Summary:\n\n🌅 Morning: ${morning}\n🌞 Afternoon: ${afternoon}\n🌙 Evening: ${evening}`;
-        break;
-
-      case 'nurturing_note':
-        result = `🤝 Nurturing Note:\n\nHi ${data.name}, I appreciate the energy at ${data.company}. Let’s continue exploring ${data.purpose}—this could become something remarkable together.`;
-        break;
-
-      case 'morning_briefing':
-        const leads = data.leads || [];
-        const goals = data.goals || {};
-        result = `📋 Morning Briefing:\n\nYou have ${leads.length} active leads today.\n\nGoals:\n- Morning: ${goals.morning?.text || ''}\n- Afternoon: ${goals.afternoon?.text || ''}\n- Evening: ${goals.evening?.text || ''}`;
-        break;
-
-      case 'goal_decomposition':
-        const bigGoal = data.goal || 'Unnamed Goal';
-        result = `🛠 Step-by-step plan to achieve "${bigGoal}":\n\n1️⃣ Break into smaller, focused tasks\n2️⃣ Assign deadlines with accountability\n3️⃣ Track progress daily\n4️⃣ Celebrate milestones to build momentum`;
-        break;
-
-      default:
-        return {
-          statusCode: 400,
-          headers: { "Access-Control-Allow-Origin": "*" },
-          body: JSON.stringify({ error: 'Unknown feature.' })
-        };
+Write 2 polished variations that feel human, build trust, and resonate with the prospect.`;
     }
 
-    return {
-      statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ text: result }),
-    };
-  } catch (err) {
-    console.error('Function error:', err);
-    return {
-      statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: 'Server error.', message: err.message }),
-    };
+    if (!prompt) {
+      return res.status(400).json({ error: "Invalid feature" });
+    }
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are an expert sales communication coach." },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 250,
+      temperature: 0.8,
+    });
+
+    const output = response.choices[0].message.content.trim();
+
+    res.status(200).json({ result: output });
+  } catch (error) {
+    console.error("Error in dashboard.js:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
   }
-};
+}
