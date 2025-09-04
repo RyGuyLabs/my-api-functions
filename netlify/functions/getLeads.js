@@ -1,35 +1,16 @@
-import fetch from "node-fetch";
+import fs from "fs";
+import path from "path";
 
 export async function handler(event, context) {
   try {
-    const API_KEY = process.env.FIRST_API_KEY;
-    if (!API_KEY) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "Missing FIRST_API_KEY in environment variables" }),
-      };
-    }
-
-    // Call First.io API
-    const response = await fetch("https://api.first.io/v1/leads", {
-      headers: {
-        "Authorization": `Bearer ${API_KEY}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      return {
-        statusCode: response.status,
-        body: JSON.stringify({ error: `API request failed: ${response.statusText}` }),
-      };
-    }
-
-    const data = await response.json();
+    // Path to leads.json
+    const filePath = path.join(process.cwd(), "functions", "leads.json");
+    const fileData = fs.readFileSync(filePath, "utf8");
+    const leads = JSON.parse(fileData);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ leads: data }),
+      body: JSON.stringify({ leads }),
     };
   } catch (error) {
     return {
