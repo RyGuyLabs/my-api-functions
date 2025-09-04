@@ -3,7 +3,6 @@ import fetch from "node-fetch";
 export async function handler(event, context) {
   const { feature, data } = JSON.parse(event.body || '{}');
 
-  // Ultra-polished, premium prompts for each feature
   const promptMap = {
     lead_idea: ({name, company, purpose}) =>
       `You are a top-tier sales strategist and copywriter. Create a highly polished, professional, and persuasive sales idea tailored specifically for ${name} at ${company}.
@@ -40,7 +39,8 @@ export async function handler(event, context) {
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type"
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
       },
       body: JSON.stringify({ text: json.text || "No response from API." })
     };
@@ -48,7 +48,10 @@ export async function handler(event, context) {
     console.error(e);
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
+      },
       body: JSON.stringify({ text: "Server error: " + e.message })
     };
   }
