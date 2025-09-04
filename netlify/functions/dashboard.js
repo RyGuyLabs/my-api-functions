@@ -1,73 +1,82 @@
-// Helper: Highlight text briefly
-function highlightText(element) {
-  if (!element) return;
-  element.style.transition = 'background-color 0.5s';
-  element.style.backgroundColor = '#facc15'; // yellow highlight
-  setTimeout(()=>{ element.style.backgroundColor = ''; }, 1200);
-}
+exports.handler = async function(event, context) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*", // replace '*' with your Squarespace domain in production
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS"
+  };
 
-// Generate Idea Button
-generateIdeaBtn.addEventListener('click', async ()=>{
-  const name = leadNameInput.value.trim();
-  const company = companyInput.value.trim();
-  const purpose = purposeOfContactInput.value.trim();
-  const status = leadStatusSelect?.value || 'Prospect'; // optional select for lead status
-
-  if (!name || !company || !purpose) {
-    showNotification("Please fill out Lead Name, Company, and Purpose of Contact to generate a tailored idea.", true);
-    return;
+  // Preflight request
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers };
   }
 
-  generateIdeaBtn.disabled = true;
-  btnText.classList.add('hidden');
-  loadingSpinner.classList.remove('hidden');
-  ideaOutput.classList.add('hidden');
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+  }
+
+  let requestData;
+  try {
+    requestData = JSON.parse(event.body);
+  } catch (err) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid JSON" }) };
+  }
+
+  const { feature, data } = requestData;
 
   try {
-    const text = await postToAPI('lead_idea', { name, company, purpose, status });
-    ideaText.textContent = text;
-    ideaOutput.classList.remove('hidden');
-    highlightText(ideaText);
-  } catch(e) {
-    console.error(e);
-    ideaText.textContent = `Error: ${e.message}`;
-    ideaOutput.classList.remove('hidden');
-  } finally {
-    generateIdeaBtn.disabled = false;
-    btnText.classList.remove('hidden');
-    loadingSpinner.classList.add('hidden');
+    let responseText = "";
+
+    switch (feature) {
+      case "lead_idea":
+        responseText = `💡 Idea for ${data.name} at ${data.company}: Start your message with a personalized reference to ${data.purpose}, highlight one benefit, and end with a question that encourages engagement.`;
+        break;
+
+      case "daily_inspiration":
+        const inspirations = [
+          "Focus on what you can control and take one bold action today!",
+          "Every small connection is a step toward your big goal — keep moving!",
+          "Your next call could be the one that changes everything. Stay sharp!",
+          "Consistency beats intensity — do something productive every hour."
+        ];
+        responseText = inspirations[Math.floor(Math.random() * inspirations.length)];
+        break;
+
+      case "goals_summary":
+        responseText = `Here's your goals overview:\n\n🌅 Morning: ${data.morning || "No goal set"}\n☀️ Afternoon: ${data.afternoon || "No goal set"}\n🌙 Evening: ${data.evening || "No goal set"}\n\nKeep pushing and make every segment count!`;
+        break;
+
+      case "nurturing_note":
+        responseText = `Hey ${data.name},\n\nI hope things are going well at ${data.company}! I wanted to touch base regarding ${data.purpose}. Let me know if there’s anything I can do to support or provide more info. Looking forward to your thoughts!`;
+        break;
+
+      case "morning_briefing":
+        const leadCount = data.leads.length || 0;
+        const morningGoal = data.goals.morning.text || "Not set";
+        const afternoonGoal = data.goals.afternoon.text || "Not set";
+        const eveningGoal = data.goals.evening.text || "Not set";
+        responseText = `🌄 Morning Briefing:\n\nYou have ${leadCount} active leads today.\n\nMorning Goal: ${morningGoal}\nAfternoon Goal: ${afternoonGoal}\nEvening Goal: ${eveningGoal}\n\nStay focused, prioritize top leads, and crush your targets!`;
+        break;
+
+      case "goal_decomposition":
+        const goal = data.goal;
+        responseText = `🔹 Decomposition of "${goal}":\n1️⃣ Define the desired outcome clearly.\n2️⃣ Break it into weekly or daily milestones.\n3️⃣ Identify the top 3 actions you can take immediately.\n4️⃣ Anticipate obstacles and plan counteractions.\n5️⃣ Review progress at the end of each day.\n\nConsistency + tracking = success!`;
+        break;
+
+      default:
+        responseText = "Feature not recognized. Please check your request.";
+    }
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ text: responseText })
+    };
+
+  } catch (err) {
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: err.message })
+    };
   }
-});
-
-// Generate Nurturing Note Button
-nurturingNoteBtn.addEventListener('click', async ()=>{
-  const name = leadNameInput.value.trim();
-  const company = companyInput.value.trim();
-  const purpose = purposeOfContactInput.value.trim();
-  const status = leadStatusSelect?.value || 'Prospect';
-
-  if (!name || !company || !purpose) {
-    showNotification("Please fill out Lead Name, Company, and Purpose to generate a message.", true);
-    return;
-  }
-
-  nurturingNoteBtn.disabled = true;
-  nurturingBtnText.classList.add('hidden');
-  nurturingLoadingSpinner.classList.remove('hidden');
-  nurturingNoteOutput.classList.add('hidden');
-
-  try {
-    const text = await postToAPI('nurturing_note', { name, company, purpose, status });
-    nurturingNoteText.textContent = text;
-    nurturingNoteOutput.classList.remove('hidden');
-    highlightText(nurturingNoteText);
-  } catch(e) {
-    console.error(e);
-    nurturingNoteText.textContent = `Error: ${e.message}`;
-    nurturingNoteOutput.classList.remove('hidden');
-  } finally {
-    nurturingNoteBtn.disabled = false;
-    nurturingBtnText.classList.remove('hidden');
-    nurturingLoadingSpinner.classList.add('hidden');
-  }
-});
+};
