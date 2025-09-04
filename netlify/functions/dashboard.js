@@ -1,33 +1,61 @@
-const fetch = require('node-fetch'); // if you call external APIs, optional
+const fetch = require('node-fetch');
 
 exports.handler = async function(event, context) {
   try {
-    if(event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
+    const { feature, data } = JSON.parse(event.body || '{}');
 
-    const { feature, data } = JSON.parse(event.body);
-
-    switch(feature){
-      case 'lead_idea':
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ text: `Try reaching out to ${data.name} at ${data.company} about ${data.purpose} with a friendly, value-first approach.` })
-        };
-      case 'daily_inspiration':
-        return { statusCode: 200, body: JSON.stringify({ text: "Start your day strong! Remember, every call brings you closer to success." }) };
-      case 'goals_summary':
-        const summary = `Morning: ${data.morning}\nAfternoon: ${data.afternoon}\nEvening: ${data.evening}`;
-        return { statusCode: 200, body: JSON.stringify({ text: summary }) };
-      case 'nurturing_note':
-        return { statusCode: 200, body: JSON.stringify({ text: `Hi ${data.name}, just checking in regarding ${data.purpose}. Let's touch base soon!` }) };
-      case 'morning_briefing':
-        return { statusCode: 200, body: JSON.stringify({ text: `Today’s leads: ${data.leads.length}. Goals: Morning(${data.goals.morning.text}), Afternoon(${data.goals.afternoon.text}), Evening(${data.goals.evening.text})` }) };
-      case 'goal_decomposition':
-        return { statusCode: 200, body: JSON.stringify({ text: `Break down your big goal: "${data.goal}" into smaller, actionable steps.` }) };
-      default:
-        return { statusCode: 400, body: JSON.stringify({ text: "Unknown feature" }) };
+    if (!feature) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'No feature specified.' }) };
     }
 
-  } catch(e){
-    return { statusCode: 500, body: JSON.stringify({ text: `Server Error: ${e.message}` }) };
+    // Simple mock AI responses for demo / testing
+    // Replace with OpenAI or other AI calls if desired
+    let result = '';
+
+    switch (feature) {
+      case 'lead_idea':
+        result = `Hi ${data.name}, try reaching out to ${data.company} about ${data.purpose}. Keep it friendly and solution-focused!`;
+        break;
+
+      case 'daily_inspiration':
+        result = "Your daily inspiration: Take small steps consistently and you'll crush your goals today!";
+        break;
+
+      case 'goals_summary':
+        const morning = data.morning || '';
+        const afternoon = data.afternoon || '';
+        const evening = data.evening || '';
+        result = `Today's Goals Summary:\nMorning: ${morning}\nAfternoon: ${afternoon}\nEvening: ${evening}`;
+        break;
+
+      case 'nurturing_note':
+        result = `Hi ${data.name}, just checking in! Hope all is going well at ${data.company}. Let's continue the conversation about ${data.purpose}.`;
+        break;
+
+      case 'morning_briefing':
+        const leads = data.leads || [];
+        const goals = data.goals || {};
+        result = `Morning Briefing:\nYou have ${leads.length} leads today.\nGoals:\nMorning: ${goals.morning?.text || ''}\nAfternoon: ${goals.afternoon?.text || ''}\nEvening: ${goals.evening?.text || ''}`;
+        break;
+
+      case 'goal_decomposition':
+        const bigGoal = data.goal || 'Unnamed Goal';
+        result = `Step-by-step plan to achieve "${bigGoal}":\n1. Break into smaller tasks\n2. Assign deadlines\n3. Track progress daily\n4. Celebrate milestones`;
+        break;
+
+      default:
+        return { statusCode: 400, body: JSON.stringify({ error: 'Unknown feature.' }) };
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ text: result }),
+    };
+  } catch (err) {
+    console.error('Function error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server error.', message: err.message }),
+    };
   }
-}
+};
