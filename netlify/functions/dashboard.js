@@ -1,27 +1,32 @@
 // dashboard.js
 // Netlify serverless function for handling feature generation with better prompts
 
-import OpenAI from "openai";
+const OpenAI = require("openai");
 
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.FIRST_API_KEY, // using your FIRST_API_KEY environment variable
 });
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*"); // CORS enabled
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+exports.handler = async function (event, context) {
+  // Handle preflight CORS
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+      body: "",
+    };
   }
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
   }
 
   try {
-    const { feature, data } = req.body;
+    const { feature, data } = JSON.parse(event.body || "{}");
 
     let prompt = "";
 
@@ -55,7 +60,7 @@ Write 2 polished variations that feel human, build trust, and resonate with the 
     }
 
     if (!prompt) {
-      return res.status(400).json({ error: "Invalid feature" });
+      return { statusCode: 400, body: JSON.stringify({ error: "Invalid feature" }) };
     }
 
     const response = await client.chat.completions.create({
@@ -70,9 +75,22 @@ Write 2 polished variations that feel human, build trust, and resonate with the 
 
     const output = response.choices[0].message.content.trim();
 
-    res.status(200).json({ result: output });
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*", // allow all origins
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ result: output }),
+    };
   } catch (error) {
     console.error("Error in dashboard.js:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error.message });
+    return {
+      statusCode: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+      },
+      body: JSON.stringify({ error: "Internal Server Error", details: error.message }),
+    };
   }
-}
+};
