@@ -1,82 +1,82 @@
+const fetch = require('node-fetch');
+
 exports.handler = async function(event, context) {
-  const headers = {
-    "Access-Control-Allow-Origin": "*", // replace '*' with your Squarespace domain in production
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS"
-  };
-
-  // Preflight request
+  // --- Handle CORS preflight (OPTIONS requests) ---
   if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers };
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
+      },
+      body: "OK"
+    };
   }
-
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
-  }
-
-  let requestData;
-  try {
-    requestData = JSON.parse(event.body);
-  } catch (err) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid JSON" }) };
-  }
-
-  const { feature, data } = requestData;
 
   try {
-    let responseText = "";
+    const { feature, data } = JSON.parse(event.body || '{}');
+
+    if (!feature) {
+      return {
+        statusCode: 400,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: 'No feature specified.' })
+      };
+    }
+
+    let result = '';
 
     switch (feature) {
-      case "lead_idea":
-        responseText = `💡 Idea for ${data.name} at ${data.company}: Start your message with a personalized reference to ${data.purpose}, highlight one benefit, and end with a question that encourages engagement.`;
+      case 'lead_idea':
+        result = `💡 Powerful Lead Idea:\n\nHi ${data.name}, imagine unlocking real growth at ${data.company}. I’d love to connect about ${data.purpose}—let’s make this a success story worth remembering.`;
         break;
 
-      case "daily_inspiration":
-        const inspirations = [
-          "Focus on what you can control and take one bold action today!",
-          "Every small connection is a step toward your big goal — keep moving!",
-          "Your next call could be the one that changes everything. Stay sharp!",
-          "Consistency beats intensity — do something productive every hour."
-        ];
-        responseText = inspirations[Math.floor(Math.random() * inspirations.length)];
+      case 'daily_inspiration':
+        result = "🔥 Daily Inspiration:\n\nSmall wins stack into big victories. Stay consistent, keep moving forward, and today will be a breakthrough moment.";
         break;
 
-      case "goals_summary":
-        responseText = `Here's your goals overview:\n\n🌅 Morning: ${data.morning || "No goal set"}\n☀️ Afternoon: ${data.afternoon || "No goal set"}\n🌙 Evening: ${data.evening || "No goal set"}\n\nKeep pushing and make every segment count!`;
+      case 'goals_summary':
+        const morning = data.morning || '';
+        const afternoon = data.afternoon || '';
+        const evening = data.evening || '';
+        result = `📊 Today's Goals Summary:\n\n🌅 Morning: ${morning}\n🌞 Afternoon: ${afternoon}\n🌙 Evening: ${evening}`;
         break;
 
-      case "nurturing_note":
-        responseText = `Hey ${data.name},\n\nI hope things are going well at ${data.company}! I wanted to touch base regarding ${data.purpose}. Let me know if there’s anything I can do to support or provide more info. Looking forward to your thoughts!`;
+      case 'nurturing_note':
+        result = `🤝 Nurturing Note:\n\nHi ${data.name}, I appreciate the energy at ${data.company}. Let’s continue exploring ${data.purpose}—this could become something remarkable together.`;
         break;
 
-      case "morning_briefing":
-        const leadCount = data.leads.length || 0;
-        const morningGoal = data.goals.morning.text || "Not set";
-        const afternoonGoal = data.goals.afternoon.text || "Not set";
-        const eveningGoal = data.goals.evening.text || "Not set";
-        responseText = `🌄 Morning Briefing:\n\nYou have ${leadCount} active leads today.\n\nMorning Goal: ${morningGoal}\nAfternoon Goal: ${afternoonGoal}\nEvening Goal: ${eveningGoal}\n\nStay focused, prioritize top leads, and crush your targets!`;
+      case 'morning_briefing':
+        const leads = data.leads || [];
+        const goals = data.goals || {};
+        result = `📋 Morning Briefing:\n\nYou have ${leads.length} active leads today.\n\nGoals:\n- Morning: ${goals.morning?.text || ''}\n- Afternoon: ${goals.afternoon?.text || ''}\n- Evening: ${goals.evening?.text || ''}`;
         break;
 
-      case "goal_decomposition":
-        const goal = data.goal;
-        responseText = `🔹 Decomposition of "${goal}":\n1️⃣ Define the desired outcome clearly.\n2️⃣ Break it into weekly or daily milestones.\n3️⃣ Identify the top 3 actions you can take immediately.\n4️⃣ Anticipate obstacles and plan counteractions.\n5️⃣ Review progress at the end of each day.\n\nConsistency + tracking = success!`;
+      case 'goal_decomposition':
+        const bigGoal = data.goal || 'Unnamed Goal';
+        result = `🛠 Step-by-step plan to achieve "${bigGoal}":\n\n1️⃣ Break into smaller, focused tasks\n2️⃣ Assign deadlines with accountability\n3️⃣ Track progress daily\n4️⃣ Celebrate milestones to build momentum`;
         break;
 
       default:
-        responseText = "Feature not recognized. Please check your request.";
+        return {
+          statusCode: 400,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({ error: 'Unknown feature.' })
+        };
     }
 
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({ text: responseText })
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ text: result }),
     };
-
   } catch (err) {
+    console.error('Function error:', err);
     return {
       statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message })
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: 'Server error.', message: err.message }),
     };
   }
 };
