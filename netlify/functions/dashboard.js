@@ -1,11 +1,9 @@
 // dashboard.js
-// Netlify serverless function for handling feature generation with better prompts
+// Netlify serverless function using Google Gemini instead of OpenAI
 
-const OpenAI = require("openai");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const client = new OpenAI({
-  apiKey: process.env.FIRST_API_KEY, // using your FIRST_API_KEY environment variable
-});
+const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
 
 exports.handler = async function (event, context) {
   // Handle preflight CORS
@@ -30,11 +28,10 @@ exports.handler = async function (event, context) {
 
     let prompt = "";
 
-    // Polished prompts per feature
     if (feature === "lead_idea") {
       prompt = `
 You are a professional sales development rep.
-Your job is to write a short, personalized **opening idea** for contacting a prospect.
+Write a short, personalized **opening idea** for contacting a prospect.
 It should be warm, conversational, and reference the prospect by name, company, or their purpose of contact.
 Tone: professional but approachable, like a top 10% SDR.
 
@@ -63,22 +60,16 @@ Write 2 polished variations that feel human, build trust, and resonate with the 
       return { statusCode: 400, body: JSON.stringify({ error: "Invalid feature" }) };
     }
 
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are an expert sales communication coach." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 250,
-      temperature: 0.8,
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const output = response.choices[0].message.content.trim();
+    const result = await model.generateContent(prompt);
+
+    const output = result.response.text();
 
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*", // allow all origins
+        "Access-Control-Allow-Origin": "*",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ result: output }),
