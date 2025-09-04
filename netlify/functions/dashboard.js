@@ -24,7 +24,7 @@ export async function handler(event, context) {
     const response = await fetch("https://api.gemini.com/v1/generate", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.FIRST_API_KEY || "YOUR_GEMINI_KEY_HERE"}`,
+        "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
