@@ -1,37 +1,20 @@
-export async function handler(event, context) {
+exports.handler = async function(event, context) {
   try {
-    const apiKey = process.env.FIRST_API_KEY;
-
-    if (!apiKey) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "Missing API key" }),
-      };
-    }
-
-    // Example: fetch leads from an external API
-    const response = await fetch("https://api.first.io/v1/leads", {
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    // Temporary in-memory leads for testing
+    const leads = [
+      { id: 1, date: "09/03/2025", name: "Ryan", company: "RyGuyLabs", purpose: "Demo", contactType: "Call", timeOfDay: "Morning", status: "Prospect" },
+      { id: 2, date: "09/03/2025", name: "Alex", company: "Acme Corp", purpose: "Follow-up", contactType: "Email", timeOfDay: "Afternoon", status: "Warm" }
+    ];
 
     return {
       statusCode: 200,
-      body: JSON.stringify(data),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(leads)
     };
-
-  } catch (error) {
+  } catch (err) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
+      body: JSON.stringify({ error: "Server error: " + err.message })
     };
   }
-}
+};
