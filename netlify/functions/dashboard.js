@@ -1,71 +1,78 @@
+import fetch from "node-fetch";
+
 export async function handler(event, context) {
-  // Enable CORS for your Squarespace domain
-  const headers = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json",
+  const { feature, data } = JSON.parse(event.body || "{}");
+
+  const promptMap = {
+    lead_idea: ({ name, company, purpose, formOfContact }) => `
+You are a master sales copywriter and strategist. Write a detailed, persuasive, and memorable outreach message for ${name} at ${company}.
+The message must be delivered in the style of ${formOfContact} (e.g., phone script, LinkedIn DM, cold email, etc.).
+The purpose of this outreach is: "${purpose}".
+
+Requirements:
+- Open with a strong, attention-grabbing first line tailored to ${name}.
+- Be clear, confident, and motivating while staying authentic.
+- Highlight value to ${company}, not just what’s being sold.
+- Include persuasive language that resonates emotionally and logically.
+- Conclude with a natural, compelling next step that encourages engagement.
+- Do NOT use placeholders like [insert product] — fill the message in fully as if it’s ready to send.
+
+Make it polished, powerful, and unique — something a top sales rep would be proud to deliver.
+`,
+
+    nurturing_note: ({ name, company, purpose, formOfContact }) => `
+You are a relationship-building expert. Write a thoughtful, kind, and professional nurturing note that could be sent to ${name} at ${company}.
+This note should follow up naturally on the outreach regarding "${purpose}" via ${formOfContact}.
+
+Requirements:
+- Keep the tone warm, personable, and genuine.
+- Express care or insight without being pushy.
+- Offer a touch of positivity, inspiration, or value that strengthens rapport.
+- End with an inviting, open-ended sentiment that leaves the door open for future conversation.
+
+Make it memorable and uplifting — the kind of note that makes ${name} feel respected, valued, and glad they heard from you.
+`
   };
 
-  // Handle preflight requests
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers };
-  }
-
-  if (event.httpMethod !== "POST") {
+  if (!promptMap[feature]) {
     return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ text: "Method Not Allowed" }),
+      statusCode: 400,
+      body: JSON.stringify({ text: "Unknown feature." })
     };
   }
 
   try {
-    const { feature, data } = JSON.parse(event.body);
+    const response = await fetch("https://api.gemini.com/v1/generate", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        prompt: promptMap[feature](data),
+        max_tokens: 600,
+        temperature: 0.9
+      })
+    });
 
-    const { name, company, purpose, formOfContact } = data;
-
-    if (!name || !company || !purpose) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ text: "Please provide name, company, and purpose." }),
-      };
-    }
-
-    let responseText = "";
-
-    if (feature === "lead_idea") {
-      responseText = `Idea for reaching ${name} at ${company} via ${formOfContact}:\n\n` +
-        `Create a thoughtful, personalized approach that speaks directly to their needs. ` +
-        `Reference ${purpose} specifically and explain how your solution can make a meaningful impact. ` +
-        `Engage with enthusiasm and clarity, providing value upfront, and end with a compelling call to action. ` +
-        `Ensure the message is professional, memorable, and leaves a strong impression that encourages a positive response.`;
-    } else if (feature === "nurturing_note") {
-      responseText = `Nurturing note for ${name} at ${company}:\n\n` +
-        `Consider sending a warm, considerate message that acknowledges their priorities and expresses genuine interest. ` +
-        `Include a thoughtful remark related to ${purpose}, offer helpful insight or resources if appropriate, ` +
-        `and close with an encouraging note that reinforces your availability and commitment to supporting their goals. ` +
-        `This note should feel personal, professional, and leave them feeling valued and understood.`;
-    } else {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ text: "Invalid feature type." }),
-      };
-    }
+    const json = await response.json().catch(() => ({}));
 
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({ text: responseText }),
+      headers: {
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type"
+      },
+      body: JSON.stringify({
+        text: json.text || "No response received from AI."
+      })
     };
-  } catch (error) {
-    console.error(error);
+  } catch (e) {
+    console.error("Server error:", e);
     return {
       statusCode: 500,
-      headers,
-      body: JSON.stringify({ text: `Server error: ${error.message}` }),
+      headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+      body: JSON.stringify({ text: "Server error: " + e.message })
     };
   }
 }
