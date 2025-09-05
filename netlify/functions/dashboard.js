@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 
+// This is the main handler for your Netlify function.
 export async function handler(event, context) {
   // Handle CORS preflight requests
   if (event.httpMethod === "OPTIONS") {
@@ -14,9 +15,10 @@ export async function handler(event, context) {
     };
   }
 
+  // Parse the incoming request body
   const { feature, data } = JSON.parse(event.body || "{}");
 
-  // Use a switch statement for cleaner handling of different features
+  // This object maps the 'feature' name from Squarespace to the correct AI prompt
   const promptMap = {
     // Corrected to match your Squarespace code's feature name
     lead_idea: ({ name, company, purpose, formOfContact }) => `
@@ -67,9 +69,8 @@ Afternoon Goals: ${afternoonGoals}
 Evening Goals: ${eveningGoals}
 `,
 
-    // New feature: Morning Briefing (This will be more complex)
+    // New feature: Morning Briefing (This is a placeholder, as the front-end code to send leads is missing)
     morning_briefing: ({ leads }) => {
-      // You can add logic here to generate a briefing based on the leads array
       if (!leads || leads.length === 0) {
         return "You have no leads to brief on today. Get out there and find some!";
       }
@@ -86,6 +87,7 @@ Your briefing should include:
     }
   };
 
+  // Check if the requested feature exists in our map
   if (!promptMap[feature]) {
     return {
       statusCode: 400,
@@ -97,22 +99,47 @@ Your briefing should include:
   try {
     const apiPrompt = promptMap[feature](data);
 
-    // Correct the API endpoint here
-    const response = await fetch("YOUR_CORRECT_GEMINI_API_ENDPOINT_HERE", {
-      method: "POST",
-      headers: {
-        // Ensure your API key is correctly and securely referenced
-        "Authorization": `Bearer ${process.env.GEMINI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        prompt: apiPrompt,
-        max_tokens: 600,
-        temperature: 0.9
-      })
-    });
+    // Call the Gemini API
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${process.env.FIRST_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: apiPrompt
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            maxOutputTokens: 600,
+            temperature: 0.9,
+          },
+        }),
+      }
+    );
 
-    const json = await response.json().catch(() => ({}));
+    // Check for a successful response from the Gemini API
+    if (!response.ok) {
+        const errorData = await response.text();
+        console.error("Gemini API Error:", errorData);
+        return {
+            statusCode: response.status,
+            headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+            body: JSON.stringify({ text: `Gemini API Error: ${errorData}` })
+        };
+    }
+
+    const json = await response.json();
+
+    // Extract the text from the API response
+    const aiText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     return {
       statusCode: 200,
@@ -121,7 +148,7 @@ Your briefing should include:
         "Access-Control-Allow-Headers": "Content-Type"
       },
       body: JSON.stringify({
-        text: json.text || "No response received from AI."
+        text: aiText || "No response received from AI."
       })
     };
   } catch (e) {
