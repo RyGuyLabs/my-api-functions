@@ -1,75 +1,56 @@
 import fetch from "node-fetch";
 
 export async function handler(event, context) {
-  // Handle CORS preflight
   if (event.httpMethod === "OPTIONS") {
     return {
-      statusCode: 204,
+      statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
       },
-      body: "",
+      body: ""
     };
   }
 
-  let body = {};
-  try {
-    body = JSON.parse(event.body || "{}");
-  } catch (err) {
-    return {
-      statusCode: 400,
-      headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: "Invalid JSON body." }),
-    };
-  }
+  const { feature, data } = JSON.parse(event.body || "{}");
 
-  const { feature, data } = body;
-
-  if (!feature || !data) {
-    return {
-      statusCode: 400,
-      headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: "Missing feature or data." }),
-    };
-  }
-
-  // Provide defaults to prevent undefined
-  const { name = "Prospect", company = "their company", purpose = "connect", formOfContact = "email" } = data;
-
-  // Map Squarespace feature names to prompt functions
   const promptMap = {
-    generateIdea: () => `
-You are a master sales strategist and copywriter. Write a detailed, persuasive, memorable, and motivating outreach message for ${name} at ${company}.
-The outreach method is ${formOfContact}.
-The goal of this contact is: "${purpose}".
+    generateIdea: ({ name, company, purpose, formOfContact }) => `
+You are a master sales copywriter and strategist. Write a detailed, persuasive, and memorable outreach message for ${name} at ${company}.
+The message must be delivered in the style of ${formOfContact} (e.g., phone script, LinkedIn DM, cold email, etc.).
+The purpose of this outreach is: "${purpose}".
 
 Requirements:
-- Start with a compelling, personalized hook that captures ${name}'s attention.
-- Communicate value clearly and confidently, focusing on benefits to ${company}.
-- Include emotionally resonant and logically persuasive language.
-- Conclude with a clear, natural next step encouraging engagement.
-- The message should be polished, professional, and ready to send as-is.
+- Open with a strong, attention-grabbing first line tailored to ${name}.
+- Be clear, confident, and motivating while staying authentic.
+- Highlight value to ${company}, not just what’s being sold.
+- Include persuasive language that resonates emotionally and logically.
+- Conclude with a natural, compelling next step that encourages engagement.
+- Do NOT use placeholders like [insert product] — fill the message in fully as if it’s ready to send.
+
+Make it polished, powerful, and unique — something a top sales rep would be proud to deliver.
 `,
 
-    generateNurturingNote: () => `
-You are a relationship-building expert. Write a warm, kind, and professional follow-up note for ${name} at ${company}.
-The note should reflect on "${purpose}" and be suitable for sending via ${formOfContact}.
+    generateNurturingNote: ({ name, company, purpose, formOfContact }) => `
+You are a relationship-building expert. Write a thoughtful, kind, and professional nurturing note that could be sent to ${name} at ${company}.
+This note should follow up naturally on the outreach regarding "${purpose}" via ${formOfContact}.
 
 Requirements:
-- Maintain a personable, genuine tone without being pushy.
-- Offer positivity, insight, or value that strengthens rapport.
-- Conclude with an inviting sentiment that encourages ongoing conversation.
-- Make it memorable, polished, and uplifting.
-`,
+- Keep the tone warm, personable, and genuine.
+- Express care or insight without being pushy.
+- Offer a touch of positivity, inspiration, or value that strengthens rapport.
+- End with an inviting, open-ended sentiment that leaves the door open for future conversation.
+
+Make it memorable and uplifting — the kind of note that makes ${name} feel respected, valued, and glad they heard from you.
+`
   };
 
   if (!promptMap[feature]) {
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: `Unknown feature: ${feature}` }),
+      body: JSON.stringify({ text: `Unknown feature: ${feature}` })
     };
   }
 
@@ -78,36 +59,33 @@ Requirements:
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        prompt: promptMap[feature](),
-        max_tokens: 700,
-        temperature: 0.9,
-      }),
+        prompt: promptMap[feature](data),
+        max_tokens: 600,
+        temperature: 0.9
+      })
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      return {
-        statusCode: response.status,
-        headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-        body: JSON.stringify({ text: `AI API error: ${text}` }),
-      };
-    }
+    const json = await response.json().catch(() => ({}));
 
-    const json = await response.json();
     return {
       statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: json.text || "No response from AI." }),
+      headers: {
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type"
+      },
+      body: JSON.stringify({
+        text: json.text || "No response received from AI."
+      })
     };
   } catch (e) {
     console.error("Server error:", e);
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: "Server error: " + e.message }),
+      body: JSON.stringify({ text: "Server error: " + e.message })
     };
   }
 }
