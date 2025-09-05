@@ -18,9 +18,8 @@ export async function handler(event, context) {
 
   // This object maps the 'feature' name from Squarespace to the correct AI prompt
   const promptMap = {
-    // Corrected to match your Squarespace code's feature name
-    lead_idea: ({ name, company, purpose, formOfContact }) => `
-You are a master sales copywriter and strategist. Write a detailed, persuasive, and memorable outreach message for ${name} at ${company}.
+  lead_idea: ({ userName, userCompany, name, company, purpose, formOfContact }) => `
+You are a master sales copywriter and strategist. You work for a company named ${userCompany} and your name is ${userName}. Write a detailed, persuasive, and memorable outreach message for ${name} at ${company}.
 The message must be delivered in the style of ${formOfContact} (e.g., phone script, LinkedIn DM, cold email, etc.).
 The purpose of this outreach is: "${purpose}".
 
@@ -34,10 +33,8 @@ Requirements:
 
 Make it polished, powerful, and unique — something a top sales rep would be proud to deliver.
 `,
-
-    // Corrected to match your Squarespace code's feature name
-    nurturing_note: ({ name, company, purpose, formOfContact }) => `
-You are a relationship-building expert. Write a thoughtful, kind, and professional nurturing note that could be sent to ${name} at ${company}.
+  nurturing_note: ({ userName, userCompany, name, company, purpose, formOfContact }) => `
+You are a relationship-building expert. You work for a company named ${userCompany} and your name is ${userName}. Write a thoughtful, kind, and professional nurturing note that could be sent to ${name} at ${company}.
 This note should follow up naturally on the outreach regarding "${purpose}" via ${formOfContact}.
 
 Requirements:
@@ -48,44 +45,33 @@ Requirements:
 
 Make it memorable and uplifting — the kind of note that makes ${name} feel respected, valued, and glad they heard from you.
 `,
-
-    // New feature: Daily Inspiration
-    daily_inspiration: () => `
-You are a motivational coach. Provide a short, actionable, and inspiring message to help a user start their workday with confidence. Your response MUST end with the exact phrase: "You Got This with RyGuyLabs".
+  daily_inspiration: () => `
+You are a motivational coach. Provide a short, actionable, and inspiring message to help a user start their workday with confidence. Your response MUST end with a line break followed by the exact phrase: "\nYou Got This with RyGuyLabs".
 `,
-
-    // New feature: Breakdown Goals
-    breakdown_goals: ({ bigGoal }) => `
-You are an expert project manager. Take this large goal: "${bigGoal}" and break it down into 5-7 clear, actionable, and measurable steps. The steps should be practical and easy to follow.
+  breakdown_goals: ({ bigGoal }) => `
+You are an expert project manager. Take this large goal: "${bigGoal}" and break it down into 5-7 clear, actionable, and measurable steps. The steps should be formatted as a numbered list.
 `,
-
-    // New feature: Summarize Goals
-    summarize_goals: ({ morningGoals, afternoonGoals, eveningGoals }) => `
+  summarize_goals: ({ morningGoals, afternoonGoals, eveningGoals }) => `
 You are a productivity expert. Summarize the following daily goals into a single, concise, and motivating paragraph.
 Morning Goals: ${morningGoals}
 Afternoon Goals: ${afternoonGoals}
 Evening Goals: ${eveningGoals}
 `,
-
-    // New feature: Morning Briefing (This is a placeholder, as the front-end code to send leads is missing)
-    morning_briefing: ({ leads }) => {
-      if (!leads || leads.length === 0) {
-        return "You have no leads to brief on today. Get out there and find some!";
-      }
-      const leadsText = leads
-        .map((lead) => `- ${lead.name} at ${lead.company} (Status: ${lead.status})`)
-        .join("\n");
-      return `
-You are a strategic business advisor. Provide a morning briefing based on the following leads:
+  morning_briefing: ({ leads, goals, industry, size, location }) => {
+    const leadsText = leads.length > 0 ? "Leads to review:\n" + leads.map(lead => `- ${lead.name} at ${lead.company} (Status: ${lead.status})`).join("\n") : "";
+    const goalsText = (goals.morning || goals.afternoon || goals.evening) ? "Today's goals:\n" + [goals.morning, goals.afternoon, goals.evening].filter(g => g).join('\n') : "";
+    
+    return `
+You are a strategic business advisor. Provide a concise, actionable morning briefing for today. Your briefing should be a maximum of three short paragraphs.
+First, provide a quick review of the user's leads and goals for the day, and also suggest 3 new leads to pursue. The suggested leads should be in the ${industry} industry, be a company of ${size} in ${location}.
+Second, highlight the most important action to take today to move a hot lead forward.
+Third, provide a closing summary and motivational push.
+Respond as a single, cohesive briefing.
 ${leadsText}
-
-Your briefing should include:
-- The lead(s) with the highest potential.
-- A recommended next step for each of the top leads.
-- A general motivational message for the day.
+${goalsText}
 `;
-    },
-  };
+  }
+};
 
   // Check if the requested feature exists in our map
   if (!promptMap[feature]) {
