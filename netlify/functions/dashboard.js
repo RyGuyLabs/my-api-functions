@@ -1,61 +1,34 @@
-export async function handler(event, context) {
+// dashboard.js
+exports.handler = async function(event, context) {
   try {
-    const { feature, data } = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || '{}');
+    const { feature, data } = body;
 
-    let responseText = '';
-
-    switch(feature) {
-      case 'lead_idea':
-        responseText = `💡 Lead Idea for ${data.name} at ${data.company}: "Focus on personalized outreach highlighting ${data.purpose}"`;
-        break;
-
-      case 'nurturing_note':
-        responseText = `✉️ Nurturing Note for ${data.name}: "Follow up on ${data.purpose}, showing continued value and interest."`;
-        break;
-
-      case 'daily_inspiration':
-        responseText = '🌞 Daily Inspiration: Every call you make is a step closer to your goal!';
-        break;
-
-      case 'summarize_goals':
-        if (!data.goals) {
-          responseText = 'No goals provided.';
-        } else {
-          const lines = data.goals.split('\n').filter(Boolean);
-          responseText = lines.map((g,i)=>`Goal ${i+1}: ${g}`).join('\n');
-        }
-        break;
-
-      case 'decompose_goal':
-        if (!data.goal) {
-          responseText = 'No goal provided.';
-        } else {
-          responseText = [
-            `Define the key outcome for: "${data.goal}"`,
-            'Break it into 3 actionable steps',
-            'Assign deadlines to each step',
-            'Review and adjust weekly'
-          ].join('\n');
-        }
-        break;
-
-      case 'morning_briefing':
-        responseText = '📝 Morning Briefing: Review your hot leads, follow up with warm leads, and plan your key actions for the day!';
-        break;
-
-      default:
-        responseText = 'Feature not recognized.';
+    if (!feature || !data) {
+      return { statusCode: 400, body: JSON.stringify({ text: 'Missing feature or data.' }) };
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ text: responseText })
-    };
+    // Dummy responses for each feature
+    switch(feature){
+      case 'lead_idea':
+        return { statusCode: 200, body: JSON.stringify({ text: `Idea generated for ${data.name} at ${data.company}: Follow up with a personalized email about ${data.purpose}.` }) };
+      case 'nurturing_note':
+        return { statusCode: 200, body: JSON.stringify({ text: `Nurturing note for ${data.name}: Keep them engaged with relevant content.` }) };
+      case 'daily_inspiration':
+        return { statusCode: 200, body: JSON.stringify({ text: `Daily inspiration: Remember, consistency beats intensity!` }) };
+      case 'goals_summary':
+        return { statusCode: 200, body: JSON.stringify({ text: `Summary for ${data.name}: Keep pushing toward your goals today.` }) };
+      case 'decompose_goal':
+        const bigGoal = data.bigGoal || 'your goal';
+        return { statusCode: 200, body: JSON.stringify({ text: `Steps to achieve "${bigGoal}": 1) Break into smaller tasks. 2) Prioritize actions. 3) Track daily progress.` }) };
+      case 'morning_briefing':
+        return { statusCode: 200, body: JSON.stringify({ text: `Morning briefing for ${data.name}: Follow up with hot leads and review today's tasks.` }) };
+      default:
+        return { statusCode: 400, body: JSON.stringify({ text: `Unknown feature: ${feature}` }) };
+    }
 
   } catch(err) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ text: `Error: ${err.message}` })
-    };
+    console.error(err);
+    return { statusCode: 500, body: JSON.stringify({ text: `Server error: ${err.message}` }) };
   }
-}
+};
