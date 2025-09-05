@@ -1,34 +1,66 @@
 // dashboard.js
 exports.handler = async function(event, context) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*", // Allow requests from any origin (or replace * with your domain)
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS"
+  };
+
+  // Handle preflight OPTIONS request
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers,
+      body: "OK",
+    };
+  }
+
   try {
     const body = JSON.parse(event.body || '{}');
     const { feature, data } = body;
 
     if (!feature || !data) {
-      return { statusCode: 400, body: JSON.stringify({ text: 'Missing feature or data.' }) };
+      return { statusCode: 400, headers, body: JSON.stringify({ text: 'Missing feature or data.' }) };
     }
 
-    // Dummy responses for each feature
+    let responseText = '';
+
     switch(feature){
       case 'lead_idea':
-        return { statusCode: 200, body: JSON.stringify({ text: `Idea generated for ${data.name} at ${data.company}: Follow up with a personalized email about ${data.purpose}.` }) };
+        responseText = `Idea generated for ${data.name} at ${data.company}: Follow up with a personalized email about ${data.purpose}.`;
+        break;
       case 'nurturing_note':
-        return { statusCode: 200, body: JSON.stringify({ text: `Nurturing note for ${data.name}: Keep them engaged with relevant content.` }) };
+        responseText = `Nurturing note for ${data.name}: Keep them engaged with relevant content.`;
+        break;
       case 'daily_inspiration':
-        return { statusCode: 200, body: JSON.stringify({ text: `Daily inspiration: Remember, consistency beats intensity!` }) };
+        responseText = `Daily inspiration: Remember, consistency beats intensity!`;
+        break;
       case 'goals_summary':
-        return { statusCode: 200, body: JSON.stringify({ text: `Summary for ${data.name}: Keep pushing toward your goals today.` }) };
+        responseText = `Summary for ${data.name}: Keep pushing toward your goals today.`;
+        break;
       case 'decompose_goal':
         const bigGoal = data.bigGoal || 'your goal';
-        return { statusCode: 200, body: JSON.stringify({ text: `Steps to achieve "${bigGoal}": 1) Break into smaller tasks. 2) Prioritize actions. 3) Track daily progress.` }) };
+        responseText = `Steps to achieve "${bigGoal}": 1) Break into smaller tasks. 2) Prioritize actions. 3) Track daily progress.`;
+        break;
       case 'morning_briefing':
-        return { statusCode: 200, body: JSON.stringify({ text: `Morning briefing for ${data.name}: Follow up with hot leads and review today's tasks.` }) };
+        responseText = `Morning briefing for ${data.name}: Follow up with hot leads and review today's tasks.`;
+        break;
       default:
-        return { statusCode: 400, body: JSON.stringify({ text: `Unknown feature: ${feature}` }) };
+        return { statusCode: 400, headers, body: JSON.stringify({ text: `Unknown feature: ${feature}` }) };
     }
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ text: responseText }),
+    };
 
   } catch(err) {
     console.error(err);
-    return { statusCode: 500, body: JSON.stringify({ text: `Server error: ${err.message}` }) };
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ text: `Server error: ${err.message}` }),
+    };
   }
 };
