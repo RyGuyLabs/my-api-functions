@@ -49,10 +49,10 @@ Make it memorable and uplifting — the kind of note that makes ${name} feel res
 You are a motivational coach. Provide a short, actionable, and inspiring message to help a user start their workday with confidence. Your response MUST end with a line break followed by the exact phrase: "\nYou Got This with RyGuyLabs".
 `,
   breakdown_goals: ({ bigGoal }) => `
-You are an expert project manager. Take this large goal: "${bigGoal}" and break it down into 5-7 clear, actionable, and measurable steps. The steps should be formatted as a numbered list.
+You are an expert project manager. Take this large goal: "${bigGoal}" and break it down into 5-7 clear, actionable, and measurable steps. The steps should be formatted as a numbered list. Your response MUST end with a line break followed by the exact phrase: "\nYou Got This with RyGuyLabs".
 `,
   summarize_goals: ({ morningGoals, afternoonGoals, eveningGoals }) => `
-You are a productivity expert. Summarize the following daily goals into a single, concise, and motivating paragraph.
+You are a productivity expert. Summarize the following daily goals into a single, concise, and motivating paragraph. Your response MUST end with a line break followed by the exact phrase: "\nYou Got This with RyGuyLabs".
 Morning Goals: ${morningGoals}
 Afternoon Goals: ${afternoonGoals}
 Evening Goals: ${eveningGoals}
