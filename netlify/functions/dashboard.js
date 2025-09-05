@@ -1,88 +1,61 @@
-import fetch from "node-fetch";
-
 export async function handler(event, context) {
-  // Handle preflight OPTIONS request for CORS
-  if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      }
-    };
-  }
-
-  // Parse incoming JSON safely
-  let body;
   try {
-    body = JSON.parse(event.body || '{}');
-  } catch (err) {
-    return {
-      statusCode: 400,
-      headers: {
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({ text: "Invalid JSON body." })
-    };
-  }
+    const { feature, data } = JSON.parse(event.body || '{}');
 
-  const { feature, data } = body;
+    let responseText = '';
 
-  // Map of prompts
-  const promptMap = {
-    lead_idea: ({ name, company, purpose }) =>
-      `You are a top-tier sales strategist and copywriter. Create a highly polished, professional, and persuasive sales idea tailored specifically for ${name} at ${company}. Make it memorable, confident, punchy, and motivational. Integrate the purpose of contact: "${purpose}" naturally into the messaging. Write in a personable and exemplary tone, as if this is a premium communication that will inspire trust and excitement.`,
+    switch(feature) {
+      case 'lead_idea':
+        responseText = `💡 Lead Idea for ${data.name} at ${data.company}: "Focus on personalized outreach highlighting ${data.purpose}"`;
+        break;
 
-    nurturing_note: ({ name, company, purpose }) =>
-      `You are an elite business communicator and copywriter. Write a highly professional, warm, and memorable nurturing note for ${name} at ${company}. Ensure it feels personally tailored, persuasive, confident, and inspiring. Integrate the purpose of contact: "${purpose}" naturally. The note should be motivational, resonate deeply, and leave a lasting positive impression.`
-  };
+      case 'nurturing_note':
+        responseText = `✉️ Nurturing Note for ${data.name}: "Follow up on ${data.purpose}, showing continued value and interest."`;
+        break;
 
-  if (!promptMap[feature]) {
-    return {
-      statusCode: 400,
-      headers: {
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({ text: "Unknown feature." })
-    };
-  }
+      case 'daily_inspiration':
+        responseText = '🌞 Daily Inspiration: Every call you make is a step closer to your goal!';
+        break;
 
-  try {
-    const response = await fetch("https://api.gemini.com/v1/generate", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        prompt: promptMap[feature](data),
-        max_tokens: 400,
-        temperature: 0.75
-      })
-    });
+      case 'summarize_goals':
+        if (!data.goals) {
+          responseText = 'No goals provided.';
+        } else {
+          const lines = data.goals.split('\n').filter(Boolean);
+          responseText = lines.map((g,i)=>`Goal ${i+1}: ${g}`).join('\n');
+        }
+        break;
 
-    const json = await response.json().catch(() => ({ text: "Error generating response." }));
+      case 'decompose_goal':
+        if (!data.goal) {
+          responseText = 'No goal provided.';
+        } else {
+          responseText = [
+            `Define the key outcome for: "${data.goal}"`,
+            'Break it into 3 actionable steps',
+            'Assign deadlines to each step',
+            'Review and adjust weekly'
+          ].join('\n');
+        }
+        break;
+
+      case 'morning_briefing':
+        responseText = '📝 Morning Briefing: Review your hot leads, follow up with warm leads, and plan your key actions for the day!';
+        break;
+
+      default:
+        responseText = 'Feature not recognized.';
+    }
 
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      },
-      body: JSON.stringify({ text: json.text || "No response from API." })
+      body: JSON.stringify({ text: responseText })
     };
-  } catch (e) {
-    console.error(e);
+
+  } catch(err) {
     return {
       statusCode: 500,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      },
-      body: JSON.stringify({ text: "Server error: " + e.message })
+      body: JSON.stringify({ text: `Error: ${err.message}` })
     };
   }
 }
