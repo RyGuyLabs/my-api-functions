@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-
 // This is the main handler for your Netlify function.
 export async function handler(event, context) {
   // Handle CORS preflight requests
@@ -9,9 +7,9 @@ export async function handler(event, context) {
       headers: {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
       },
-      body: ""
+      body: "",
     };
   }
 
@@ -74,7 +72,9 @@ Evening Goals: ${eveningGoals}
       if (!leads || leads.length === 0) {
         return "You have no leads to brief on today. Get out there and find some!";
       }
-      const leadsText = leads.map(lead => `- ${lead.name} at ${lead.company} (Status: ${lead.status})`).join("\n");
+      const leadsText = leads
+        .map((lead) => `- ${lead.name} at ${lead.company} (Status: ${lead.status})`)
+        .join("\n");
       return `
 You are a strategic business advisor. Provide a morning briefing based on the following leads:
 ${leadsText}
@@ -84,7 +84,7 @@ Your briefing should include:
 - A recommended next step for each of the top leads.
 - A general motivational message for the day.
 `;
-    }
+    },
   };
 
   // Check if the requested feature exists in our map
@@ -92,14 +92,14 @@ Your briefing should include:
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: `Unknown feature: ${feature}` })
+      body: JSON.stringify({ text: `Unknown feature: ${feature}` }),
     };
   }
 
   try {
     const apiPrompt = promptMap[feature](data);
 
-    // Call the Gemini API
+    // Use native `fetch` which is available in Netlify's Node.js environment
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${process.env.FIRST_API_KEY}`,
       {
@@ -112,10 +112,10 @@ Your briefing should include:
             {
               parts: [
                 {
-                  text: apiPrompt
-                }
-              ]
-            }
+                  text: apiPrompt,
+                },
+              ],
+            },
           ],
           generationConfig: {
             maxOutputTokens: 600,
@@ -127,13 +127,13 @@ Your briefing should include:
 
     // Check for a successful response from the Gemini API
     if (!response.ok) {
-        const errorData = await response.text();
-        console.error("Gemini API Error:", errorData);
-        return {
-            statusCode: response.status,
-            headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-            body: JSON.stringify({ text: `Gemini API Error: ${errorData}` })
-        };
+      const errorData = await response.text();
+      console.error("Gemini API Error:", errorData);
+      return {
+        statusCode: response.status,
+        headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        body: JSON.stringify({ text: `Gemini API Error: ${errorData}` }),
+      };
     }
 
     const json = await response.json();
@@ -145,18 +145,18 @@ Your briefing should include:
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-        "Access-Control-Allow-Headers": "Content-Type"
+        "Access-Control-Allow-Headers": "Content-Type",
       },
       body: JSON.stringify({
-        text: aiText || "No response received from AI."
-      })
+        text: aiText || "No response received from AI.",
+      }),
     };
   } catch (e) {
     console.error("Server error:", e);
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify({ text: "Server error: " + e.message })
+      body: JSON.stringify({ text: "Server error: " + e.message }),
     };
   }
 }
