@@ -1,66 +1,66 @@
-// dashboard.js
-exports.handler = async function(event, context) {
+// /netlify/functions/dashboard.js
+import { Handler } from "@netlify/functions";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY // Ensure your API key is set in Netlify
+});
+
+const handler = async (event, context) => {
+  // Enable CORS
   const headers = {
-    "Access-Control-Allow-Origin": "*", // Allow requests from any origin (or replace * with your domain)
+    "Access-Control-Allow-Origin": "*", // or restrict to your domain
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, OPTIONS"
   };
 
-  // Handle preflight OPTIONS request
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
       headers,
-      body: "OK",
+      body: "OK"
     };
   }
 
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { feature, data } = body;
+    const { feature, data } = JSON.parse(event.body || "{}");
+    const prompt = data?.prompt;
 
-    if (!feature || !data) {
-      return { statusCode: 400, headers, body: JSON.stringify({ text: 'Missing feature or data.' }) };
+    if (!feature || !prompt) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Missing feature or prompt" })
+      };
     }
 
-    let responseText = '';
+    // Call OpenAI
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are RyGuy, a professional, polished, punchy, motivating, memorable, and resonating sales strategist." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.8,
+      max_tokens: 600
+    });
 
-    switch(feature){
-      case 'lead_idea':
-        responseText = `Idea generated for ${data.name} at ${data.company}: Follow up with a personalized email about ${data.purpose}.`;
-        break;
-      case 'nurturing_note':
-        responseText = `Nurturing note for ${data.name}: Keep them engaged with relevant content.`;
-        break;
-      case 'daily_inspiration':
-        responseText = `Daily inspiration: Remember, consistency beats intensity!`;
-        break;
-      case 'goals_summary':
-        responseText = `Summary for ${data.name}: Keep pushing toward your goals today.`;
-        break;
-      case 'decompose_goal':
-        const bigGoal = data.bigGoal || 'your goal';
-        responseText = `Steps to achieve "${bigGoal}": 1) Break into smaller tasks. 2) Prioritize actions. 3) Track daily progress.`;
-        break;
-      case 'morning_briefing':
-        responseText = `Morning briefing for ${data.name}: Follow up with hot leads and review today's tasks.`;
-        break;
-      default:
-        return { statusCode: 400, headers, body: JSON.stringify({ text: `Unknown feature: ${feature}` }) };
-    }
+    const text = completion.choices?.[0]?.message?.content || "No response generated.";
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ text: responseText }),
+      body: JSON.stringify({ text })
     };
 
-  } catch(err) {
+  } catch (err) {
     console.error(err);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ text: `Server error: ${err.message}` }),
+      body: JSON.stringify({ error: err.message || "Server error" })
     };
   }
 };
+
+export { handler };
