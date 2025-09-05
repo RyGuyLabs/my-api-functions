@@ -53,7 +53,7 @@ Make it memorable and uplifting — the kind of note that makes ${name} feel res
 
     // New feature: Daily Inspiration
     daily_inspiration: () => `
-You are a motivational coach. Provide a short, actionable, and inspiring message to help a user start their workday with confidence.
+You are a motivational coach. Provide a short, actionable, and inspiring message to help a user start their workday with confidence. Your response MUST end with the exact phrase: "You Got This with RyGuyLabs".
 `,
 
     // New feature: Breakdown Goals
