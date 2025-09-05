@@ -1,66 +1,79 @@
-// /netlify/functions/dashboard.js
-import { Handler } from "@netlify/functions";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY // Ensure your API key is set in Netlify
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const handler = async (event, context) => {
+export async function handler(event, context) {
   // Enable CORS
   const headers = {
-    "Access-Control-Allow-Origin": "*", // or restrict to your domain
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS"
   };
 
+  // Handle preflight request
   if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers,
-      body: "OK"
-    };
+    return { statusCode: 200, headers, body: "" };
+  }
+
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+  }
+
+  let body;
+  try {
+    body = JSON.parse(event.body);
+  } catch (err) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid JSON" }) };
+  }
+
+  const { feature, data } = body;
+
+  if (!feature || !data) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing feature or data" }) };
+  }
+
+  const { name, company, purpose } = data;
+
+  if (!name || !company || !purpose) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing lead information" }) };
+  }
+
+  let prompt;
+  if (feature === "lead_idea") {
+    prompt = `
+You are a top-tier, highly professional sales strategist. Generate a THOROUGH, polished, motivating, and memorable sales idea for a prospect with the following details:
+Name: ${name}
+Company: ${company}
+Purpose: ${purpose}
+Output must be actionable, punchy, persuasive, and crafted to maximize engagement with the prospect. Make it detailed, professional, and inspiring.`;
+  } else if (feature === "nurturing_note") {
+    prompt = `
+You are a skilled, friendly sales professional. Generate a SHORT, polite, and engaging nurturing note for a prospect with the following details:
+Name: ${name}
+Company: ${company}
+Purpose: ${purpose}
+Keep it professional, warm, and easy to use in a message to the prospect.`;
+  } else {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: "Feature not recognized" }) };
   }
 
   try {
-    const { feature, data } = JSON.parse(event.body || "{}");
-    const prompt = data?.prompt;
-
-    if (!feature || !prompt) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: "Missing feature or prompt" })
-      };
-    }
-
-    // Call OpenAI
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are RyGuy, a professional, polished, punchy, motivating, memorable, and resonating sales strategist." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.8,
-      max_tokens: 600
+    const response = await client.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 400,
     });
 
-    const text = completion.choices?.[0]?.message?.content || "No response generated.";
+    const text = response.choices[0].message.content.trim();
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ text })
-    };
-
+    return { statusCode: 200, headers, body: JSON.stringify({ text }) };
   } catch (err) {
-    console.error(err);
+    console.error("OpenAI API error:", err);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: err.message || "Server error" })
+      body: JSON.stringify({ error: "Failed to generate response", details: err.message }),
     };
   }
-};
-
-export { handler };
+}
