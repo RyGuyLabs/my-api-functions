@@ -76,8 +76,12 @@ exports.handler = async (event, context) => {
         const groundingMetadata = candidate?.groundingMetadata;
         let newsText = 'Failed to retrieve real-time news.';
         let newsSource = 'N/A';
-
-        if (candidate && candidate.content?.parts?.[0]?.text) {
+        
+        // Add a more detailed check for the API response structure
+        if (!candidate || !candidate.content || !candidate.content.parts || !candidate.content.parts[0] || !candidate.content.parts[0].text) {
+            console.error('API response was successful but missing expected content parts.');
+            newsText = 'The Gemini API could not find or generate news for this company. Please try a different company or check the company name for accuracy.';
+        } else {
             newsText = candidate.content.parts[0].text;
             if (groundingMetadata && groundingMetadata.groundingAttributions) {
                 const source = groundingMetadata.groundingAttributions.find(attr => attr.web?.uri);
