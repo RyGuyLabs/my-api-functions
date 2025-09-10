@@ -29,7 +29,7 @@ exports.handler = async (event, context) => {
         const requestPayload = {
             model: "gemini-1.5-flash-latest",
             contents: [{
-                parts: [{ text: `Find the latest news and a brief summary for the company named '${company}'. Provide the summary and a citation link to the source.` }]
+                parts: [{ text: `Find the latest news for the company named '${company}'.` }]
             }],
             tools: [{ "google_search": {} }],
         };
