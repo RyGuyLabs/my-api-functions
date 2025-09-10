@@ -1,12 +1,12 @@
+// function.js
 exports.handler = async (event, context) => {
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    // Get the API key from the environment variable
+    // Get the API key from environment variables
     const apiKey = process.env.FIRST_API_KEY;
-
     if (!apiKey) {
         return {
             statusCode: 500,
@@ -25,28 +25,40 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Construct the payload for the Gemini API call
+        // Construct Gemini API payload
         const requestPayload = {
             model: "gemini-1.5-flash-latest",
-            contents: [{
-                parts: [{ text: `Find the latest news for the company named '${company}'.` }]
-            }],
-            tools: [{ "google_search": {} }],
+            temperature: 0,
+            contents: [
+                {
+                    parts: [
+                        {
+                            text: `Using Google Search, retrieve the latest verified news about '${company}' with source links and summarize in 3-5 sentences.`
+                        }
+                    ]
+                }
+            ],
+            tools: [
+                { google_search: { max_results: 3 } }
+            ],
         };
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent";
 
-        // Make the API call with exponential backoff using fetch
+        // Exponential backoff retry logic
         let responseJson;
         let retries = 0;
         const maxRetries = 5;
         let success = false;
-        
+
         while (retries < maxRetries) {
             try {
                 const apiResponse = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
                     body: JSON.stringify(requestPayload)
                 });
 
@@ -72,25 +84,28 @@ exports.handler = async (event, context) => {
             };
         }
 
+        // Extract candidate content
         const candidate = responseJson?.candidates?.[0];
-        const groundingMetadata = candidate?.groundingMetadata;
-        let newsText = 'Failed to retrieve real-time news.';
+        let newsText = 'The Gemini API could not find or generate news for this company. Please try again later.';
+        if (candidate?.content?.parts?.length) {
+            newsText = candidate.content.parts.map(p => p.text).join('\n\n');
+        }
+
+        // Extract first grounding/source link if available
         let newsSource = 'N/A';
-        
-        // Add a more detailed check for the API response structure
-        if (!candidate || !candidate.content || !candidate.content.parts || !candidate.content.parts[0] || !candidate.content.parts[0].text) {
-            console.error('API response was successful but missing expected content parts.');
-            newsText = 'The Gemini API could not find or generate news for this company. Please try a different company or check the company name for accuracy.';
-        } else {
-            newsText = candidate.content.parts[0].text;
-            if (groundingMetadata && groundingMetadata.groundingAttributions) {
-                const source = groundingMetadata.groundingAttributions.find(attr => attr.web?.uri);
-                if (source) {
-                    const uri = source.web.uri;
-                    const title = source.web.title || uri;
-                    newsSource = `<a href="${uri}" target="_blank" class="text-blue-400 hover:underline">[Source: ${title}]</a>`;
-                }
+        const groundingMetadata = candidate?.groundingMetadata;
+        if (groundingMetadata?.groundingAttributions?.length) {
+            const webAttr = groundingMetadata.groundingAttributions.find(a => a.web?.uri);
+            if (webAttr) {
+                const uri = webAttr.web.uri;
+                const title = webAttr.web.title || uri;
+                newsSource = `<a href="${uri}" target="_blank" class="text-blue-400 hover:underline">[Source: ${title}]</a>`;
             }
+        }
+
+        // Fallback message ensures function always returns something
+        if (!newsText || newsText.trim() === '') {
+            newsText = `No recent news could be found for '${company}'. Please check the company name or try again later.`;
         }
 
         return {
