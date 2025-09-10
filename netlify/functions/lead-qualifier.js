@@ -1,11 +1,9 @@
 // function.js
 exports.handler = async (event, context) => {
-    // Only allow POST requests
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    // Get the API key from environment variables
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) {
         return {
@@ -25,10 +23,9 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Construct Gemini API request payload
         const requestPayload = {
             model: "gemini-1.5-flash-latest",
-            temperature: 0, // reduce hallucinations
+            temperature: 0,
             contents: [
                 {
                     parts: [
@@ -40,14 +37,13 @@ exports.handler = async (event, context) => {
             ],
             tools: [
                 {
-                    "google_search": { "max_results": 3 } // get top 3 news results
+                    "google_search": { "max_results": 3 }
                 }
             ],
         };
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent`;
 
-        // Exponential backoff for retries
         let responseJson;
         let retries = 0;
         const maxRetries = 5;
@@ -57,7 +53,10 @@ exports.handler = async (event, context) => {
             try {
                 const apiResponse = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}` // <-- key in header now
+                    },
                     body: JSON.stringify(requestPayload)
                 });
 
@@ -83,14 +82,12 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Extract news content
         const candidate = responseJson?.candidates?.[0];
         let newsText = 'The Gemini API could not find or generate news for this company. Please try again later.';
         if (candidate?.content?.parts?.length) {
             newsText = candidate.content.parts.map(p => p.text).join('\n\n');
         }
 
-        // Extract first grounding/source link if available
         let newsSource = 'N/A';
         const groundingMetadata = candidate?.groundingMetadata;
         if (groundingMetadata?.groundingAttributions?.length) {
