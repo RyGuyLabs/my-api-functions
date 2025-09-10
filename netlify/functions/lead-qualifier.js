@@ -29,7 +29,7 @@ exports.handler = async (event, context) => {
         const insightsPayload = {
             model: "gemini-1.5-flash-latest",
             contents: [{
-                parts: [{ text: `Act as a professional sales analyst. Based on the following lead information, provide a qualification score (1-100), a concise summary of key findings, and a brief outreach message draft.\n\nCompany: ${company}\nBudget: ${budget}\nTimeline: ${timeline}\nSpecific Needs: ${specificNeeds}` }]
+                parts: [{ text: `Act as a professional sales analyst. Based on the following lead information, provide a qualification score (1-100), a concise summary of key findings, and a brief, professional, and punchy outreach message draft with a clear, motivational call to action.\n\nCompany: ${company}\nBudget: ${budget}\nTimeline: ${timeline}\nSpecific Needs: ${specificNeeds}` }]
             }],
         };
 
