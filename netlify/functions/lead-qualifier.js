@@ -1,66 +1,106 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeLanguageServiceClient } = require('@google/generative-language');
 
-exports.handler = async (event) => {
-    // This is the Netlify environment variable that holds your API key.
-    const API_KEY = process.env.FIRST_API_KEY;
-
-    if (!API_KEY) {
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: "API key is not configured." })
-        };
+exports.handler = async (event, context) => {
+    // Only allow POST requests
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    if (event.httpMethod !== 'POST') {
+    // Get the API key from the environment variable
+    const apiKey = process.env.FIRST_API_KEY;
+
+    if (!apiKey) {
         return {
-            statusCode: 405,
-            body: JSON.stringify({ error: "Method Not Allowed" })
+            statusCode: 500,
+            body: JSON.stringify({ error: 'API key not found in environment variables.' }),
         };
     }
 
     try {
         const body = JSON.parse(event.body);
-        const { prompt } = body;
+        const company = body.company;
 
-        // Create a new instance of the GoogleGenerativeAI client
-        const genAI = new GoogleGenerativeAI(API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-05-20" });
+        if (!company) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'Company name is required.' }),
+            };
+        }
 
-        const payload = {
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: "OBJECT",
-                    properties: {
-                        "category": { "type": "STRING", "description": "High, Medium, or Low" },
-                        "score": { "type": "NUMBER", "description": "Score from 0 to 100" },
-                        "report": { "type": "STRING", "description": "A detailed qualification report" },
-                        "news": { "type": "STRING", "description": "A summary of recent company news" },
-                        "outreachMessage": { "type": "STRING", "description": "A personalized outreach message draft" },
-                        "predictiveInsight": { "type": "STRING", "description": "A short predictive insight" },
-                        "discoveryQuestions": { "type": "STRING", "description": "A list of strategic discovery questions" }
-                    },
-                    "propertyOrdering": ["category", "score", "report", "news", "predictiveInsight", "outreachMessage", "discoveryQuestions"]
-                }
-            },
-            tools: [{ "google_search": {} }]
+        // Initialize Gemini client with the API key
+        const client = new GoogleGenerativeLanguageServiceClient({
+          authClient: {
+            // Note: In a secure serverless environment, you would use a service account.
+            // For this example, we use the API key directly.
+            // We'll simulate authentication for demonstration.
+            request: (opts) => {
+              if (opts.uri.includes('generateContent')) {
+                opts.uri += `?key=${apiKey}`;
+              }
+              return Promise.resolve(opts);
+            }
+          }
+        });
+
+        // Construct the payload for the Gemini API call
+        const request = {
+            model: "gemini-2.5-flash-preview-05-20",
+            contents: [{
+                parts: [{ text: `Find the latest news and a brief summary for the company named '${company}'. Provide the summary and a citation link to the source.` }]
+            }],
+            tools: [{ "google_search": {} }],
         };
 
-        const result = await model.generateContent(payload);
-        const text = result.response.text();
-        const jsonResponse = JSON.parse(text);
+        // Make the API call with exponential backoff
+        let response;
+        let retries = 0;
+        const maxRetries = 5;
+        while (retries < maxRetries) {
+            try {
+                const apiResponse = await client.generateContent(request);
+                response = apiResponse[0];
+                break;
+            } catch (e) {
+                console.error(`API call attempt ${retries + 1} failed:`, e);
+            }
+            retries++;
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+        }
+
+        if (!response) {
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ error: 'Failed to get a response from the Gemini API after multiple retries.' }),
+            };
+        }
+
+        const candidate = response?.candidates?.[0];
+        const groundingMetadata = candidate?.groundingMetadata;
+        let newsText = 'Failed to retrieve real-time news.';
+        let newsSource = 'N/A';
+
+        if (candidate && candidate.content?.parts?.[0]?.text) {
+            newsText = candidate.content.parts[0].text;
+            if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                const source = groundingMetadata.groundingAttributions.find(attr => attr.web?.uri);
+                if (source) {
+                    const uri = source.web.uri;
+                    const title = source.web.title || uri;
+                    newsSource = `<a href="${uri}" target="_blank" class="text-blue-400 hover:underline">[Source: ${title}]</a>`;
+                }
+            }
+        }
 
         return {
             statusCode: 200,
-            body: JSON.stringify(jsonResponse)
+            body: JSON.stringify({ newsText, newsSource }),
         };
 
-    } catch (error) {
-        console.error("API call error:", error);
+    } catch (e) {
+        console.error("Error processing request:", e);
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "Failed to generate content." })
+            body: JSON.stringify({ error: `Server error: ${e.message}` }),
         };
     }
 };
