@@ -1,10 +1,12 @@
-// function.js
 exports.handler = async (event, context) => {
+    // Only allow POST requests
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
+    // Get the API key from the environment variable
     const apiKey = process.env.FIRST_API_KEY;
+
     if (!apiKey) {
         return {
             statusCode: 500,
@@ -23,40 +25,28 @@ exports.handler = async (event, context) => {
             };
         }
 
+        // Construct the payload for the Gemini API call
         const requestPayload = {
             model: "gemini-1.5-flash-latest",
-            temperature: 0,
-            contents: [
-                {
-                    parts: [
-                        {
-                            text: `Using the Google Search tool, retrieve the latest verified news (with source links) about the company '${company}'. Summarize in 3-5 sentences.`
-                        }
-                    ]
-                }
-            ],
-            tools: [
-                {
-                    "google_search": { "max_results": 3 }
-                }
-            ],
+            contents: [{
+                parts: [{ text: `Find the latest news for the company named '${company}'.` }]
+            }],
+            tools: [{ "google_search": {} }],
         };
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
+        // Make the API call with exponential backoff using fetch
         let responseJson;
         let retries = 0;
         const maxRetries = 5;
         let success = false;
-
+        
         while (retries < maxRetries) {
             try {
                 const apiResponse = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}` // <-- key in header now
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestPayload)
                 });
 
@@ -83,19 +73,23 @@ exports.handler = async (event, context) => {
         }
 
         const candidate = responseJson?.candidates?.[0];
-        let newsText = 'The Gemini API could not find or generate news for this company. Please try again later.';
-        if (candidate?.content?.parts?.length) {
-            newsText = candidate.content.parts.map(p => p.text).join('\n\n');
-        }
-
-        let newsSource = 'N/A';
         const groundingMetadata = candidate?.groundingMetadata;
-        if (groundingMetadata?.groundingAttributions?.length) {
-            const webAttr = groundingMetadata.groundingAttributions.find(a => a.web?.uri);
-            if (webAttr) {
-                const uri = webAttr.web.uri;
-                const title = webAttr.web.title || uri;
-                newsSource = `<a href="${uri}" target="_blank" class="text-blue-400 hover:underline">[Source: ${title}]</a>`;
+        let newsText = 'Failed to retrieve real-time news.';
+        let newsSource = 'N/A';
+        
+        // Add a more detailed check for the API response structure
+        if (!candidate || !candidate.content || !candidate.content.parts || !candidate.content.parts[0] || !candidate.content.parts[0].text) {
+            console.error('API response was successful but missing expected content parts.');
+            newsText = 'The Gemini API could not find or generate news for this company. Please try a different company or check the company name for accuracy.';
+        } else {
+            newsText = candidate.content.parts[0].text;
+            if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                const source = groundingMetadata.groundingAttributions.find(attr => attr.web?.uri);
+                if (source) {
+                    const uri = source.web.uri;
+                    const title = source.web.title || uri;
+                    newsSource = `<a href="${uri}" target="_blank" class="text-blue-400 hover:underline">[Source: ${title}]</a>`;
+                }
             }
         }
 
