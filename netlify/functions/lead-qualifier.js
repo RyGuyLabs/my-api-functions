@@ -1,5 +1,3 @@
-const { GoogleGenerativeLanguageServiceClient } = require('@google/generative-language');
-
 exports.handler = async (event, context) => {
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
@@ -27,23 +25,8 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Initialize Gemini client with the API key
-        const client = new GoogleGenerativeLanguageServiceClient({
-          authClient: {
-            // Note: In a secure serverless environment, you would use a service account.
-            // For this example, we use the API key directly.
-            // We'll simulate authentication for demonstration.
-            request: (opts) => {
-              if (opts.uri.includes('generateContent')) {
-                opts.uri += `?key=${apiKey}`;
-              }
-              return Promise.resolve(opts);
-            }
-          }
-        });
-
         // Construct the payload for the Gemini API call
-        const request = {
+        const requestPayload = {
             model: "gemini-2.5-flash-preview-05-20",
             contents: [{
                 parts: [{ text: `Find the latest news and a brief summary for the company named '${company}'. Provide the summary and a citation link to the source.` }]
@@ -51,15 +34,30 @@ exports.handler = async (event, context) => {
             tools: [{ "google_search": {} }],
         };
 
-        // Make the API call with exponential backoff
-        let response;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+        // Make the API call with exponential backoff using fetch
+        let responseJson;
         let retries = 0;
         const maxRetries = 5;
+        let success = false;
+        
         while (retries < maxRetries) {
             try {
-                const apiResponse = await client.generateContent(request);
-                response = apiResponse[0];
-                break;
+                const apiResponse = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestPayload)
+                });
+
+                if (apiResponse.ok) {
+                    responseJson = await apiResponse.json();
+                    success = true;
+                    break;
+                } else {
+                    const errorText = await apiResponse.text();
+                    console.error(`API call attempt ${retries + 1} failed with status ${apiResponse.status}: ${errorText}`);
+                }
             } catch (e) {
                 console.error(`API call attempt ${retries + 1} failed:`, e);
             }
@@ -67,14 +65,14 @@ exports.handler = async (event, context) => {
             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
         }
 
-        if (!response) {
+        if (!success || !responseJson) {
             return {
                 statusCode: 500,
-                body: JSON.stringify({ error: 'Failed to get a response from the Gemini API after multiple retries.' }),
+                body: JSON.stringify({ error: 'Failed to get a successful response from the Gemini API after multiple retries.' }),
             };
         }
 
-        const candidate = response?.candidates?.[0];
+        const candidate = responseJson?.candidates?.[0];
         const groundingMetadata = candidate?.groundingMetadata;
         let newsText = 'Failed to retrieve real-time news.';
         let newsSource = 'N/A';
