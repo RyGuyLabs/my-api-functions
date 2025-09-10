@@ -27,14 +27,14 @@ exports.handler = async (event, context) => {
 
         // Construct the payload for the Gemini API call
         const requestPayload = {
-            model: "gemini-2.5-flash-preview-05-20",
+            model: "gemini-1.5-flash-latest",
             contents: [{
                 parts: [{ text: `Find the latest news and a brief summary for the company named '${company}'. Provide the summary and a citation link to the source.` }]
             }],
             tools: [{ "google_search": {} }],
         };
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
         // Make the API call with exponential backoff using fetch
         let responseJson;
