@@ -5,6 +5,10 @@ exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
+            headers: {
+                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ error: 'Method Not Allowed' }),
         };
     }
@@ -20,6 +24,10 @@ exports.handler = async (event) => {
     if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY) {
         return {
             statusCode: 500,
+            headers: {
+                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ error: 'Server misconfiguration: API keys are not set.' }),
         };
     }
@@ -78,14 +86,24 @@ If news is not found, set "news" to null.`;
 
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(qualificationData),
         };
 
     } catch (error) {
-        console.error('Error qualifying lead:', error);
+        // Log the full error to Netlify's backend for detailed debugging
+        console.error('Error qualifying lead:', error.message, error.stack);
+        
+        // Return a more descriptive error to the frontend
         return {
             statusCode: 500,
+            headers: {
+                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ error: 'Failed to qualify lead.', details: error.message }),
         };
     }
