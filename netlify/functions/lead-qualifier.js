@@ -66,6 +66,7 @@ Respond fully under each heading.
     let reportText = "No report generated.";
 
     if (geminiData?.candidates?.length > 0) {
+      // Access the parts array correctly
       reportText = geminiData.candidates
         .map(c => c.content?.parts?.map(p => p.text).join("\n"))
         .join("\n") || reportText;
