@@ -43,28 +43,31 @@ Respond fully under each heading.
 `;
 
     const geminiResponse = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent", // Using the recommended stable model
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          x-goog-api-key: ${process.env.FIRST_API_KEY}
+          "x-goog-api-key": process.env.FIRST_API_KEY,
         },
         body: JSON.stringify({
-          prompt: geminiPrompt,
+          contents: [{
+            role: "user",
+            parts: [{ text: geminiPrompt }],
+          }],
           maxOutputTokens: 1500,
           temperature: 0.5,
         }),
       }
     );
-
+    
+    // ... rest of your code is fine as is
     const geminiData = await geminiResponse.json();
     let reportText = "No report generated.";
 
     if (geminiData?.candidates?.length > 0) {
-      // Flatten content array
       reportText = geminiData.candidates
-        .map(c => c.content?.map(p => p.text).join("\n"))
+        .map(c => c.content?.parts?.map(p => p.text).join("\n"))
         .join("\n") || reportText;
     }
 
@@ -111,7 +114,7 @@ Respond fully under each heading.
         news: newsSnippet,
       }),
     };
-
+    
   } catch (error) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }
