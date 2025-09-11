@@ -1,130 +1,143 @@
-// File: netlify/functions/lead-qualifier.js
-import fetch from 'node-fetch'; // Only needed if Node <18, optional in Node 18+
-import { google } from '@googleapis/generative'; // Assuming you are using Google Gemini
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-export async function handler(event, context) {
-    try {
-        if (event.httpMethod !== 'POST') {
-            return {
-                statusCode: 405,
-                body: JSON.stringify({ error: 'Method Not Allowed' }),
-            };
-        }
+exports.handler = async (event) => {
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    };
 
-        let body;
-        try {
-            body = JSON.parse(event.body);
-        } catch (err) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ error: 'Invalid JSON payload' }),
-            };
-        }
-
-        const { leadData, criteria, includeDemographics } = body;
-
-        if (!leadData || Object.keys(leadData).length === 0) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ error: 'No lead data provided' }),
-            };
-        }
-
-        // ----------------------
-        // Step 1: Generate qualification report
-        // ----------------------
-        let report = '';
-        let score = 0;
-        let category = 'Unqualified';
-
-        try {
-            // Example logic for scoring; you can adjust to your C.A.L.L. criteria
-            score = 50; // default mid score
-            if (leadData['lead-budget'] && parseInt(leadData['lead-budget'].replace(/\D/g, '')) > 50000) {
-                score += 30;
-            }
-            if (leadData['lead-timeline'] && leadData['lead-timeline'].toLowerCase().includes('immediate')) {
-                score += 20;
-            }
-
-            if (score >= 80) category = 'Hot';
-            else if (score >= 50) category = 'Warm';
-            else category = 'Cold';
-
-            report = `Lead scored ${score}/100. Category: ${category}.`;
-        } catch (err) {
-            console.error('Error generating report:', err);
-            report = 'Unable to generate report due to internal error.';
-        }
-
-        // ----------------------
-        // Step 2: Fetch news snippet (Safe fetch)
-        // ----------------------
-        let newsSnippet = '';
-        if (leadData['lead-company']) {
-            const newsUrl = `https://api.example.com/news?company=${encodeURIComponent(leadData['lead-company'])}`;
-            try {
-                const newsResponse = await fetch(newsUrl);
-                if (!newsResponse.ok) {
-                    console.warn(`News fetch failed with status ${newsResponse.status}`);
-                    newsSnippet = 'Unable to fetch news.';
-                } else {
-                    newsSnippet = await newsResponse.text();
-                }
-            } catch (err) {
-                console.error('Error fetching news snippet:', err);
-                newsSnippet = 'Unable to fetch news at this time.';
-            }
-        }
-
-        // ----------------------
-        // Step 3: Generate predictive insights, outreach, and discovery questions
-        // ----------------------
-        let predictiveInsight = '';
-        let outreachMessage = '';
-        let discoveryQuestions = '';
-
-        try {
-            // Placeholder logic for AI generation (replace with real Gemini API call)
-            predictiveInsight = `Based on the lead data, ${leadData['lead-name']} may require additional CRM support.`;
-            outreachMessage = `Hi ${leadData['lead-name']},\n\nI noticed your company ${leadData['lead-company']} is looking for CRM solutions. I’d love to help streamline your workflow.`;
-            discoveryQuestions = '- What is your current CRM system?\n- What pain points are you facing?\n- What is your timeline for implementation?';
-        } catch (err) {
-            console.error('Error generating AI content:', err);
-        }
-
-        // ----------------------
-        // Step 4: Build response
-        // ----------------------
-        const responseBody = {
-            report,
-            score,
-            category,
-            news: newsSnippet,
-            predictiveInsight,
-            outreachMessage,
-            discoveryQuestions,
+    // Handle the preflight request for CORS
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: '',
         };
+    }
+    
+    // This function will only process POST requests.
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Method Not Allowed' }),
+        };
+    }
+
+    // Parse the request body
+    const { leadData, criteria, includeDemographics } = JSON.parse(event.body);
+
+    // Retrieve API keys from Netlify environment variables
+    const GEMINI_API_KEY = process.env.FIRST_API_KEY;
+    const GOOGLE_SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+    const GOOGLE_SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
+
+    // Check if API keys are set
+    if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY || !GOOGLE_SEARCH_ENGINE_ID) {
+        return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Server misconfiguration: API keys are not set.' }),
+        };
+    }
+
+    try {
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash-preview-05-20',
+            tools: [{ "google_search": {} }]
+        });
+
+        // 1. Fetch real-time news using Google Custom Search
+        let newsSnippet = 'No news found.';
+        const companyName = leadData['lead-company'];
+        
+        try {
+            const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(companyName + ' news')}`;
+            const searchResponse = await fetch(searchUrl);
+            const searchData = await searchResponse.json();
+
+            if (searchData.items && searchData.items.length > 0) {
+                // Take the snippet from the first search result
+                newsSnippet = searchData.items[0].snippet;
+            }
+        } catch (e) {
+            console.error('Error fetching news from Google Search:', e.message);
+            // Fallback to "No news found." is handled by the initial variable declaration.
+        }
+
+        const userQuery = `
+            Analyze the following lead data against my custom criteria.
+
+            Lead Data:
+            ${JSON.stringify(leadData, null, 2)}
+
+            My Custom Criteria:
+            ${JSON.stringify(criteria, null, 2)}
+
+            Latest News Snippet:
+            ${newsSnippet}
+
+            Include Demographic Insights: ${includeDemographics}
+        `;
+
+        // Log the user query for debugging
+        console.log('User Query:', userQuery);
+
+        let qualificationData;
+        try {
+            const result = await model.generateContent({
+                contents: [{ parts: [{ text: userQuery }] }],
+                // Use generationConfig to enforce a structured JSON response
+                generationConfig: {
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                        type: 'OBJECT',
+                        properties: {
+                            score: { type: 'NUMBER' },
+                            category: { type: 'STRING' },
+                            report: { type: 'STRING' },
+                            news: { type: ['STRING', 'NULL'] },
+                            predictiveInsight: { type: ['STRING', 'NULL'] },
+                            outreachMessage: { type: 'STRING' },
+                            discoveryQuestions: { type: 'STRING' }
+                        },
+                        required: ['score', 'category', 'report', 'outreachMessage', 'discoveryQuestions']
+                    }
+                }
+            });
+            // Use .json() to parse the structured response directly
+            qualificationData = await result.response.json();
+        } catch (e) {
+            // Log the detailed error for debugging on Netlify's side
+            console.error('Gemini API call or JSON parsing failed:', e.message, e.stack);
+            // Return a specific error message to the frontend
+            return {
+                statusCode: 500,
+                headers: corsHeaders,
+                body: JSON.stringify({ error: 'Failed to qualify lead. Reason: Gemini API call or JSON parsing error.', details: e.message }),
+            };
+        }
+        
+        // Log the structured AI response for debugging
+        console.log('Structured AI Response:', qualificationData);
 
         return {
             statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*', // Required for CORS
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type',
-            },
-            body: JSON.stringify(responseBody),
+            headers: corsHeaders,
+            body: JSON.stringify(qualificationData),
         };
-    } catch (err) {
-        console.error('Unexpected server error:', err);
+
+    } catch (error) {
+        // Log the full error to Netlify's backend for detailed debugging
+        console.error('Error qualifying lead:', error.message, error.stack);
+        
+        // Return a more descriptive error to the frontend
         return {
             statusCode: 500,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-            },
-            body: JSON.stringify({ error: 'Unexpected server error' }),
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Failed to qualify lead.', details: error.message }),
         };
     }
-}
+};
