@@ -1,105 +1,102 @@
-import fetch from "node-fetch";
+// netlify/functions/lead-qualifier.js
+import fetch from 'node-fetch';
 
-const GEMINI_API_KEY = process.env.FIRST_API_KEY;
-const GOOGLE_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
-const GOOGLE_SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
+export const handler = async (event) => {
+  // --- CORS Headers ---
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
+  };
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
-};
-
-export async function handler(event, context) {
+  // Handle preflight OPTIONS
   if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: CORS_HEADERS,
-      body: "OK"
-    };
+    return { statusCode: 204, headers };
   }
 
   try {
-    const { leadData, includeDemographics } = JSON.parse(event.body);
+    const body = JSON.parse(event.body);
+    const { leadData, includeDemographics } = body;
 
     if (!leadData) {
       return {
         statusCode: 400,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ error: "Missing lead data" })
+        headers,
+        body: JSON.stringify({ error: "Lead data is required." }),
       };
     }
 
-    // 1️⃣ Google Programmable Search for news snippet
-    let newsSnippet = "";
-    try {
-      const searchQuery = `${leadData["lead-company"]} latest news`;
-      const searchRes = await fetch(
-        `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(searchQuery)}&num=1`
-      );
-      const searchData = await searchRes.json();
-      if (searchData.items && searchData.items.length > 0) {
-        newsSnippet = searchData.items[0].snippet;
-      }
-    } catch (err) {
-      console.error("Error fetching news snippet:", err.message);
-    }
+    // --- Gemini API Call for Detailed Lead Analysis ---
+    const geminiPrompt = `
+You are a professional sales strategist.
 
-    // 2️⃣ Gemini API to generate qualification report
-    const geminiRequestBody = {
-      prompt: `
-      Analyze the following lead data and generate a professional qualification report, including:
-      - Breakdown of lead data
-      - Relevance to ideal customer profile
-      - Insights for outreach
-      - Suggested strategic discovery questions
-      Include demographic insights: ${includeDemographics ? "Yes" : "No"}
-      Lead Data: ${JSON.stringify(leadData)}
-      News Snippet: ${newsSnippet}
-      `,
-      temperature: 0.7,
-      max_output_tokens: 600
-    };
+Analyze the following lead data against the provided criteria (if any), and generate a detailed, actionable, and professional report. Include:
+- Lead Analysis
+- Demographic Insights (if requested)
+- Strategic Discovery Questions
+- Suggested Outreach and Predictive Engagement
 
-    let report = "";
-    try {
-      const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-preview:generateText", {
+Lead Data: ${JSON.stringify(leadData)}
+Include Demographics: ${includeDemographics}
+
+Ensure your report:
+- Uses full sentences and professional tone
+- Is specific and insightful
+- Clearly addresses the lead's budget, timeline, company, and needs
+- Produces subheadings where appropriate
+`;
+
+    const geminiResponse = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent",
+      {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${GEMINI_API_KEY}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
         },
-        body: JSON.stringify(geminiRequestBody)
-      });
-      const geminiData = await geminiRes.json();
-      if (geminiData.candidates && geminiData.candidates.length > 0) {
-        report = geminiData.candidates[0].content;
+        body: JSON.stringify({
+          prompt: geminiPrompt,
+          maxOutputTokens: 1000,
+          temperature: 0.7,
+        }),
       }
-    } catch (err) {
-      console.error("Error generating report:", err.message);
+    );
+
+    const geminiData = await geminiResponse.json();
+    const report = geminiData?.candidates?.[0]?.content?.[0]?.text || "No report generated.";
+
+    // --- Google Programmable Search API for News Snippet ---
+    let newsSnippet = "";
+    if (process.env.RYGUY_SEARCH_API_KEY && process.env.RYGUY_SEARCH_ENGINE_ID) {
+      const query = `${leadData["lead-company"]} news`;
+      const searchRes = await fetch(
+        `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`,
+        { method: "GET" }
+      );
+      const searchData = await searchRes.json();
+      newsSnippet = searchData.items?.[0]?.snippet || "No recent news found.";
     }
 
-    // 3️⃣ Build response object
-    const responseBody = {
-      report: report || "No report generated",
-      news: newsSnippet || "",
+    // --- Final Structured Output ---
+    const output = {
+      report,
+      news: newsSnippet,
       predictive: "Predictive engagement insights go here.",
       outreach: "Suggested outreach strategies go here.",
-      questions: "Strategic discovery questions go here."
+      questions: "Strategic discovery questions go here.",
     };
 
     return {
       statusCode: 200,
-      headers: CORS_HEADERS,
-      body: JSON.stringify(responseBody)
+      headers,
+      body: JSON.stringify(output),
     };
-
   } catch (error) {
-    console.error("Unexpected server error:", error);
+    console.error("Lead Qualifier Error:", error);
     return {
       statusCode: 500,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ error: error.message })
+      headers,
+      body: JSON.stringify({ error: error.message }),
     };
   }
-}
+};
