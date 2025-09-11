@@ -1,69 +1,108 @@
 // netlify/functions/lead-qualifier.js
 
-export const handler = async (event, context) => {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json",
-  };
+import fetch from "node-fetch";
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: JSON.stringify({ message: "CORS preflight OK" }) };
-  }
-
+export async function handler(event, context) {
   try {
-    const { leadData, includeDemographics } = JSON.parse(event.body);
-
-    if (!leadData) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: "Lead data is required" }) };
+    if (event.httpMethod !== "POST") {
+      return {
+        statusCode: 405,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "Method not allowed" }),
+      };
     }
 
-    const budget = parseInt(leadData["lead-budget"].replace(/\D/g, "")) || 0;
-    const timeline = leadData["lead-timeline"] || "Not specified";
-    const company = leadData["lead-company"] || "Unknown";
-    const name = leadData["lead-name"] || "Prospect";
+    const { leadData, criteria, includeDemographics } = JSON.parse(event.body);
 
-    const report = `
-Lead: ${name} 
-Company: ${company} 
-Budget: ${leadData["lead-budget"]} 
-Timeline: ${timeline} 
-Needs: ${leadData["lead-needs"]}
+    // ✅ Gemini API Keys (from your environment variables)
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) {
+      return {
+        statusCode: 500,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "Server misconfiguration: API key not set." }),
+      };
+    }
 
-Analysis: 
-- This lead shows ${budget > 50000 ? "high potential" : "moderate potential"} based on budget. 
-- Timeline indicates ${timeline}. 
-- Suggested next step: ${budget > 50000 ? "prioritize immediate outreach" : "nurture over time"}.
+    // ✅ Construct the AI prompt
+    const prompt = `
+Lead Data: ${JSON.stringify(leadData)}
+Custom Criteria: ${JSON.stringify(criteria)}
+Include Demographics: ${includeDemographics}
+
+Task:
+1. Provide a detailed qualification report tailored to this lead.
+2. Generate a relevant news snippet for the lead's company or industry.
+3. Predict engagement likelihood based on budget, timeline, and industry.
+4. Suggest a personalized outreach message.
+5. Provide 4-5 numbered Strategic Discovery Questions to guide conversation.
+
+Format your answer using these exact headings:
+Qualification Report:
+News Snippet:
+Predictive Insights:
+Outreach Message:
+Strategic Discovery Questions:
 `;
 
-    const news = `Recent update for ${company}: Tesla is accelerating global clean energy adoption and exploring new sales technology.`;
+    // ✅ Call Gemini API
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" +
+        GEMINI_API_KEY,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+        }),
+      }
+    );
 
-    const predictive = `Predictive Engagement Likelihood: ${budget > 50000 ? "High" : "Moderate"} 
-Based on budget, company size, and timeline.`;
+    if (!response.ok) {
+      throw new Error(`Gemini API Error: ${response.statusText}`);
+    }
 
-    const outreach = `
-Suggested Outreach Message:
-Hi ${name}, 
+    const data = await response.json();
+    const content =
+      data.candidates?.[0]?.content?.parts?.[0]?.text || "No content generated.";
 
-We noticed ${company} is exploring CRM solutions. Based on your team's size and timeline, we believe we can improve your sales efficiency and tracking. Are you available for a quick 15-min demo this week?
-`;
+    // ✅ Parse sections by headings
+    const sections = {};
+    content.split(/\n(?=[A-Z][A-Za-z ]+:)/).forEach((line) => {
+      const match = line.match(/^([A-Z][A-Za-z ]+):\s*([\s\S]*)$/);
+      if (match) {
+        sections[match[1].toLowerCase().replace(/\s/g, "-")] = match[2].trim();
+      }
+    });
 
-    const questions = `
-Suggested Discovery Questions:
-1. What CRM solution are you currently using?
-2. How many team members need access?
-3. What is your decision-making timeline?
-4. Are there specific pain points we should address?
-`;
+    // ✅ Always include fallback discovery questions
+    const fallbackDiscovery = `1. What challenges are you currently facing?\n2. How are you addressing them today?\n3. What goals do you have for this quarter?\n4. What would success look like if we worked together?\n5. Who else is involved in making this decision?`;
 
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({ report, news, predictive, outreach, questions }),
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({
+        report: sections["qualification-report"] || content,
+        news: sections["news-snippet"] || "No relevant news snippet found.",
+        predictiveInsight:
+          sections["predictive-insights"] || "No predictive insight generated.",
+        outreachMessage:
+          sections["outreach-message"] || "No outreach message generated.",
+        discoveryQuestions:
+          sections["strategic-discovery-questions"] || fallbackDiscovery,
+      }),
     };
   } catch (error) {
-    console.error("Error in lead-qualifier:", error);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: "Internal server error" }) };
+    console.error("Unexpected server error:", error);
+    return {
+      statusCode: 500,
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: "Unexpected server error." }),
+    };
   }
-};
+}
