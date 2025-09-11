@@ -46,11 +46,15 @@ Include Demographics: ${includeDemographics}
     );
 
     const geminiData = await geminiResponse.json();
-    let report = "No report generated.";
 
+    // --- Generate Report ---
+    let report = "No report generated.";
     if (geminiData?.candidates && geminiData.candidates.length > 0) {
-      const contents = geminiData.candidates.map(c => c.content?.map(p => p.text).join("\n")).join("\n");
-      report = contents || report;
+      report = geminiData.candidates
+        .map(c => c.content?.map(p => p.text).join("\n"))
+        .join("\n") || report;
+    } else if (geminiData?.content && geminiData.content.length > 0) {
+      report = geminiData.content.map(p => p.text).join("\n") || report;
     }
 
     // --- Google Search News Snippet ---
@@ -63,9 +67,11 @@ Include Demographics: ${includeDemographics}
       );
       const searchData = await searchRes.json();
       if (searchData.items && searchData.items.length > 0) {
-        newsSnippet = searchData.items.map(item =>
-          `<strong>${item.title}</strong>: ${item.snippet} <a href="${item.link}" target="_blank" class="text-blue-400 underline">Read more</a>`
-        ).join("<br><br>");
+        newsSnippet = searchData.items
+          .map(item =>
+            `<strong>${item.title}</strong>: ${item.snippet} <a href="${item.link}" target="_blank" class="text-blue-400 underline">Read more</a>`
+          )
+          .join("<br><br>");
       }
     }
 
