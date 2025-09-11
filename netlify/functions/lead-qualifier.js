@@ -3,10 +3,27 @@
 import fetch from "node-fetch";
 
 export async function handler(event) {
+  // Always include CORS headers
+  const headers = {
+    "Access-Control-Allow-Origin": "https://www.ryguylabs.com", // allow your Squarespace site
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+
+  // Handle preflight OPTIONS request
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers,
+      body: "Preflight check passed.",
+    };
+  }
+
   try {
     if (event.httpMethod !== "POST") {
       return {
         statusCode: 405,
+        headers,
         body: JSON.stringify({ error: "Method Not Allowed" }),
       };
     }
@@ -15,16 +32,17 @@ export async function handler(event) {
 
     const GEMINI_API_KEY = process.env.FIRST_API_KEY;
     const GOOGLE_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
-    const CSE_ID = process.env.RYGUY_CSE_ID; // Your search engine ID
+    const CSE_ID = process.env.RYGUY_CSE_ID;
 
     if (!GEMINI_API_KEY || !GOOGLE_API_KEY || !CSE_ID) {
       return {
         statusCode: 500,
+        headers,
         body: JSON.stringify({ error: "Server misconfiguration: API keys or CSE ID not set." }),
       };
     }
 
-    // 1. Fetch latest news for the lead’s company
+    // 1. Fetch latest news snippet
     let newsSnippet = "No relevant news found.";
     try {
       const searchUrl = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(
@@ -80,9 +98,10 @@ Please also generate **Strategic Discovery Questions** tailored to this lead.
       geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ||
       "No meaningful response generated.";
 
-    // 4. Return response
+    // 4. Return response with CORS headers
     return {
       statusCode: 200,
+      headers,
       body: JSON.stringify({
         analysis: aiResponse,
         newsSnippet,
@@ -92,6 +111,7 @@ Please also generate **Strategic Discovery Questions** tailored to this lead.
     console.error("Unexpected server error:", error);
     return {
       statusCode: 500,
+      headers,
       body: JSON.stringify({ error: error.message || "Unexpected error occurred." }),
     };
   }
