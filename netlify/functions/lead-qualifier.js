@@ -16,7 +16,7 @@ exports.handler = async (event) => {
         };
     }
     
-    // This function will only process POST requests.
+    // Only allow POST requests
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
@@ -49,24 +49,27 @@ exports.handler = async (event) => {
             tools: [{ "google_search": {} }]
         });
 
-        // 1. Fetch real-time news using Google Custom Search
+        // --- 1. Fetch real-time news using Google Custom Search ---
         let newsSnippet = 'No news found.';
-        const companyName = leadData['lead-company'];
+        const companyName = leadData.company || leadData['lead-company'] || null;
         
         try {
-            const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(companyName + ' news')}`;
-            const searchResponse = await fetch(searchUrl);
-            const searchData = await searchResponse.json();
+            if (companyName) {
+                const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(companyName + ' news')}`;
+                const searchResponse = await fetch(searchUrl);
+                const searchData = await searchResponse.json();
 
-            if (searchData.items && searchData.items.length > 0) {
-                // Take the snippet from the first search result
-                newsSnippet = searchData.items[0].snippet;
+                if (searchData.items && searchData.items.length > 0) {
+                    const firstResult = searchData.items[0];
+                    newsSnippet = `${firstResult.title}: ${firstResult.snippet} (Source: ${firstResult.link})`;
+                }
             }
         } catch (e) {
             console.error('Error fetching news from Google Search:', e.message);
-            // Fallback to "No news found." is handled by the initial variable declaration.
+            // Fallback already set to "No news found."
         }
 
+        // --- 2. Build query for Gemini ---
         const userQuery = `
             Analyze the following lead data against my custom criteria.
 
@@ -82,12 +85,11 @@ exports.handler = async (event) => {
             Include Demographic Insights: ${includeDemographics}
         `;
 
-        // Log the user query for debugging
         console.log('User Query:', userQuery);
 
+        // --- 3. Generate structured qualification data ---
         const result = await model.generateContent({
             contents: [{ parts: [{ text: userQuery }] }],
-            // Use generationConfig to enforce a structured JSON response
             generationConfig: {
                 responseMimeType: 'application/json',
                 responseSchema: {
@@ -106,10 +108,11 @@ exports.handler = async (event) => {
             }
         });
 
-        // Use .json() to parse the structured response directly
         const qualificationData = await result.response.json();
-        
-        // Log the structured AI response for debugging
+
+        // Always include the fetched news snippet in the final response
+        qualificationData.news = newsSnippet;
+
         console.log('Structured AI Response:', qualificationData);
 
         return {
@@ -119,10 +122,8 @@ exports.handler = async (event) => {
         };
 
     } catch (error) {
-        // Log the full error to Netlify's backend for detailed debugging
         console.error('Error qualifying lead:', error.message, error.stack);
         
-        // Return a more descriptive error to the frontend
         return {
             statusCode: 500,
             headers: corsHeaders,
