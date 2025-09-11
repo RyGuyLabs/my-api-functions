@@ -48,7 +48,7 @@ Respond fully under each heading.
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
+          x-goog-api-key: ${process.env.FIRST_API_KEY}
         },
         body: JSON.stringify({
           prompt: geminiPrompt,
