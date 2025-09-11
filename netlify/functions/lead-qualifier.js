@@ -55,7 +55,20 @@ exports.handler = async (event) => {
         
         try {
             const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(companyName + ' news')}`;
+            console.log('Fetching news from URL:', searchUrl);
             const searchResponse = await fetch(searchUrl);
+            
+            if (!searchResponse.ok) {
+                // Log and return an explicit error if the search API call fails
+                const errorText = await searchResponse.text();
+                console.error(`Google Search API responded with status ${searchResponse.status}: ${errorText}`);
+                return {
+                    statusCode: searchResponse.status,
+                    headers: corsHeaders,
+                    body: JSON.stringify({ error: 'Google Search API call failed.', details: `Status: ${searchResponse.status}, Message: ${errorText}` }),
+                };
+            }
+            
             const searchData = await searchResponse.json();
 
             if (searchData.items && searchData.items.length > 0) {
@@ -64,7 +77,11 @@ exports.handler = async (event) => {
             }
         } catch (e) {
             console.error('Error fetching news from Google Search:', e.message);
-            // Fallback to "No news found." is handled by the initial variable declaration.
+            return {
+                statusCode: 500,
+                headers: corsHeaders,
+                body: JSON.stringify({ error: 'Error fetching news.', details: e.message }),
+            };
         }
 
         const userQuery = `
