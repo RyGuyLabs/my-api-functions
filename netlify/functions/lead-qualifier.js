@@ -8,6 +8,7 @@ export const handler = async (event) => {
     "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
   };
 
+  // Handle preflight
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers };
   }
@@ -21,6 +22,27 @@ export const handler = async (event) => {
     }
 
     // --- Gemini API Call ---
+    const geminiPrompt = `
+You are a professional sales analyst. Analyze the following lead data and generate a detailed, structured report. Respond in plain text exactly in the following format:
+
+### Qualification Report
+[Provide a detailed, actionable analysis of the lead. Include insights on budget, timeline, company size, industry, and lead needs. If demographics are included, summarize them here.]
+
+### Predictive Engagement
+[Provide predictive engagement insights based on the lead's profile. Suggest likelihood of closing, attention signals, and priorities.]
+
+### Suggested Outreach
+[Provide recommended outreach strategies for engaging this lead. Include tone, messaging style, and suggested channels.]
+
+### Suggested Questions
+[Provide 5–10 strategic discovery questions to ask the lead during engagement.]
+
+Lead Data: ${JSON.stringify(leadData)}
+Include Demographics: ${includeDemographics}
+
+Respond fully under each heading. Do not skip any sections.
+`;
+
     const geminiResponse = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent",
       {
@@ -30,59 +52,48 @@ export const handler = async (event) => {
           "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
         },
         body: JSON.stringify({
-          prompt: `
-Analyze the following lead data and generate a professional report with clearly labeled sections. Respond in plain text with the following headings:
-
-### Qualification Report
-Provide a detailed, actionable analysis of the lead.
-
-### Predictive Engagement
-Provide predictive engagement insights.
-
-### Suggested Outreach
-Provide suggested outreach strategies.
-
-### Suggested Questions
-Provide strategic discovery questions for the lead.
-
-Lead Data: ${JSON.stringify(leadData)}
-Include Demographics: ${includeDemographics}
-`,
-          maxOutputTokens: 1200,
-          temperature: 0.7,
+          prompt: geminiPrompt,
+          maxOutputTokens: 1500,
+          temperature: 0.5, // Lower for more deterministic output
         }),
       }
     );
 
     const geminiData = await geminiResponse.json();
-    let rawText = "No report generated.";
+    let reportText = "No report generated.";
 
     if (geminiData?.candidates && geminiData.candidates.length > 0) {
-      rawText = geminiData.candidates.map(c => c.content?.map(p => p.text).join("\n")).join("\n");
+      const contents = geminiData.candidates.map(c => c.content?.map(p => p.text).join("\n")).join("\n");
+      reportText = contents || reportText;
     }
 
-    // --- Parse sections ---
-    const sections = {};
-    const regex = /###\s*(.+)/g;
-    let match, lastIndex = 0, lastHeader = null;
+    // --- Parse Gemini sections ---
+    const sections = {
+      report: "",
+      predictive: "",
+      outreach: "",
+      questions: ""
+    };
 
-    while ((match = regex.exec(rawText)) !== null) {
-      if (lastHeader) {
-        sections[lastHeader] = rawText.slice(lastIndex, match.index).trim();
+    const headingRegex = /^###\s*(.+)$/gm;
+    let match;
+    const lines = reportText.split("\n");
+    let currentHeading = null;
+
+    for (let line of lines) {
+      const headingMatch = line.match(/^###\s*(.+)$/);
+      if (headingMatch) {
+        const heading = headingMatch[1].toLowerCase().replace(/\s/g, '');
+        if (heading.includes("qualification")) currentHeading = "report";
+        else if (heading.includes("predictive")) currentHeading = "predictive";
+        else if (heading.includes("outreach")) currentHeading = "outreach";
+        else if (heading.includes("questions")) currentHeading = "questions";
+      } else if (currentHeading) {
+        sections[currentHeading] += line + "\n";
       }
-      lastHeader = match[1].trim().toLowerCase().replace(/\s/g,'_');
-      lastIndex = regex.lastIndex;
-    }
-    if (lastHeader) {
-      sections[lastHeader] = rawText.slice(lastIndex).trim();
     }
 
-    const report = sections.qualification_report || "No report generated.";
-    const predictive = sections.predictive_engagement || "Predictive engagement insights go here.";
-    const outreach = sections.suggested_outreach || "Suggested outreach strategies go here.";
-    const questions = sections.suggested_questions || "Strategic discovery questions go here.";
-
-    // --- Google Search News Snippet ---
+    // --- Google Search News Snippet (unchanged) ---
     let newsSnippet = "";
     if (process.env.RYGUY_SEARCH_API_KEY && process.env.RYGUY_SEARCH_ENGINE_ID) {
       const query = `${leadData["lead-company"]} news`;
@@ -98,8 +109,14 @@ Include Demographics: ${includeDemographics}
       }
     }
 
-    // --- Construct output ---
-    const output = { report, news: newsSnippet, predictive, outreach, questions };
+    // --- Construct Output ---
+    const output = {
+      report: sections.report || "No report generated.",
+      news: newsSnippet,
+      predictive: sections.predictive || "Predictive engagement insights go here.",
+      outreach: sections.outreach || "Suggested outreach strategies go here.",
+      questions: sections.questions || "Strategic discovery questions go here.",
+    };
 
     return { statusCode: 200, headers, body: JSON.stringify(output) };
 
