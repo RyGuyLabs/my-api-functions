@@ -59,8 +59,11 @@ Respond fully under each heading.
             role: "user",
             parts: [{ text: geminiPrompt }],
           }],
-          maxOutputTokens: 1500,
-          temperature: 0.5,
+          // FIX: Move generation parameters into a nested object
+          generationConfig: {
+            maxOutputTokens: 1500,
+            temperature: 0.5,
+          }
         }),
       }
     );
