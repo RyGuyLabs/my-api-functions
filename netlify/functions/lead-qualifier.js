@@ -1,76 +1,69 @@
-// Netlify Function: lead-qualifier.js
+// netlify/functions/lead-qualifier.js
 
 import fetch from "node-fetch";
 
-export const handler = async (event) => {
+export async function handler(event) {
   try {
-    if (event.httpMethod === "OPTIONS") {
+    if (event.httpMethod !== "POST") {
       return {
-        statusCode: 200,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-        },
+        statusCode: 405,
+        body: JSON.stringify({ error: "Method Not Allowed" }),
       };
     }
 
-    if (event.httpMethod !== "POST") {
-      return { statusCode: 405, body: "Method Not Allowed" };
+    const { leadData, customCriteria, includeDemographics } = JSON.parse(event.body);
+
+    const GEMINI_API_KEY = process.env.FIRST_API_KEY;
+    const GOOGLE_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+    const CSE_ID = process.env.RYGUY_CSE_ID; // Your search engine ID
+
+    if (!GEMINI_API_KEY || !GOOGLE_API_KEY || !CSE_ID) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: "Server misconfiguration: API keys or CSE ID not set." }),
+      };
     }
 
-    const { leadData, includeDemographics } = JSON.parse(event.body);
+    // 1. Fetch latest news for the lead’s company
+    let newsSnippet = "No relevant news found.";
+    try {
+      const searchUrl = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(
+        leadData["lead-company"]
+      )}&cx=${CSE_ID}&key=${GOOGLE_API_KEY}`;
+      const searchRes = await fetch(searchUrl);
+      const searchJson = await searchRes.json();
 
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error("Server misconfiguration: API key missing.");
-    }
-
-    // --- Fetch Latest News ---
-    let latestNews = "No news available.";
-    if (leadData["lead-company"]) {
-      try {
-        const searchRes = await fetch(
-          `https://serpapi.com/search.json?q=${encodeURIComponent(
-            leadData["lead-company"]
-          )}+news&api_key=${process.env.SERP_API_KEY}`
-        );
-        const searchJson = await searchRes.json();
-        if (searchJson?.news_results?.length > 0) {
-          const topArticle = searchJson.news_results[0];
-          latestNews = `${topArticle.title} - ${topArticle.link}`;
-        }
-      } catch (err) {
-        console.error("Error fetching news:", err.message);
+      if (searchJson.items && searchJson.items.length > 0) {
+        newsSnippet = `${searchJson.items[0].title}: ${searchJson.items[0].snippet} (Source: ${searchJson.items[0].link})`;
       }
+    } catch (err) {
+      console.error("Error fetching news snippet:", err);
     }
 
-    // --- Call Gemini for Analysis ---
+    // 2. Build Gemini prompt
     const prompt = `
-Analyze the following lead against my custom criteria.
+Analyze the following lead data against my custom criteria.
 
 Lead Data:
 ${JSON.stringify(leadData, null, 2)}
 
-Latest News:
-${latestNews}
+My Custom Criteria:
+${JSON.stringify(customCriteria, null, 2)}
+
+Latest News Snippet:
+${newsSnippet}
 
 Include Demographic Insights: ${includeDemographics}
 
-Provide structured output with:
-1. Qualification Report
-2. Predictive Engagement Insight
-3. Suggested Outreach Message
-4. Strategic Discovery Questions
-    `;
+Please also generate **Strategic Discovery Questions** tailored to this lead.
+`;
 
+    // 3. Call Gemini API
     const geminiRes = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + GEMINI_API_KEY,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.GEMINI_API_KEY}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
         }),
@@ -78,42 +71,28 @@ Provide structured output with:
     );
 
     if (!geminiRes.ok) {
-      throw new Error(`Gemini API Error: ${await geminiRes.text()}`);
+      const errorText = await geminiRes.text();
+      throw new Error(`Gemini API error: ${errorText}`);
     }
 
     const geminiJson = await geminiRes.json();
-    const aiText =
+    const aiResponse =
       geminiJson.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "No analysis generated.";
+      "No meaningful response generated.";
 
-    // --- Parse AI output into structured fields ---
-    const reportMatch = aiText.match(/Qualification Report[\s\S]*?(?=Predictive Engagement|$)/i);
-    const predictiveMatch = aiText.match(/Predictive Engagement[\s\S]*?(?=Suggested Outreach|$)/i);
-    const outreachMatch = aiText.match(/Suggested Outreach[\s\S]*?(?=Strategic Discovery|$)/i);
-    const questionsMatch = aiText.match(/Strategic Discovery Questions[\s\S]*/i);
-
-    const responsePayload = {
-      report: reportMatch ? reportMatch[0].trim() : "No Report Generated",
-      news: latestNews,
-      predictiveInsight: predictiveMatch ? predictiveMatch[0].trim() : "No Predictive Engagement Insights",
-      outreachMessage: outreachMatch ? outreachMatch[0].trim() : "No Suggested Outreach",
-      discoveryQuestions: questionsMatch ? questionsMatch[0].trim() : "No Strategic Discovery Questions",
-    };
-
+    // 4. Return response
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(responsePayload),
+      body: JSON.stringify({
+        analysis: aiResponse,
+        newsSnippet,
+      }),
     };
-  } catch (err) {
-    console.error("Unexpected server error:", err);
+  } catch (error) {
+    console.error("Unexpected server error:", error);
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({ error: error.message || "Unexpected error occurred." }),
     };
   }
-};
+}
