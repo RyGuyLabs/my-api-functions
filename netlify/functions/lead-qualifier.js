@@ -8,7 +8,6 @@ export const handler = async (event) => {
     "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
   };
 
-  // Handle preflight
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers };
   }
@@ -23,24 +22,24 @@ export const handler = async (event) => {
 
     // --- Gemini API Call ---
     const geminiPrompt = `
-You are a professional sales analyst. Analyze the following lead data and generate a detailed, structured report. Respond in plain text exactly in the following format:
+You are a professional sales analyst. Analyze the following lead data and generate a structured report. Respond in plain text exactly in this format:
 
 ### Qualification Report
-[Provide a detailed, actionable analysis of the lead. Include insights on budget, timeline, company size, industry, and lead needs. If demographics are included, summarize them here.]
+[Detailed actionable analysis including budget, timeline, company size, industry, lead needs, demographics if requested]
 
 ### Predictive Engagement
-[Provide predictive engagement insights based on the lead's profile. Suggest likelihood of closing, attention signals, and priorities.]
+[Predictive engagement insights based on the lead's profile]
 
 ### Suggested Outreach
-[Provide recommended outreach strategies for engaging this lead. Include tone, messaging style, and suggested channels.]
+[Recommended outreach strategies with tone, messaging style, channels]
 
 ### Suggested Questions
-[Provide 5–10 strategic discovery questions to ask the lead during engagement.]
+[5–10 strategic discovery questions]
 
 Lead Data: ${JSON.stringify(leadData)}
 Include Demographics: ${includeDemographics}
 
-Respond fully under each heading. Do not skip any sections.
+Respond fully under each heading.
 `;
 
     const geminiResponse = await fetch(
@@ -54,7 +53,7 @@ Respond fully under each heading. Do not skip any sections.
         body: JSON.stringify({
           prompt: geminiPrompt,
           maxOutputTokens: 1500,
-          temperature: 0.5, // Lower for more deterministic output
+          temperature: 0.5,
         }),
       }
     );
@@ -62,62 +61,56 @@ Respond fully under each heading. Do not skip any sections.
     const geminiData = await geminiResponse.json();
     let reportText = "No report generated.";
 
-    if (geminiData?.candidates && geminiData.candidates.length > 0) {
-      const contents = geminiData.candidates.map(c => c.content?.map(p => p.text).join("\n")).join("\n");
-      reportText = contents || reportText;
+    if (geminiData?.candidates?.length > 0) {
+      // Flatten content array
+      reportText = geminiData.candidates
+        .map(c => c.content?.map(p => p.text).join("\n"))
+        .join("\n") || reportText;
     }
 
-    // --- Parse Gemini sections ---
-    const sections = {
-  report: "",
-  predictive: "",
-  outreach: "",
-  questions: ""
-};
+    // --- Robust Parsing ---
+    const sections = { report: "", predictive: "", outreach: "", questions: "" };
+    const headingRegex = /###\s*(Qualification Report|Predictive Engagement|Suggested Outreach|Suggested Questions)/gi;
+    const matches = [...reportText.matchAll(headingRegex)];
 
-// Regex to match headings anywhere: ### Heading
-const headingPattern = /###\s*(Qualification Report|Predictive Engagement|Suggested Outreach|Suggested Questions)/gi;
+    for (let i = 0; i < matches.length; i++) {
+      const heading = matches[i][1].toLowerCase().replace(/\s/g,'');
+      const start = matches[i].index + matches[i][0].length;
+      const end = (i + 1 < matches.length) ? matches[i + 1].index : reportText.length;
+      const content = reportText.slice(start, end).trim();
 
-let matches = [...reportText.matchAll(headingPattern)];
+      if (heading.includes("qualification")) sections.report = content;
+      else if (heading.includes("predictive")) sections.predictive = content;
+      else if (heading.includes("outreach")) sections.outreach = content;
+      else if (heading.includes("questions")) sections.questions = content;
+    }
 
-for (let i = 0; i < matches.length; i++) {
-  const heading = matches[i][1].toLowerCase();
-  const startIndex = matches[i].index + matches[i][0].length;
-  const endIndex = i + 1 < matches.length ? matches[i + 1].index : reportText.length;
-  const content = reportText.slice(startIndex, endIndex).trim();
-
-  if (heading.includes("qualification")) sections.report = content;
-  else if (heading.includes("predictive")) sections.predictive = content;
-  else if (heading.includes("outreach")) sections.outreach = content;
-  else if (heading.includes("questions")) sections.questions = content;
-}
-
-    // --- Google Search News Snippet (unchanged) ---
+    // --- Google News ---
     let newsSnippet = "";
     if (process.env.RYGUY_SEARCH_API_KEY && process.env.RYGUY_SEARCH_ENGINE_ID) {
       const query = `${leadData["lead-company"]} news`;
       const searchRes = await fetch(
-        `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=3`,
-        { method: "GET" }
+        `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=3`
       );
       const searchData = await searchRes.json();
-      if (searchData.items && searchData.items.length > 0) {
-        newsSnippet = searchData.items.map(item =>
-          `<strong>${item.title}</strong>: ${item.snippet} <a href="${item.link}" target="_blank" class="text-blue-400 underline">Read more</a>`
-        ).join("<br><br>");
+      if (searchData.items?.length) {
+        newsSnippet = searchData.items
+          .map(item => `<strong>${item.title}</strong>: ${item.snippet} <a href="${item.link}" target="_blank" class="text-blue-400 underline">Read more</a>`)
+          .join("<br><br>");
       }
     }
 
-    // --- Construct Output ---
-    const output = {
-      report: sections.report || "No report generated.",
-      news: newsSnippet,
-      predictive: sections.predictive || "Predictive engagement insights go here.",
-      outreach: sections.outreach || "Suggested outreach strategies go here.",
-      questions: sections.questions || "Strategic discovery questions go here.",
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        report: sections.report || "No report generated.",
+        predictive: sections.predictive || "Predictive engagement insights go here.",
+        outreach: sections.outreach || "Suggested outreach strategies go here.",
+        questions: sections.questions || "Strategic discovery questions go here.",
+        news: newsSnippet,
+      }),
     };
-
-    return { statusCode: 200, headers, body: JSON.stringify(output) };
 
   } catch (error) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
