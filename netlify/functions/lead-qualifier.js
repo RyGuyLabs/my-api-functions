@@ -2,14 +2,12 @@
 import fetch from 'node-fetch';
 
 export const handler = async (event) => {
-  // --- CORS Headers ---
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
   };
 
-  // Handle preflight OPTIONS
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers };
   }
@@ -19,33 +17,10 @@ export const handler = async (event) => {
     const { leadData, includeDemographics } = body;
 
     if (!leadData) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: "Lead data is required." }),
-      };
+      return { statusCode: 400, headers, body: JSON.stringify({ error: "Lead data is required." }) };
     }
 
-    // --- Gemini API Call for Detailed Lead Analysis ---
-    const geminiPrompt = `
-You are a professional sales strategist.
-
-Analyze the following lead data against the provided criteria (if any), and generate a detailed, actionable, and professional report. Include:
-- Lead Analysis
-- Demographic Insights (if requested)
-- Strategic Discovery Questions
-- Suggested Outreach and Predictive Engagement
-
-Lead Data: ${JSON.stringify(leadData)}
-Include Demographics: ${includeDemographics}
-
-Ensure your report:
-- Uses full sentences and professional tone
-- Is specific and insightful
-- Clearly addresses the lead's budget, timeline, company, and needs
-- Produces subheadings where appropriate
-`;
-
+    // --- Gemini API Call ---
     const geminiResponse = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent",
       {
@@ -55,29 +30,46 @@ Ensure your report:
           "Authorization": `Bearer ${process.env.FIRST_API_KEY}`,
         },
         body: JSON.stringify({
-          prompt: geminiPrompt,
-          maxOutputTokens: 1000,
+          prompt: `
+Analyze the following lead data against professional, actionable criteria. Include:
+- Demographic insights (if requested)
+- Strategic discovery questions
+- Recommended outreach strategies
+
+Lead Data: ${JSON.stringify(leadData)}
+Include Demographics: ${includeDemographics}
+`,
+          maxOutputTokens: 1200,
           temperature: 0.7,
         }),
       }
     );
 
     const geminiData = await geminiResponse.json();
-    const report = geminiData?.candidates?.[0]?.content?.[0]?.text || "No report generated.";
+    let report = "No report generated.";
 
-    // --- Google Programmable Search API for News Snippet ---
+    if (geminiData?.candidates && geminiData.candidates.length > 0) {
+      const contents = geminiData.candidates.map(c => c.content?.map(p => p.text).join("\n")).join("\n");
+      report = contents || report;
+    }
+
+    // --- Google Search News Snippet ---
     let newsSnippet = "";
     if (process.env.RYGUY_SEARCH_API_KEY && process.env.RYGUY_SEARCH_ENGINE_ID) {
       const query = `${leadData["lead-company"]} news`;
       const searchRes = await fetch(
-        `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`,
+        `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=3`,
         { method: "GET" }
       );
       const searchData = await searchRes.json();
-      newsSnippet = searchData.items?.[0]?.snippet || "No recent news found.";
+      if (searchData.items && searchData.items.length > 0) {
+        newsSnippet = searchData.items.map(item =>
+          `<strong>${item.title}</strong>: ${item.snippet} <a href="${item.link}" target="_blank" class="text-blue-400 underline">Read more</a>`
+        ).join("<br><br>");
+      }
     }
 
-    // --- Final Structured Output ---
+    // --- Construct Output ---
     const output = {
       report,
       news: newsSnippet,
@@ -86,17 +78,9 @@ Ensure your report:
       questions: "Strategic discovery questions go here.",
     };
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify(output),
-    };
+    return { statusCode: 200, headers, body: JSON.stringify(output) };
+
   } catch (error) {
-    console.error("Lead Qualifier Error:", error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: error.message }),
-    };
+    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }
 };
