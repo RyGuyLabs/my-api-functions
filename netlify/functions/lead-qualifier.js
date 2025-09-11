@@ -1,71 +1,59 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// File: functions/lead-qualifier.js
+const fetch = require('node-fetch');
 
-exports.handler = async (event) => {
-    const corsHeaders = {
-        'Access-Control-Allow-Origin': '*', // Adjust to your domain if needed
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    };
+// Helper: Check for required environment variables
+const REQUIRED_ENV_VARS = [
+  'FIRST_API_KEY', 
+  'RYGUY_SEARCH_API_KEY', 
+  'RYGUY_SEARCH_ENGINE_ID'
+];
 
-    // Handle preflight CORS request
-    if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers: corsHeaders,
-            body: '',
-        };
-    }
+for (const key of REQUIRED_ENV_VARS) {
+  if (!process.env[key]) {
+    console.error(`Missing environment variable: ${key}`);
+    throw new Error(`Server misconfiguration: ${key} is not set.`);
+  }
+}
 
+const GEMINI_API_KEY = process.env.FIRST_API_KEY;
+const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
+
+exports.handler = async function(event, context) {
+  try {
     if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Method Not Allowed' }),
-        };
+      return {
+        statusCode: 405,
+        body: JSON.stringify({ error: 'Method Not Allowed' })
+      };
     }
 
+    const body = JSON.parse(event.body);
+    const { leadData, criteria = {}, includeDemographics = false } = body;
+
+    if (!leadData || Object.keys(leadData).length === 0) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'Missing lead data.' })
+      };
+    }
+
+    // Fetch news snippet from Google Custom Search (optional)
+    let newsSnippet = '';
     try {
-        const { leadData, criteria, includeDemographics } = JSON.parse(event.body);
+      const searchQuery = encodeURIComponent(leadData['lead-company'] || '');
+      const searchResponse = await fetch(`https://www.googleapis.com/customsearch/v1?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${searchQuery}`);
+      const searchData = await searchResponse.json();
+      if (searchData.items && searchData.items.length > 0) {
+        newsSnippet = searchData.items[0].snippet;
+      }
+    } catch (err) {
+      console.error('Error fetching news snippet:', err);
+    }
 
-        const GEMINI_API_KEY = process.env.FIRST_API_KEY;
-        const GOOGLE_SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
-        const GOOGLE_SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
-
-        if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY || !GOOGLE_SEARCH_ENGINE_ID) {
-            return {
-                statusCode: 500,
-                headers: corsHeaders,
-                body: JSON.stringify({ error: 'Server misconfiguration: API keys are not set.' }),
-            };
-        }
-
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash-preview-05-20',
-            tools: [{ "google_search": {} }]
-        });
-
-        // --- 1. Fetch news snippet ---
-        let newsSnippet = 'No news found.';
-        const companyName = leadData.company || leadData['lead-company'] || null;
-
-        if (companyName) {
-            try {
-                const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(companyName + ' news')}`;
-                const searchResponse = await fetch(searchUrl);
-                const searchData = await searchResponse.json();
-                if (searchData.items && searchData.items.length > 0) {
-                    const firstResult = searchData.items[0];
-                    newsSnippet = `${firstResult.title}: ${firstResult.snippet} (Source: ${firstResult.link})`;
-                }
-            } catch (e) {
-                console.error('Error fetching news:', e.message);
-            }
-        }
-
-        // --- 2. Build AI query ---
-        const userQuery = `
-Analyze the following lead data against my custom criteria.
+    // Build Gemini JSON payload correctly
+    const geminiPayload = {
+      prompt: `Analyze the following lead data against my custom criteria.
 
 Lead Data:
 ${JSON.stringify(leadData, null, 2)}
@@ -77,47 +65,72 @@ Latest News Snippet:
 ${newsSnippet}
 
 Include Demographic Insights: ${includeDemographics}
-`;
 
-        // --- 3. Generate AI qualification ---
-        const result = await model.generateContent({
-            contents: [{ parts: [{ text: userQuery }] }],
-            generationConfig: {
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: 'OBJECT',
-                    properties: {
-                        score: { type: 'NUMBER' },
-                        category: { type: 'STRING' },
-                        report: { type: 'STRING' },
-                        news: { type: 'STRING' },
-                        predictiveInsight: { type: 'STRING' },
-                        outreachMessage: { type: 'STRING' },
-                        discoveryQuestions: { type: 'STRING' }
-                    },
-                    required: ['score', 'category', 'report', 'outreachMessage', 'discoveryQuestions']
-                }
-            }
-        });
+Provide a structured response with:
+- category (High / Medium / Low)
+- score (0-100)
+- report (text)
+- outreachMessage (optional)
+- discoveryQuestions (optional)
+- predictiveInsight (optional)
+`,
+      model: 'gemini-2.5-flash-preview-05-20',
+      temperature: 0.2,
+      maxOutputTokens: 800
+    };
 
-        const qualificationData = await result.response.json();
+    const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GEMINI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(geminiPayload)
+    });
 
-        // Include fetched news even if AI returned null
-        qualificationData.news = qualificationData.news || newsSnippet;
-        qualificationData.predictiveInsight = qualificationData.predictiveInsight || null;
-
-        return {
-            statusCode: 200,
-            headers: corsHeaders,
-            body: JSON.stringify(qualificationData),
-        };
-
-    } catch (error) {
-        console.error('Error qualifying lead:', error.message, error.stack);
-        return {
-            statusCode: 500,
-            headers: corsHeaders,
-            body: JSON.stringify({ error: 'Failed to qualify lead.', details: error.message }),
-        };
+    if (!geminiResponse.ok) {
+      const errText = await geminiResponse.text();
+      console.error('Gemini API error:', errText);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to qualify lead.', details: errText })
+      };
     }
+
+    const geminiResult = await geminiResponse.json();
+
+    // Extract content safely
+    let contentText = '';
+    if (geminiResult.candidates && geminiResult.candidates[0] && geminiResult.candidates[0].content) {
+      const parts = geminiResult.candidates[0].content.parts || [];
+      contentText = parts.join('\n');
+    }
+
+    // Attempt to parse structured JSON from text
+    let structuredResult = {};
+    try {
+      structuredResult = JSON.parse(contentText);
+    } catch (e) {
+      structuredResult = {
+        category: 'Unknown',
+        score: 0,
+        report: contentText,
+        outreachMessage: '',
+        discoveryQuestions: '',
+        predictiveInsight: ''
+      };
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify(structuredResult)
+    };
+
+  } catch (err) {
+    console.error('Unexpected server error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Failed to qualify lead.', details: err.message })
+    };
+  }
 };
