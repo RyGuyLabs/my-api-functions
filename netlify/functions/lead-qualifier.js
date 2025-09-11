@@ -20,7 +20,7 @@ export const handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: "Lead data is required." }) };
     }
 
-    // --- Gemini API Call ---
+    // --- Gemini API Call with structured JSON prompt ---
     const geminiResponse = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent",
       {
@@ -31,13 +31,18 @@ export const handler = async (event) => {
         },
         body: JSON.stringify({
           prompt: `
-Analyze the following lead data against professional, actionable criteria. Include:
-- Demographic insights (if requested)
-- Strategic discovery questions
-- Recommended outreach strategies
+You are a professional sales strategist. Analyze the following lead data and respond in strict JSON format with these keys:
+- "report": a concise, professional qualification report.
+- "predictive": predictive engagement insights.
+- "outreach": suggested outreach strategies.
+- "questions": strategic discovery questions.
+
+Include demographic insights only if "Include Demographics" is true.
 
 Lead Data: ${JSON.stringify(leadData)}
 Include Demographics: ${includeDemographics}
+
+Respond ONLY in valid JSON format.
 `,
           maxOutputTokens: 1200,
           temperature: 0.7,
@@ -47,14 +52,24 @@ Include Demographics: ${includeDemographics}
 
     const geminiData = await geminiResponse.json();
 
-    // --- Generate Report ---
     let report = "No report generated.";
+    let predictive = "Predictive engagement insights go here.";
+    let outreach = "Suggested outreach strategies go here.";
+    let questions = "Strategic discovery questions go here.";
+
     if (geminiData?.candidates && geminiData.candidates.length > 0) {
-      report = geminiData.candidates
-        .map(c => c.content?.map(p => p.text).join("\n"))
-        .join("\n") || report;
-    } else if (geminiData?.content && geminiData.content.length > 0) {
-      report = geminiData.content.map(p => p.text).join("\n") || report;
+      try {
+        const rawText = geminiData.candidates
+          .map(c => c.content?.map(p => p.text).join("\n"))
+          .join("\n");
+        const parsed = JSON.parse(rawText);
+        report = parsed.report || report;
+        predictive = parsed.predictive || predictive;
+        outreach = parsed.outreach || outreach;
+        questions = parsed.questions || questions;
+      } catch (e) {
+        console.error("Error parsing Gemini JSON:", e.message);
+      }
     }
 
     // --- Google Search News Snippet ---
@@ -79,9 +94,9 @@ Include Demographics: ${includeDemographics}
     const output = {
       report,
       news: newsSnippet,
-      predictive: "Predictive engagement insights go here.",
-      outreach: "Suggested outreach strategies go here.",
-      questions: "Strategic discovery questions go here.",
+      predictive,
+      outreach,
+      questions,
     };
 
     return { statusCode: 200, headers, body: JSON.stringify(output) };
