@@ -1,113 +1,96 @@
-const fetch = require('node-fetch');
+import fetch from "node-fetch";
 
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
-const GOOGLE_SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
-const GOOGLE_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
+const GOOGLE_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+const GOOGLE_SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 
-exports.handler = async function(event, context) {
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS"
+};
+
+export async function handler(event, context) {
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: "OK"
+    };
+  }
+
   try {
-    if (event.httpMethod !== 'POST') {
-      return { statusCode: 405, body: 'Method Not Allowed' };
+    const { leadData, includeDemographics } = JSON.parse(event.body);
+
+    if (!leadData) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "Missing lead data" })
+      };
     }
 
-    const body = JSON.parse(event.body);
-
-    const leadData = body.leadData || {};
-    const includeDemographics = body.includeDemographics || false;
-    const criteria = body.criteria || "No criteria provided";
-
-    // Fetch latest news snippet via Google Programmable Search
-    let newsSnippet = '';
-    if (GOOGLE_SEARCH_API_KEY && GOOGLE_CSE_ID) {
-      try {
-        const searchResponse = await fetch(
-          `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(leadData.leadCompany || '')}&key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_CSE_ID}`
-        );
-        const searchResults = await searchResponse.json();
-        if (searchResults.items && searchResults.items.length > 0) {
-          newsSnippet = searchResults.items[0].snippet;
-        }
-      } catch(err) {
-        console.error("Error fetching news snippet:", err);
-        newsSnippet = '';
+    // 1️⃣ Google Programmable Search for news snippet
+    let newsSnippet = "";
+    try {
+      const searchQuery = `${leadData["lead-company"]} latest news`;
+      const searchRes = await fetch(
+        `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(searchQuery)}&num=1`
+      );
+      const searchData = await searchRes.json();
+      if (searchData.items && searchData.items.length > 0) {
+        newsSnippet = searchData.items[0].snippet;
       }
+    } catch (err) {
+      console.error("Error fetching news snippet:", err.message);
     }
 
-    // Build Gemini prompt
-    const prompt = `
-Analyze the following lead information in detail and provide clear sections in Title Case:
-
-Lead Information:
-- Name: ${leadData.leadName || 'N/A'}
-- Company: ${leadData.leadCompany || 'N/A'}
-- Budget: ${leadData.leadBudget || 'N/A'}
-- Timeline: ${leadData.leadTimeline || 'N/A'}
-- Needs: ${leadData.leadNeeds || 'N/A'}
-- Custom Criteria: ${criteria}
-
-Include:
-1. Lead Analysis against the criteria
-2. Demographic Insights (if ${includeDemographics})
-3. Integration with Latest News Snippet:
-"${newsSnippet}"
-4. Predictive Engagement Insights
-5. Suggested Outreach Strategies
-6. 6-10 Strategic Discovery Questions tailored to this lead
-
-Return a JSON object with keys:
-{
-  "report": "...",
-  "news": "...",
-  "predictive": "...",
-  "outreach": "...",
-  "questions": "..."
-}
-Ensure all section headers are capitalized properly.
-`;
-
-    // Call Gemini API
-    const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GEMINI_API_KEY}`
-      },
-      body: JSON.stringify({
-        prompt: prompt,
-        temperature: 0.7,
-        maxOutputTokens: 1000
-      })
-    });
-
-    const geminiData = await geminiResponse.json();
-    let content = '';
-
-    if (geminiData.candidates && geminiData.candidates.length > 0) {
-      content = geminiData.candidates[0].content?.[0]?.text || '';
-    }
-
-    // Basic parsing of sections from Gemini response
-    const extractSection = (title) => {
-      const regex = new RegExp(`${title}:([\\s\\S]*?)(?=\\n[A-Z][a-zA-Z ]+:|$)`, 'i');
-      const match = content.match(regex);
-      return match ? match[1].trim() : '';
+    // 2️⃣ Gemini API to generate qualification report
+    const geminiRequestBody = {
+      prompt: `
+      Analyze the following lead data and generate a professional qualification report, including:
+      - Breakdown of lead data
+      - Relevance to ideal customer profile
+      - Insights for outreach
+      - Suggested strategic discovery questions
+      Include demographic insights: ${includeDemographics ? "Yes" : "No"}
+      Lead Data: ${JSON.stringify(leadData)}
+      News Snippet: ${newsSnippet}
+      `,
+      temperature: 0.7,
+      max_output_tokens: 600
     };
 
+    let report = "";
+    try {
+      const geminiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-preview:generateText", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${GEMINI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(geminiRequestBody)
+      });
+      const geminiData = await geminiRes.json();
+      if (geminiData.candidates && geminiData.candidates.length > 0) {
+        report = geminiData.candidates[0].content;
+      }
+    } catch (err) {
+      console.error("Error generating report:", err.message);
+    }
+
+    // 3️⃣ Build response object
     const responseBody = {
-      report: extractSection('Lead Analysis') || 'No report generated',
-      news: extractSection('Integration with Latest News Snippet') || newsSnippet || '',
-      predictive: extractSection('Predictive Engagement Insights') || 'Predictive engagement insights go here.',
-      outreach: extractSection('Suggested Outreach Strategies') || 'Suggested outreach strategies go here.',
-      questions: extractSection('Strategic Discovery Questions') || 'Strategic discovery questions go here.'
+      report: report || "No report generated",
+      news: newsSnippet || "",
+      predictive: "Predictive engagement insights go here.",
+      outreach: "Suggested outreach strategies go here.",
+      questions: "Strategic discovery questions go here."
     };
 
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      },
+      headers: CORS_HEADERS,
       body: JSON.stringify(responseBody)
     };
 
@@ -115,12 +98,8 @@ Ensure all section headers are capitalized properly.
     console.error("Unexpected server error:", error);
     return {
       statusCode: 500,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-      },
+      headers: CORS_HEADERS,
       body: JSON.stringify({ error: error.message })
     };
   }
-};
+}
