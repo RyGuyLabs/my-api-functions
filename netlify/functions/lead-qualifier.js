@@ -69,29 +69,28 @@ Respond fully under each heading. Do not skip any sections.
 
     // --- Parse Gemini sections ---
     const sections = {
-      report: "",
-      predictive: "",
-      outreach: "",
-      questions: ""
-    };
+  report: "",
+  predictive: "",
+  outreach: "",
+  questions: ""
+};
 
-    const headingRegex = /^###\s*(.+)$/gm;
-    let match;
-    const lines = reportText.split("\n");
-    let currentHeading = null;
+// Regex to match headings anywhere: ### Heading
+const headingPattern = /###\s*(Qualification Report|Predictive Engagement|Suggested Outreach|Suggested Questions)/gi;
 
-    for (let line of lines) {
-      const headingMatch = line.match(/^###\s*(.+)$/);
-      if (headingMatch) {
-        const heading = headingMatch[1].toLowerCase().replace(/\s/g, '');
-        if (heading.includes("qualification")) currentHeading = "report";
-        else if (heading.includes("predictive")) currentHeading = "predictive";
-        else if (heading.includes("outreach")) currentHeading = "outreach";
-        else if (heading.includes("questions")) currentHeading = "questions";
-      } else if (currentHeading) {
-        sections[currentHeading] += line + "\n";
-      }
-    }
+let matches = [...reportText.matchAll(headingPattern)];
+
+for (let i = 0; i < matches.length; i++) {
+  const heading = matches[i][1].toLowerCase();
+  const startIndex = matches[i].index + matches[i][0].length;
+  const endIndex = i + 1 < matches.length ? matches[i + 1].index : reportText.length;
+  const content = reportText.slice(startIndex, endIndex).trim();
+
+  if (heading.includes("qualification")) sections.report = content;
+  else if (heading.includes("predictive")) sections.predictive = content;
+  else if (heading.includes("outreach")) sections.outreach = content;
+  else if (heading.includes("questions")) sections.questions = content;
+}
 
     // --- Google Search News Snippet (unchanged) ---
     let newsSnippet = "";
