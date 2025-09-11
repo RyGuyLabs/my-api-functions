@@ -13,8 +13,8 @@ exports.handler = async (event) => {
     const { leadData, criteria, includeDemographics } = JSON.parse(event.body);
 
     // Retrieve API keys from Netlify environment variables
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    const GOOGLE_SEARCH_API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
+    const GEMINI_API_KEY = process.env.FIRST_API_KEY;
+    const GOOGLE_SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
 
     // Check if API keys are set
     if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY) {
