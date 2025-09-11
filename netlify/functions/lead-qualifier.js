@@ -48,32 +48,9 @@ exports.handler = async (event) => {
             tools: [{ "google_search": {} }]
         });
 
-        // Construct the prompt for the AI
-        const systemPrompt = `You are an expert B2B sales development representative (SDR) and lead qualifier.
-Your task is to analyze lead data against a set of custom criteria and generate a comprehensive qualification report.
-The report should include:
-- A qualification score out of 100.
-- A category (e.g., "Highly Qualified", "Good Fit", "Needs Nurturing", "Not a Fit").
-- A concise summary report justifying the score and category.
-- A section with "Latest News" about the company, based on a Google search, if relevant.
-- A section with "Predictive Insights" on the company's potential future needs.
-- A draft of a personalized "Outreach Message" to the lead.
-- A list of "Strategic Discovery Questions" to ask the lead.
-
-Use the provided criteria to evaluate the lead's budget, timeline, and ideal customer profile (ICP).
-The output MUST be a JSON object with the following structure:
-{
-  "score": number,
-  "category": string,
-  "report": string,
-  "news": string | null,
-  "predictiveInsight": string | null,
-  "outreachMessage": string,
-  "discoveryQuestions": string
-}
-If news is not found, set "news" to null.`;
-        
         const userQuery = `
+            Analyze the following lead data against my custom criteria:
+
             Lead Data:
             ${JSON.stringify(leadData, null, 2)}
 
@@ -88,8 +65,22 @@ If news is not found, set "news" to null.`;
 
         const result = await model.generateContent({
             contents: [{ parts: [{ text: userQuery }] }],
-            systemInstruction: {
-                parts: [{ text: systemPrompt }]
+            // Use generationConfig to enforce a structured JSON response
+            generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: 'OBJECT',
+                    properties: {
+                        score: { type: 'NUMBER' },
+                        category: { type: 'STRING' },
+                        report: { type: 'STRING' },
+                        news: { type: ['STRING', 'NULL'] },
+                        predictiveInsight: { type: ['STRING', 'NULL'] },
+                        outreachMessage: { type: 'STRING' },
+                        discoveryQuestions: { type: 'STRING' }
+                    },
+                    required: ['score', 'category', 'report', 'outreachMessage', 'discoveryQuestions']
+                }
             }
         });
 
@@ -98,11 +89,7 @@ If news is not found, set "news" to null.`;
         // Log the raw AI response for debugging
         console.log('Raw AI Response:', responseText);
 
-        // Extract JSON from the raw text. This makes the function more resilient to unexpected formatting.
-        const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
-        const jsonString = jsonMatch ? jsonMatch[1] : responseText;
-        
-        const qualificationData = JSON.parse(jsonString);
+        const qualificationData = JSON.parse(responseText);
 
         return {
             statusCode: 200,
