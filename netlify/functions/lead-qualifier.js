@@ -1,14 +1,26 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 exports.handler = async (event) => {
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    };
+
+    // Handle the preflight request for CORS
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: '',
+        };
+    }
+    
     // This function will only process POST requests.
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: {
-                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-                'Content-Type': 'application/json'
-            },
+            headers: corsHeaders,
             body: JSON.stringify({ error: 'Method Not Allowed' }),
         };
     }
@@ -24,10 +36,7 @@ exports.handler = async (event) => {
     if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY) {
         return {
             statusCode: 500,
-            headers: {
-                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-                'Content-Type': 'application/json'
-            },
+            headers: corsHeaders,
             body: JSON.stringify({ error: 'Server misconfiguration: API keys are not set.' }),
         };
     }
@@ -86,10 +95,7 @@ If news is not found, set "news" to null.`;
 
         return {
             statusCode: 200,
-            headers: {
-                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-                'Content-Type': 'application/json'
-            },
+            headers: corsHeaders,
             body: JSON.stringify(qualificationData),
         };
 
@@ -100,10 +106,7 @@ If news is not found, set "news" to null.`;
         // Return a more descriptive error to the frontend
         return {
             statusCode: 500,
-            headers: {
-                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-                'Content-Type': 'application/json'
-            },
+            headers: corsHeaders,
             body: JSON.stringify({ error: 'Failed to qualify lead.', details: error.message }),
         };
     }
