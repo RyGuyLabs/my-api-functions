@@ -1,109 +1,126 @@
-// netlify/functions/lead-qualifier.js
-import fetch from "node-fetch";
+const fetch = require('node-fetch');
 
-export async function handler(event) {
-  const headers = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
+const GEMINI_API_KEY = process.env.FIRST_API_KEY;
+const GOOGLE_SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+const GOOGLE_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: "Preflight OK" };
-  }
-
+exports.handler = async function(event, context) {
   try {
-    if (event.httpMethod !== "POST") {
-      return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    const { leadData, customCriteria, includeDemographics } = JSON.parse(event.body);
+    const body = JSON.parse(event.body);
 
-    const GEMINI_API_KEY = process.env.FIRST_API_KEY;
-    const GOOGLE_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
-    const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
+    const leadData = body.leadData || {};
+    const includeDemographics = body.includeDemographics || false;
+    const criteria = body.criteria || "No criteria provided";
 
-    if (!GEMINI_API_KEY || !GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({
-          error: "Missing environment variables. Ensure FIRST_API_KEY, RYGUY_SEARCH_API_KEY, and RYGUY_SEARCH_ENGINE_ID are set.",
-        }),
-      };
-    }
-
-    // --- Google News Fetch ---
-    let newsSnippet = "No relevant news found.";
-    try {
-      const searchUrl = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(
-        leadData["lead-company"] || "latest business news"
-      )}&cx=${SEARCH_ENGINE_ID}&key=${GOOGLE_API_KEY}`;
-
-      const searchRes = await fetch(searchUrl);
-      const searchJson = await searchRes.json();
-
-      if (searchJson.error) {
-        throw new Error(`Google Search API error: ${JSON.stringify(searchJson.error)}`);
+    // Fetch latest news snippet via Google Programmable Search
+    let newsSnippet = '';
+    if (GOOGLE_SEARCH_API_KEY && GOOGLE_CSE_ID) {
+      try {
+        const searchResponse = await fetch(
+          `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(leadData.leadCompany || '')}&key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_CSE_ID}`
+        );
+        const searchResults = await searchResponse.json();
+        if (searchResults.items && searchResults.items.length > 0) {
+          newsSnippet = searchResults.items[0].snippet;
+        }
+      } catch(err) {
+        console.error("Error fetching news snippet:", err);
+        newsSnippet = '';
       }
-
-      if (searchJson.items && searchJson.items.length > 0) {
-        newsSnippet = `${searchJson.items[0].title}: ${searchJson.items[0].snippet} (Source: ${searchJson.items[0].link})`;
-      }
-    } catch (err) {
-      console.error("Google Search failed:", err);
-      newsSnippet = "Google Search failed: " + err.message;
     }
 
-    // --- Gemini Call ---
+    // Build Gemini prompt
     const prompt = `
-Analyze the following lead data against my custom criteria.
+Analyze the following lead information in detail and provide clear sections in Title Case:
 
-Lead Data:
-${JSON.stringify(leadData, null, 2)}
+Lead Information:
+- Name: ${leadData.leadName || 'N/A'}
+- Company: ${leadData.leadCompany || 'N/A'}
+- Budget: ${leadData.leadBudget || 'N/A'}
+- Timeline: ${leadData.leadTimeline || 'N/A'}
+- Needs: ${leadData.leadNeeds || 'N/A'}
+- Custom Criteria: ${criteria}
 
-My Custom Criteria:
-${JSON.stringify(customCriteria, null, 2)}
+Include:
+1. Lead Analysis against the criteria
+2. Demographic Insights (if ${includeDemographics})
+3. Integration with Latest News Snippet:
+"${newsSnippet}"
+4. Predictive Engagement Insights
+5. Suggested Outreach Strategies
+6. 6-10 Strategic Discovery Questions tailored to this lead
 
-Latest News Snippet:
-${newsSnippet}
-
-Include Demographic Insights: ${includeDemographics}
-
-Please also generate **Strategic Discovery Questions** tailored to this lead.
+Return a JSON object with keys:
+{
+  "report": "...",
+  "news": "...",
+  "predictive": "...",
+  "outreach": "...",
+  "questions": "..."
+}
+Ensure all section headers are capitalized properly.
 `;
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      }
-    );
+    // Call Gemini API
+    const geminiResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GEMINI_API_KEY}`
+      },
+      body: JSON.stringify({
+        prompt: prompt,
+        temperature: 0.7,
+        maxOutputTokens: 1000
+      })
+    });
 
-    const geminiJson = await geminiRes.json();
+    const geminiData = await geminiResponse.json();
+    let content = '';
 
-    if (geminiJson.error) {
-      throw new Error(`Gemini API error: ${JSON.stringify(geminiJson.error)}`);
+    if (geminiData.candidates && geminiData.candidates.length > 0) {
+      content = geminiData.candidates[0].content?.[0]?.text || '';
     }
 
-    const aiResponse =
-      geminiJson.candidates?.[0]?.content?.parts?.[0]?.text || "No meaningful response generated.";
+    // Basic parsing of sections from Gemini response
+    const extractSection = (title) => {
+      const regex = new RegExp(`${title}:([\\s\\S]*?)(?=\\n[A-Z][a-zA-Z ]+:|$)`, 'i');
+      const match = content.match(regex);
+      return match ? match[1].trim() : '';
+    };
+
+    const responseBody = {
+      report: extractSection('Lead Analysis') || 'No report generated',
+      news: extractSection('Integration with Latest News Snippet') || newsSnippet || '',
+      predictive: extractSection('Predictive Engagement Insights') || 'Predictive engagement insights go here.',
+      outreach: extractSection('Suggested Outreach Strategies') || 'Suggested outreach strategies go here.',
+      questions: extractSection('Strategic Discovery Questions') || 'Strategic discovery questions go here.'
+    };
 
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        report: aiResponse,
-        news: newsSnippet,
-        predictive: "Predictive engagement insights go here.",
-        outreach: "Suggested outreach strategies go here.",
-        questions: "Strategic discovery questions go here.",
-      }),
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
+      },
+      body: JSON.stringify(responseBody)
     };
+
   } catch (error) {
-    console.error("Function crashed:", error);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+    console.error("Unexpected server error:", error);
+    return {
+      statusCode: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
+      },
+      body: JSON.stringify({ error: error.message })
+    };
   }
-}
+};
