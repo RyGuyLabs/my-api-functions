@@ -84,12 +84,11 @@ exports.handler = async (event) => {
             }
         });
 
-        const responseText = result.response.text();
+        // Use .json() to parse the structured response directly
+        const qualificationData = await result.response.json();
         
-        // Log the raw AI response for debugging
-        console.log('Raw AI Response:', responseText);
-
-        const qualificationData = JSON.parse(responseText);
+        // Log the structured AI response for debugging
+        console.log('Structured AI Response:', qualificationData);
 
         return {
             statusCode: 200,
