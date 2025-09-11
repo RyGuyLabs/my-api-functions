@@ -31,9 +31,10 @@ exports.handler = async (event) => {
     // Retrieve API keys from Netlify environment variables
     const GEMINI_API_KEY = process.env.FIRST_API_KEY;
     const GOOGLE_SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+    const GOOGLE_SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 
     // Check if API keys are set
-    if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY) {
+    if (!GEMINI_API_KEY || !GOOGLE_SEARCH_API_KEY || !GOOGLE_SEARCH_ENGINE_ID) {
         return {
             statusCode: 500,
             headers: corsHeaders,
@@ -48,14 +49,35 @@ exports.handler = async (event) => {
             tools: [{ "google_search": {} }]
         });
 
+        // 1. Fetch real-time news using Google Custom Search
+        let newsSnippet = 'No news found.';
+        const companyName = leadData['lead-company'];
+        
+        try {
+            const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_API_KEY}&cx=${GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(companyName + ' news')}`;
+            const searchResponse = await fetch(searchUrl);
+            const searchData = await searchResponse.json();
+
+            if (searchData.items && searchData.items.length > 0) {
+                // Take the snippet from the first search result
+                newsSnippet = searchData.items[0].snippet;
+            }
+        } catch (e) {
+            console.error('Error fetching news from Google Search:', e.message);
+            // Fallback to "No news found." is handled by the initial variable declaration.
+        }
+
         const userQuery = `
-            Analyze the following lead data against my custom criteria:
+            Analyze the following lead data against my custom criteria.
 
             Lead Data:
             ${JSON.stringify(leadData, null, 2)}
 
             My Custom Criteria:
             ${JSON.stringify(criteria, null, 2)}
+
+            Latest News Snippet:
+            ${newsSnippet}
 
             Include Demographic Insights: ${includeDemographics}
         `;
