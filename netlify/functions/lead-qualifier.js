@@ -83,6 +83,9 @@ If news is not found, set "news" to null.`;
             Include Demographic Insights: ${includeDemographics}
         `;
 
+        // Log the user query for debugging
+        console.log('User Query:', userQuery);
+
         const result = await model.generateContent({
             contents: [{ parts: [{ text: userQuery }] }],
             systemInstruction: {
@@ -91,7 +94,15 @@ If news is not found, set "news" to null.`;
         });
 
         const responseText = result.response.text();
-        const qualificationData = JSON.parse(responseText);
+        
+        // Log the raw AI response for debugging
+        console.log('Raw AI Response:', responseText);
+
+        // Extract JSON from the raw text. This makes the function more resilient to unexpected formatting.
+        const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
+        const jsonString = jsonMatch ? jsonMatch[1] : responseText;
+        
+        const qualificationData = JSON.parse(jsonString);
 
         return {
             statusCode: 200,
