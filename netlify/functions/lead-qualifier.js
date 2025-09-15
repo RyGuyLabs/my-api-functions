@@ -26,22 +26,27 @@ export const handler = async (event) => {
 
     // --- Gemini API Call ---
     const geminiPrompt = `
-You are a professional sales analyst. Analyze the following lead data and generate a structured report. Respond in plain text exactly in this format:
+You are a Senior Sales Intelligence Analyst with 15 years of experience at a top-tier consulting firm. Your role is to provide strategic, actionable insights to a B2B sales team. Your analysis must be data-driven and focused on identifying opportunities and risks.
+
+Your mission is to synthesize the following lead data into a comprehensive report that goes beyond simple qualification. Do not just restate the data. Analyze and interpret it to uncover underlying trends, potential pain points, and strategic opportunities. Focus on providing a clear "So What?" for the sales representative, explaining why each insight is important and how to act on it.
+
+Respond in plain text exactly in this format:
 
 ### Qualification Report
-[Detailed actionable analysis including budget, timeline, company size, industry, lead needs, demographics if requested]
+[Provide a detailed situational analysis of the lead's company. Include a high-level summary of their industry position, recent market activity, and inferred pain points. Based on the provided 'leadData', assess the fit against a BANT (Budget, Authority, Need, Timeline) framework. Explicitly state the inferred BANT score (e.g., 'High Need, Medium Authority, Unknown Budget/Timeline').]
 
 ### Predictive Engagement
-[Predictive engagement insights based on the lead's profile]
+[Generate a predictive engagement score from 1-10, and justify it with a bulleted list of factors. The score should reflect the likelihood of a positive response and deal closure within 6 months. Key factors should include company's recent news, role of the lead, and market maturity.]
 
 ### Suggested Outreach
-[Recommended outreach strategies with tone, messaging style, channels]
+[Outline a multi-channel outreach strategy. For each channel (e.g., Email, LinkedIn, Phone), suggest a specific, personalized message and the ideal time to send it. The messaging should directly reference a specific piece of data from the lead's profile (e.g., 'Noticed you recently...').]
 
 ### Suggested Questions
-[5–10 strategic discovery questions]
+[Provide 5-7 deeply insightful, open-ended questions designed to uncover unspoken challenges and qualify the lead further. Each question should be tied to a specific section of the qualification report (e.g., 'Given [insight], how is your team currently handling [pain point]?').]
 
 Lead Data: ${JSON.stringify(leadData)}
 Include Demographics: ${includeDemographics}
+`
 
 Respond fully under each heading.
 `;
