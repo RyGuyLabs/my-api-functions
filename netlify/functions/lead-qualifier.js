@@ -56,6 +56,7 @@ Qualification Report: ${JSON.stringify(reportData)}
             );
 
             const geminiData = await geminiResponse.json();
+            console.log("Gemini API raw response for cadence:", JSON.stringify(geminiData, null, 2));
             let cadenceText = "No cadence generated.";
 
             if (geminiData?.candidates?.length > 0) {
