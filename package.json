@@ -9,6 +9,7 @@
     "uuid": "^11.1.0"
   },
   "main": "vocal-coach.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
