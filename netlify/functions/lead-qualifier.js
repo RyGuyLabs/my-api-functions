@@ -20,7 +20,6 @@ export const handler = async (event) => {
         if (path === '/generate-cadence') {
             const { leadData, reportData } = body;
 
-            // Your Cadence generation logic (from previous response)
             const geminiPrompt = `
 You are a professional sales strategist. Using the provided qualification report and lead data, generate a structured, multi-step sales cadence plan.
 
@@ -31,7 +30,7 @@ You are a professional sales strategist. Using the provided qualification report
 - The tone should be professional and direct.
 
 Lead Data: ${JSON.stringify(leadData)}
-Qualification Report: ${JSON.stringify(reportData)}
+Qualification Report: ${reportData}
 `;
 
             const geminiResponse = await fetch(
@@ -81,8 +80,6 @@ Qualification Report: ${JSON.stringify(reportData)}
 
         // --- Handle Lead Qualification Request (original logic) ---
         const { leadData, includeDemographics } = body;
-
-        // ... [Your existing logic for lead-qualifier.js] ...
 
         const geminiPrompt = `
 You are a professional sales analyst. Analyze the following lead data and generate a structured report. Respond in plain text exactly in this format:
@@ -154,7 +151,7 @@ Respond fully under each heading.
 
         let newsSnippet = "";
         if (process.env.RYGUY_SEARCH_API_KEY && process.env.RYGUY_SEARCH_ENGINE_ID) {
-        const query = `"${leadData["lead-company"]}" news headlines`;
+            const query = `${leadData["lead-company"]} news headlines`;
             console.log("News Search Query:", query);
             const searchRes = await fetch(
                 `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=3`
