@@ -1,6 +1,16 @@
+[build]
+  functions = "netlify/functions"
+
+# Global functions settings. This will apply to all functions by default.
 [functions]
-  directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Configuration for the vocal-coach function.
+# This ensures it has access to its specific environment variable.
 [functions.vocal-coach]
   environment = ["FIRST_API_KEY"]
+
+# Configuration for the new lead-qualifier function.
+# This ensures it has access to all three required environment variables.
+[functions.lead-qualifier]
+  environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
