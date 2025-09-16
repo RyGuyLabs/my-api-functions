@@ -1,183 +1,71 @@
-import fetch from 'node-fetch';
+// netlify/functions/lead-qualifier.js
+import fetch from "node-fetch";
 
-export const handler = async (event) => {
-    const headers = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
+export async function handler(event, context) {
+  try {
+    const { prompt, leadData, idealClient } = JSON.parse(event.body);
+
+    // Replace with your OpenAI API key in Netlify environment variables
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+    // Construct the system + user message
+    const messages = [
+      {
+        role: "system",
+        content: "You are a world-class sales consultant. Generate highly professional, resonating, witty, and masterful sales insights."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ];
+
+    // Call OpenAI Chat API
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: messages,
+        max_tokens: 1200,
+        temperature: 0.8
+      })
+    });
+
+    const result = await response.json();
+    const text = result.choices?.[0]?.message?.content || "No response generated.";
+
+    // Split sections by markers (user can ask AI to format like "### Section Name") or simple heuristic
+    const sections = {
+      report: text.match(/Qualification Report:(.*?)(?=Predictive Engagement:|$)/s)?.[1]?.trim() || text,
+      predictive: text.match(/Predictive Engagement:(.*?)(?=Suggested Outreach:|$)/s)?.[1]?.trim() || "Predictive engagement insights go here.",
+      outreach: text.match(/Suggested Outreach:(.*?)(?=Suggested Questions:|$)/s)?.[1]?.trim() || "Suggested outreach strategies go here.",
+      questions: text.match(/Suggested Questions:(.*?)(?=News:|$)/s)?.[1]?.trim() || "Strategic discovery questions go here.",
+      news: text.match(/News:(.*)/s)?.[1]?.trim() || "No news found."
     };
 
-    if (event.httpMethod === "OPTIONS") {
-        return { statusCode: 204, headers };
-    }
+    // Return HTML-ready content
+    const htmlSections = {
+      report: `<div>${sections.report.replace(/\n/g, "<br>")}</div>`,
+      predictive: `<div>${sections.predictive.replace(/\n/g, "<br>")}</div>`,
+      outreach: `<div>${sections.outreach.replace(/\n/g, "<br>")}</div>`,
+      questions: `<div>${sections.questions.replace(/\n/g, "<br>")}</div>`,
+      news: `<div>${sections.news.replace(/\n/g, "<br>")}</div>`
+    };
 
-    const path = event.path.replace(/\.netlify\/functions\/[^/]+/, '');
+    return {
+      statusCode: 200,
+      body: JSON.stringify(htmlSections)
+    };
 
-    try {
-        const body = JSON.parse(event.body);
-
-        // --- Handle Cadence Generation Request ---
-        if (path === '/generate-cadence') {
-            const { leadData, reportData } = body;
-
-            const geminiPrompt = `
-You are a professional sales strategist. Using the provided qualification report and lead data, generate a structured, multi-step sales cadence plan.
-
-**Instructions:**
-- Create a plan with 4-5 key steps.
-- Each step should be actionable and include a recommended time interval (e.g., "Day 1: Initial Email," "Day 3: LinkedIn Connection," etc.).
-- Respond as a simple list. Do not use Markdown headings.
-- The tone should be professional and direct.
-
-Lead Data: ${JSON.stringify(leadData)}
-Qualification Report: ${reportData}
-`;
-
-            const geminiResponse = await fetch(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": process.env.FIRST_API_KEY,
-                    },
-                    body: JSON.stringify({
-                        contents: [{
-                            role: "user",
-                            parts: [{ text: geminiPrompt }],
-                        }],
-                        generationConfig: {
-                            maxOutputTokens: 500,
-                            temperature: 0.7,
-                        }
-                    }),
-                }
-            );
-
-            const geminiData = await geminiResponse.json();
-            console.log("Gemini API raw response for cadence:", JSON.stringify(geminiData, null, 2));
-            let cadenceText = "No cadence generated.";
-
-            if (geminiData?.candidates?.length > 0) {
-                cadenceText = geminiData.candidates
-                    .map(c => c.content?.parts?.map(p => p.text).join("\n"))
-                    .join("\n") || cadenceText;
-            }
-
-            const cadenceItems = cadenceText.split('\n').filter(item => item.trim() !== '');
-
-            return {
-                statusCode: 200,
-                headers: {
-                    ...headers,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    cadence: cadenceItems,
-                }),
-            };
-        }
-
-        // --- Handle Lead Qualification Request (original logic) ---
-        const { leadData, includeDemographics } = body;
-
-        const geminiPrompt = `
-You are a professional sales analyst. Analyze the following lead data and generate a structured report. Respond in plain text exactly in this format:
-
-### Qualification Report
-
-[Detailed actionable analysis including budget, timeline, company size, industry, lead needs, demographics if requested]
-
-### Predictive Engagement
-
-[Predictive engagement insights based on the lead's profile]
-
-### Suggested Outreach
-
-[Recommended outreach strategies with tone, messaging style, channels]
-
-### Suggested Questions
-
-[5–10 strategic discovery questions]
-
-Lead Data: ${JSON.stringify(leadData)}
-Include Demographics: ${includeDemographics}
-
-Respond fully under each heading.
-`;
-
-        const geminiResponse = await fetch(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": process.env.FIRST_API_KEY,
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        role: "user",
-                        parts: [{ text: geminiPrompt }],
-                    }],
-                    generationConfig: {
-                        maxOutputTokens: 1500,
-                        temperature: 0.5,
-                    }
-                }),
-            }
-        );
-
-        const geminiData = await geminiResponse.json();
-        let reportText = "No report generated.";
-        if (geminiData?.candidates?.length > 0) {
-            reportText = geminiData.candidates
-                .map(c => c.content?.parts?.map(p => p.text).join("\n"))
-                .join("\n") || reportText;
-        }
-
-        const sections = { report: "", predictive: "", outreach: "", questions: "" };
-        const headingRegex = /###\s*(Qualification Report|Predictive Engagement|Suggested Outreach|Suggested Questions)/gi;
-        const matches = [...reportText.matchAll(headingRegex)];
-        for (let i = 0; i < matches.length; i++) {
-            const heading = matches[i][1].toLowerCase().replace(/\s/g, '');
-            const start = matches[i].index + matches[i][0].length;
-            const end = (i + 1 < matches.length) ? matches[i + 1].index : reportText.length;
-            const content = reportText.slice(start, end).trim();
-            if (heading.includes("qualification")) sections.report = content;
-            else if (heading.includes("predictive")) sections.predictive = content;
-            else if (heading.includes("outreach")) sections.outreach = content;
-            else if (heading.includes("questions")) sections.questions = content;
-        }
-
-        let newsSnippet = "";
-        if (process.env.RYGUY_SEARCH_API_KEY && process.env.RYGUY_SEARCH_ENGINE_ID) {
-            const query = `${leadData["lead-company"]} news headlines`;
-            console.log("News Search Query:", query);
-            const searchRes = await fetch(
-                `https://www.googleapis.com/customsearch/v1?key=${process.env.RYGUY_SEARCH_API_KEY}&cx=${process.env.RYGUY_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=3`
-            );
-            const searchData = await searchRes.json();
-            if (searchData.items?.length) {
-                newsSnippet = searchData.items
-                    .map(item => `<strong>${item.title}</strong>: ${item.snippet} <a href="${item.link}" target="_blank" class="text-blue-400 underline">Read more</a>`)
-                    .join("<br><br>");
-            }
-        }
-
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                report: sections.report || "No report generated.",
-                predictive: sections.predictive || "Predictive engagement insights go here.",
-                outreach: sections.outreach || "Suggested outreach strategies go here.",
-                questions: sections.questions || "Strategic discovery questions go here.",
-                news: newsSnippet,
-            }),
-        };
-
-    } catch (error) {
-        console.error("Function error:", error.message);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
-    }
-};
+  } catch (error) {
+    console.error(error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Server error generating lead report." })
+    };
+  }
+}
