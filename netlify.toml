@@ -1,5 +1,6 @@
 [build]
   functions = "netlify/functions"
+  publish = "." # Assuming your HTML file is in the root directory
 
 # Global functions settings. This will apply to all functions by default.
 [functions]
