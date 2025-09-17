@@ -2,6 +2,12 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fetch = require('node-fetch');
 
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*', // Allows all origins
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+};
+
 const geminiApiKey = process.env.FIRST_API_KEY;
 const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
 const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
@@ -28,15 +34,20 @@ async function googleSearch(query) {
 }
 
 exports.handler = async (event, context) => {
+    // Handle CORS preflight requests
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+    }
+
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
-    
+
     try {
         const { leadData, idealClient } = JSON.parse(event.body);
 
         if (!leadData) {
-            return { statusCode: 400, body: JSON.stringify({ error: "Missing leadData" }) };
+            return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: "Missing leadData" }) };
         }
 
         const model = genAI.getGenerativeModel({
@@ -62,7 +73,6 @@ exports.handler = async (event, context) => {
             role: "user",
             parts: [{
                 text: `You are a top-tier sales consultant. Using the lead and ideal client info below, generate a professional sales report in structured JSON with keys: report, predictive, outreach, questions, news.  
-
 Lead Details:
 ${JSON.stringify(leadData, null, 2)}
 
@@ -113,7 +123,7 @@ If you need recent info, call googleSearch.`,
 
         return {
             statusCode: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
             body: JSON.stringify({
                 report: parsed.report || "<p>No report generated.</p>",
                 predictive: parsed.predictive || "<p>No predictive insights.</p>",
@@ -126,6 +136,7 @@ If you need recent info, call googleSearch.`,
         console.error("Lead qualifier error:", error);
         return {
             statusCode: 500,
+            headers: CORS_HEADERS,
             body: JSON.stringify({ error: `Failed to generate lead report: ${error.message || error}` }),
         };
     }
