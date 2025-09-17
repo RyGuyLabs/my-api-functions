@@ -69,7 +69,7 @@ exports.handler = async (event, context) => {
 
         let conversation = model.startChat({ history: [] });
 
-        let result = await conversation.sendMessage({
+        let result = await conversation.sendMessage([{
             role: "user",
             parts: [{
                 text: `You are a top-tier sales consultant. Using the lead and ideal client info below, generate a professional sales report in structured JSON with keys: report, predictive, outreach, questions, news.  
@@ -81,7 +81,7 @@ ${JSON.stringify(idealClient || {}, null, 2)}
 
 If you need recent info, call googleSearch.`,
             }],
-        });
+        }]);
 
         let response = await result.response;
         let candidate = response.candidates?.[0];
@@ -92,7 +92,7 @@ If you need recent info, call googleSearch.`,
             if (name === "googleSearch" && args?.query) {
                 const searchResults = await googleSearch(args.query);
 
-                result = await conversation.sendMessage({
+                result = await conversation.sendMessage([{
                     role: "function",
                     parts: [{
                         functionResponse: {
@@ -100,7 +100,7 @@ If you need recent info, call googleSearch.`,
                             response: { output: searchResults },
                         },
                     }],
-                });
+                }]);
                 response = await result.response;
                 candidate = response.candidates?.[0];
                 content = candidate?.content?.parts?.[0];
