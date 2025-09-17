@@ -1,128 +1,148 @@
 // File: netlify/functions/lead-qualifier.js
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// Env vars (provided by you)
 const geminiApiKey = process.env.FIRST_API_KEY;
 const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
 const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
 
-// Initialize Gemini client
+// Init Gemini client
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 
-// Define the Google Search tool for Gemini's reference
-const searchTool = {
-  toolSpec: {
-    name: "google_search_retrieval",
-    description: "Search Google for up-to-date information.",
-    inputParameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Search query" }
-      },
-      required: ["query"]
-    }
-  },
-  // The toolCode block is not for direct execution
-  toolCode: {
-    googleSearch: { apiKey: searchApiKey, cx: searchEngineId }
+// Google Custom Search helper
+async function googleSearch(query) {
+  const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Google Search failed: ${response.status}`);
+  const data = await response.json();
+
+  if (!data.items || data.items.length === 0) {
+    return "No results found.";
   }
-};
 
-// --- Your new, corrected handler function ---
-exports.handler = async function(event) {
+  return data.items
+    .map(
+      (item) =>
+        `<p><strong>${item.title}</strong><br>${item.snippet}<br><a href="${item.link}" target="_blank">${item.link}</a></p>`
+    )
+    .join("\n");
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { leadData, idealClient } = req.body || {};
+  if (!leadData) {
+    return res.status(400).json({ error: "Missing leadData" });
+  }
+
   try {
-    const { leadData, idealClient } = JSON.parse(event.body || '{}');
+    const model = genAI.getGenerativeModel({
+      model: "gemini-pro",
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: "googleSearch",
+              description: "Search Google for up-to-date lead or industry information.",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description: "The search query",
+                  },
+                },
+                required: ["query"],
+              },
+            },
+          ],
+        },
+      ],
+    });
 
-    if (!leadData) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Missing leadData" }) };
-    }
+    let conversation = await model.startChat({ history: [] });
 
-    // Initialize the Gemini model
-    const model = genAI.getGenerativeModel({ model: "gemini-pro", tools: [searchTool] });
-    const chat = model.startChat();
+    // Step 1: Initial request
+    let result = await conversation.sendMessage([
+      {
+        role: "user",
+        parts: [
+          {
+            text: `You are a top-tier sales consultant. Using the lead and ideal client info below, generate a professional sales report in structured JSON with keys: report, predictive, outreach, questions, news.  
 
-    // Compose prompt
-    const combinedPrompt = `
-      You are a top-tier sales consultant. Using the lead and ideal client info below, generate a professional sales report with HTML formatting. Use the Google Search tool for the 'news' section if needed.
+Lead Details:
+${JSON.stringify(leadData, null, 2)}
 
-      Lead Details:
-      ${JSON.stringify(leadData, null, 2)}
+Ideal Client Profile:
+${JSON.stringify(idealClient || {}, null, 2)}
 
-      Ideal Client Profile:
-      ${JSON.stringify(idealClient || {}, null, 2)}
+If you need recent info, call googleSearch.`,
+          },
+        ],
+      },
+    ]);
 
-      Return a JSON object with keys:
-      1. report
-      2. predictive
-      3. outreach
-      4. questions
-      5. news
-      Each value should be HTML-ready.
-    `;
+    let response = await result.response;
+    let candidate = response.candidates?.[0];
+    let content = candidate?.content?.parts?.[0];
 
-    // Send initial prompt to the model
-    const initialResponse = await chat.sendMessage(combinedPrompt);
+    // Step 2: Handle function calls
+    if (content?.functionCall) {
+      const { name, args } = content.functionCall;
 
-    // Get the response text
-    let responseText = initialResponse.response.text();
+      if (name === "googleSearch" && args?.query) {
+        const searchResults = await googleSearch(args.query);
 
-    // Check if the model has a tool request and is not a direct response
-    if (initialResponse.response.toolCalls && initialResponse.response.toolCalls.length > 0) {
-      // Get the tool call object
-      const toolCall = initialResponse.response.toolCalls[0];
-      const { query } = toolCall.args;
+        // Feed results back into Gemini
+        result = await conversation.sendMessage([
+          {
+            role: "function",
+            parts: [
+              {
+                functionResponse: {
+                  name: "googleSearch",
+                  response: { output: searchResults },
+                },
+              },
+            ],
+          },
+        ]);
 
-      // Manually perform the search using the query
-      const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
-      const searchResponse = await fetch(searchUrl);
-      const searchResults = await searchResponse.json();
-
-      // Extract and format the search results to send back to Gemini
-      let formattedResults = "No search results found.";
-      if (searchResults.items && searchResults.items.length > 0) {
-        formattedResults = searchResults.items.map(item => `Title: ${item.title}, Snippet: ${item.snippet}`).join('\n\n');
+        response = await result.response;
+        candidate = response.candidates?.[0];
+        content = candidate?.content?.parts?.[0];
       }
-
-      // Send the formatted search results back to the chat for a final response
-      const followupResponse = await chat.sendMessage({
-        role: 'tool',
-        content: formattedResults
-      });
-      responseText = followupResponse.response.text();
     }
 
-    // Now, parse the final response text
-    let aiResponse;
+    // Step 3: Parse JSON output safely
+    const rawText = content?.text || "No response generated.";
+    let parsed;
     try {
-      aiResponse = JSON.parse(responseText);
-    } catch (parseErr) {
-      console.error('Gemini JSON parse failed, returning raw text as fallback', parseErr);
-      aiResponse = {
-        report: `<p>${responseText}</p>`,
-        predictive: `<p>${responseText}</p>`,
-        outreach: `<p>${responseText}</p>`,
-        questions: `<p>${responseText}</p>`,
-        news: `<p>${responseText}</p>`
+      parsed = JSON.parse(rawText);
+    } catch (err) {
+      parsed = {
+        report: `<p>${rawText}</p>`,
+        predictive: "<p>No predictive insights.</p>",
+        outreach: "<p>No outreach generated.</p>",
+        questions: "<p>No questions generated.</p>",
+        news: "<p>No news available.</p>",
       };
     }
-    
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        report: aiResponse.report || "<p>No report generated.</p>",
-        predictive: aiResponse.predictive || "<p>No predictive insights.</p>",
-        outreach: aiResponse.outreach || "<p>No outreach suggestions.</p>",
-        questions: aiResponse.questions || "<p>No questions generated.</p>",
-        news: aiResponse.news || "<p>No news available.</p>"
-      })
-    };
 
+    res.status(200).json({
+      report: parsed.report || "<p>No report generated.</p>",
+      predictive: parsed.predictive || "<p>No predictive insights.</p>",
+      outreach: parsed.outreach || "<p>No outreach suggestions.</p>",
+      questions: parsed.questions || "<p>No questions generated.</p>",
+      news: parsed.news || "<p>No news available.</p>",
+    });
   } catch (error) {
     console.error("Lead qualifier error:", error);
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: `Failed to generate lead report: ${error.message}` })
-    };
+    res.status(500).json({
+      error: `Failed to generate lead report: ${error.message || error}`,
+    });
   }
-};
+}
