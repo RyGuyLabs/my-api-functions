@@ -14,7 +14,7 @@ const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
 
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 
-// Google Custom Search helper
+// --- Google Custom Search helper ---
 async function googleSearch(query) {
     const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
     const response = await fetch(url);
@@ -34,7 +34,7 @@ async function googleSearch(query) {
 }
 
 exports.handler = async (event, context) => {
-    // Handle CORS preflight requests
+    // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 204, headers: CORS_HEADERS, body: '' };
     }
@@ -69,11 +69,12 @@ exports.handler = async (event, context) => {
 
         let conversation = model.startChat({ history: [] });
 
-        // FIX #1: The sendMessage argument must be in an array.
+        // --- Send first request ---
         let result = await conversation.sendMessage([{
             role: "user",
             parts: [{
                 text: `You are a top-tier sales consultant. Using the lead and ideal client info below, generate a professional sales report in structured JSON with keys: report, predictive, outreach, questions, news.  
+
 Lead Details:
 ${JSON.stringify(leadData, null, 2)}
 
@@ -85,35 +86,54 @@ If you need recent info, call googleSearch.`,
         }]);
 
         let response = await result.response;
+
+        // --- Parse Gemini response robustly ---
         let candidate = response.candidates?.[0];
-        let content = candidate?.content?.parts?.[0];
+        let content = candidate?.content;
+        let functionCall = null;
+        let textResponse = "";
 
-        if (content?.functionCall) {
-            const { name, args } = content.functionCall;
-            if (name === "googleSearch" && args?.query) {
-                const searchResults = await googleSearch(args.query);
-
-                // FIX #2: The sendMessage argument must be in an array.
-                result = await conversation.sendMessage([{
-                    role: "function",
-                    parts: [{
-                        functionResponse: {
-                            name: "googleSearch",
-                            response: { output: searchResults },
-                        },
-                    }],
-                }]);
-                response = await result.response;
-                candidate = response.candidates?.[0];
-                content = candidate?.content?.parts?.[0];
+        if (content?.parts) {
+            for (const part of content.parts) {
+                if (part.functionCall) functionCall = part.functionCall;
+                if (part.text) textResponse += part.text + "\n";
             }
         }
 
-        const rawText = content?.text || "No response generated.";
+        // --- Handle googleSearch tool call ---
+        if (functionCall?.name === "googleSearch" && functionCall.args?.query) {
+            const searchResults = await googleSearch(functionCall.args.query);
+
+            result = await conversation.sendMessage([{
+                role: "function",
+                parts: [{
+                    functionResponse: {
+                        name: "googleSearch",
+                        response: { output: searchResults },
+                    },
+                }],
+            }]);
+
+            response = await result.response;
+            candidate = response.candidates?.[0];
+            content = candidate?.content;
+
+            textResponse = "";
+            if (content?.parts) {
+                for (const part of content.parts) {
+                    if (part.text) textResponse += part.text + "\n";
+                }
+            }
+        }
+
+        // --- Final parsing ---
+        const rawText = textResponse.trim() || "No response generated.";
         let parsed;
+
         try {
             parsed = JSON.parse(rawText);
         } catch (err) {
+            console.warn("Could not parse Gemini response as JSON:", rawText);
             parsed = {
                 report: `<p>${rawText}</p>`,
                 predictive: "<p>No predictive insights.</p>",
@@ -139,7 +159,7 @@ If you need recent info, call googleSearch.`,
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ error: `Failed to generate lead report: ${error.message || error}` }),
+            body: JSON.stringify({ error: "Failed to generate lead report. Please try again later." }),
         };
     }
 };
