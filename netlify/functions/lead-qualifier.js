@@ -7,22 +7,11 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const geminiApiKey = process.env.FIRST_API_KEY;
+const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
 
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS_HEADERS, body: "" };
-  }
-
-  if (!geminiApiKey) {
-    return {
-      statusCode: 500,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({
-        error: "Missing Gemini API key",
-        message: "Please set the FIRST_API_KEY environment variable in Netlify",
-      }),
-    };
   }
 
   if (event.httpMethod !== "POST") {
@@ -36,50 +25,34 @@ exports.handler = async (event) => {
       return {
         statusCode: 400,
         headers: CORS_HEADERS,
-        body: JSON.stringify({ error: "Missing leadData in request body" }),
+        body: JSON.stringify({ error: "Missing leadData" }),
       };
     }
 
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5", // latest supported
-    });
-
-    const conversation = model.startChat({ history: [] });
-
-    const result = await conversation.sendMessage([
-      {
-        role: "user",
-        parts: [
-          {
-            text: `You are a top-tier sales consultant. Using the lead info below, generate a JSON report with keys: report, predictive, outreach, questions, news.
+    // --- Generate content using Gemini API ---
+    const prompt = `
+You are a top-tier sales consultant. Using the lead info below, generate a JSON report with keys:
+report, predictive, outreach, questions, news.
 
 Lead Details:
-${JSON.stringify(leadData, null, 2)}`
-          }
-        ],
-      },
-    ]);
+${JSON.stringify(leadData, null, 2)}
+`;
 
-    // Robust parsing
-    let candidate = result.response.candidates?.[0];
-    let textResponse = "";
+    const response = await genAI.generateText({
+      model: "gemini-1.5", // ✅ valid model
+      prompt,
+      temperature: 0.7,
+      maxOutputTokens: 500,
+    });
 
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        if (part.text) textResponse += part.text + "\n";
-      }
-    }
-
-    const rawText = textResponse.trim() || "No response generated.";
-
+    // response.output_text contains the generated string
     let parsed;
     try {
-      parsed = JSON.parse(rawText);
+      parsed = JSON.parse(response.output_text);
     } catch (err) {
-      console.warn("Could not parse Gemini response as JSON:", rawText);
+      // fallback if AI returns unparseable JSON
       parsed = {
-        report: `<p>${rawText}</p>`,
+        report: `<p>${response.output_text}</p>`,
         predictive: "<p>No predictive insights.</p>",
         outreach: "<p>No outreach generated.</p>",
         questions: "<p>No questions generated.</p>",
