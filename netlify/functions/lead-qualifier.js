@@ -39,6 +39,8 @@ exports.handler = async (event) => {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({ result: rawText }),
     };
+    console.log("API Key:", !!process.env.FIRST_API_KEY);
+
 
   } catch (err) {
     console.error("Lead qualifier error:", err);
