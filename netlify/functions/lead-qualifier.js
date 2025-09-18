@@ -1,165 +1,55 @@
 // File: netlify/functions/lead-qualifier.js
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const fetch = require('node-fetch');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const geminiApiKey = process.env.FIRST_API_KEY;
-const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
-const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: CORS_HEADERS, body: "" };
+  }
 
-const genAI = new GoogleGenerativeAI(geminiApiKey);
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Method Not Allowed" };
+  }
 
-// --- Google Custom Search helper ---
-async function googleSearch(query) {
-    const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Google Search failed: ${response.status}`);
-    const data = await response.json();
+  try {
+    const { leadData } = JSON.parse(event.body);
 
-    if (!data.items || data.items.length === 0) {
-        return "No results found.";
+    if (!leadData) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "Missing leadData" }),
+      };
     }
 
-    return data.items
-        .map(
-            (item) =>
-                `<p><strong>${item.title}</strong><br>${item.snippet}<br><a href="${item.link}" target="_blank">${item.link}</a></p>`
-        )
-        .join("\n");
-}
+    // ✅ Use your real Gemini API key from Netlify env vars
+    const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
 
-exports.handler = async (event, context) => {
-    // Handle CORS preflight
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 204, headers: CORS_HEADERS, body: '' };
-    }
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
-    }
+    const prompt = `Give me a short sales summary for this lead: ${JSON.stringify(
+      leadData
+    )}`;
 
-    try {
-        const { leadData, idealClient } = JSON.parse(event.body);
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
 
-        if (!leadData) {
-            return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: "Missing leadData" }) };
-        }
-
-        const model = genAI.getGenerativeModel({
-            model: "gemini-pro",
-            tools: [{
-                functionDeclarations: [{
-                    name: "googleSearch",
-                    description: "Search Google for up-to-date lead or industry information.",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            query: { type: "string", description: "The search query" },
-                        },
-                        required: ["query"],
-                    },
-                }],
-            }],
-        });
-
-        let conversation = model.startChat({ history: [] });
-
-        // --- Send first request ---
-        let result = await conversation.sendMessage([{
-            role: "user",
-            parts: [{
-                text: `You are a top-tier sales consultant. Using the lead and ideal client info below, generate a professional sales report in structured JSON with keys: report, predictive, outreach, questions, news.  
-
-Lead Details:
-${JSON.stringify(leadData, null, 2)}
-
-Ideal Client Profile:
-${JSON.stringify(idealClient || {}, null, 2)}
-
-If you need recent info, call googleSearch.`,
-            }],
-        }]);
-
-        let response = await result.response;
-
-        // --- Parse Gemini response robustly ---
-        let candidate = response.candidates?.[0];
-        let content = candidate?.content;
-        let functionCall = null;
-        let textResponse = "";
-
-        if (content?.parts) {
-            for (const part of content.parts) {
-                if (part.functionCall) functionCall = part.functionCall;
-                if (part.text) textResponse += part.text + "\n";
-            }
-        }
-
-        // --- Handle googleSearch tool call ---
-        if (functionCall?.name === "googleSearch" && functionCall.args?.query) {
-            const searchResults = await googleSearch(functionCall.args.query);
-
-            result = await conversation.sendMessage([{
-                role: "function",
-                parts: [{
-                    functionResponse: {
-                        name: "googleSearch",
-                        response: { output: searchResults },
-                    },
-                }],
-            }]);
-
-            response = await result.response;
-            candidate = response.candidates?.[0];
-            content = candidate?.content;
-
-            textResponse = "";
-            if (content?.parts) {
-                for (const part of content.parts) {
-                    if (part.text) textResponse += part.text + "\n";
-                }
-            }
-        }
-
-        // --- Final parsing ---
-        const rawText = textResponse.trim() || "No response generated.";
-        let parsed;
-
-        try {
-            parsed = JSON.parse(rawText);
-        } catch (err) {
-            console.warn("Could not parse Gemini response as JSON:", rawText);
-            parsed = {
-                report: `<p>${rawText}</p>`,
-                predictive: "<p>No predictive insights.</p>",
-                outreach: "<p>No outreach generated.</p>",
-                questions: "<p>No questions generated.</p>",
-                news: "<p>No news available.</p>",
-            };
-        }
-
-        return {
-            statusCode: 200,
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-            body: JSON.stringify({
-                report: parsed.report || "<p>No report generated.</p>",
-                predictive: parsed.predictive || "<p>No predictive insights.</p>",
-                outreach: parsed.outreach || "<p>No outreach suggestions.</p>",
-                questions: parsed.questions || "<p>No questions generated.</p>",
-                news: parsed.news || "<p>No news available.</p>",
-            }),
-        };
-    } catch (error) {
-        console.error("Lead qualifier error:", error);
-        return {
-            statusCode: 500,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ error: "Failed to generate lead report. Please try again later." }),
-        };
-    }
+    return {
+      statusCode: 200,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify({ report: text }),
+    };
+  } catch (err) {
+    console.error("Lead qualifier error:", err);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: "Failed to generate lead report." }),
+    };
+  }
 };
