@@ -3,11 +3,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
 
-exports.handler = async (event) => {
+exports.handler = async () => {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-turbo" });
 
-    // ✅ Correct payload format
     const result = await model.generateContent({
       contents: [
         {
