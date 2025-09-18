@@ -27,23 +27,42 @@ exports.handler = async (event) => {
       };
     }
 
-    // ✅ Use your real Gemini API key from Netlify env vars
+    // ✅ Initialize API client with your environment variable
     const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
 
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // ✅ Use the updated model name
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-pro",
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: "googleSearch",
+              description: "Search Google for up-to-date lead or industry information.",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: { type: "string", description: "The search query" },
+                },
+                required: ["query"],
+              },
+            },
+          ],
+        },
+      ],
+    });
 
-    const prompt = `Give me a short sales summary for this lead: ${JSON.stringify(
-      leadData
-    )}`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    // ✅ Make a basic test call to Gemini
+    const result = await model.generateContent([
+      `Qualify this lead: ${JSON.stringify(leadData)}`,
+    ]);
 
     return {
       statusCode: 200,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      body: JSON.stringify({ report: text }),
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ result: result.response.text() }),
     };
+
   } catch (err) {
     console.error("Lead qualifier error:", err);
     return {
