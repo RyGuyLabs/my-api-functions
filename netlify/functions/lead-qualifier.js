@@ -28,7 +28,7 @@ exports.handler = async (event) => {
     }
 
     // ✅ Init Gemini client (v1 SDK will point to correct endpoint)
-    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+    const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
 
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-turbo", // modern + cheaper than pro
