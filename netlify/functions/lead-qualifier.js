@@ -1,84 +1,103 @@
-// netlify/functions/lead-qualifier.js
+// File: netlify/functions/lead-qualifier.js
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-import fetch from "node-fetch";
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
-export async function handler(event, context) {
+const geminiApiKey = process.env.FIRST_API_KEY;
+
+exports.handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: CORS_HEADERS, body: "" };
+  }
+
+  if (!geminiApiKey) {
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({
+        error: "Missing Gemini API key",
+        message: "Please set the FIRST_API_KEY environment variable in Netlify",
+      }),
+    };
+  }
+
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers: CORS_HEADERS, body: "Method Not Allowed" };
+  }
+
   try {
-    // Read API key from environment variable
-    const API_KEY = process.env.FIRST_API_KEY;
-    if (!API_KEY) {
+    const { leadData } = JSON.parse(event.body);
+
+    if (!leadData) {
       return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "Missing API key (FIRST_API_KEY)" }),
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "Missing leadData in request body" }),
       };
     }
 
-    // Parse input (if any) from request body
-    let inputText = "Generate a sample lead report.";
-    if (event.body) {
-      try {
-        const body = JSON.parse(event.body);
-        if (body.prompt) {
-          inputText = body.prompt;
-        }
-      } catch (e) {
-        console.error("Invalid JSON in request body:", e);
-      }
-    }
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5", // latest supported
+    });
 
-    // Call Gemini API (v1beta, flash model)
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+    const conversation = model.startChat({ history: [] });
+
+    const result = await conversation.sendMessage([
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${API_KEY}`,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: inputText }],
-            },
-          ],
-        }),
-      }
-    );
+        role: "user",
+        parts: [
+          {
+            text: `You are a top-tier sales consultant. Using the lead info below, generate a JSON report with keys: report, predictive, outreach, questions, news.
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Gemini API error:", errorText);
-      return {
-        statusCode: response.status,
-        body: JSON.stringify({ error: "Gemini API request failed", details: errorText }),
-      };
+Lead Details:
+${JSON.stringify(leadData, null, 2)}`
+          }
+        ],
+      },
+    ]);
+
+    // Robust parsing
+    let candidate = result.response.candidates?.[0];
+    let textResponse = "";
+
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.text) textResponse += part.text + "\n";
+      }
     }
 
-    const data = await response.json();
-    console.log("Gemini API raw response:", data);
+    const rawText = textResponse.trim() || "No response generated.";
 
-    // Extract output text safely
-    let output = "";
-    if (
-      data.candidates &&
-      data.candidates[0] &&
-      data.candidates[0].content &&
-      data.candidates[0].content.parts &&
-      data.candidates[0].content.parts[0].text
-    ) {
-      output = data.candidates[0].content.parts[0].text;
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (err) {
+      console.warn("Could not parse Gemini response as JSON:", rawText);
+      parsed = {
+        report: `<p>${rawText}</p>`,
+        predictive: "<p>No predictive insights.</p>",
+        outreach: "<p>No outreach generated.</p>",
+        questions: "<p>No questions generated.</p>",
+        news: "<p>No news available.</p>",
+      };
     }
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ result: output }),
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify(parsed),
     };
-  } catch (err) {
-    console.error("Lead qualifier error:", err);
+  } catch (error) {
+    console.error("Lead qualifier error:", error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Failed to generate lead report.", details: err.message }),
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: "Gemini API request failed", details: error.message }),
     };
   }
-}
+};
