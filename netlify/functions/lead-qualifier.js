@@ -7,11 +7,12 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
+
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: CORS_HEADERS, body: "" };
   }
-
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
@@ -27,40 +28,28 @@ exports.handler = async (event) => {
       };
     }
 
-    // ✅ Initialize API client with your environment variable
-    const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const conversation = model.startChat({ history: [] });
 
-    // ✅ Use the updated model name
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-pro",
-      tools: [
-        {
-          functionDeclarations: [
-            {
-              name: "googleSearch",
-              description: "Search Google for up-to-date lead or industry information.",
-              parameters: {
-                type: "object",
-                properties: {
-                  query: { type: "string", description: "The search query" },
-                },
-                required: ["query"],
-              },
-            },
-          ],
-        },
-      ],
-    });
+    const result = await conversation.sendMessage([{
+      role: "user",
+      parts: [{
+        text: `You are a top-tier sales consultant. Generate a short summary about this lead in JSON: ${JSON.stringify(leadData)}`
+      }]
+    }]);
 
-    // ✅ Make a basic test call to Gemini
-    const result = await model.generateContent([
-      `Qualify this lead: ${JSON.stringify(leadData)}`,
-    ]);
+    let rawText = "";
+    const candidate = result.response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
+        if (part.text) rawText += part.text;
+      }
+    }
 
     return {
       statusCode: 200,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ result: result.response.text() }),
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify({ result: rawText.trim() || "No output from AI." }),
     };
 
   } catch (err) {
@@ -68,7 +57,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: "Failed to generate lead report." }),
+      body: JSON.stringify({ error: "Failed to generate lead report. Check server logs." }),
     };
   }
 };
