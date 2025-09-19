@@ -46,12 +46,10 @@ async function googleSearch(query) {
 }
 
 exports.handler = async (event) => {
-    // Handle OPTIONS method for CORS preflight requests
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 204, headers: CORS_HEADERS };
     }
     
-    // Ensure the request is a POST
     if (event.httpMethod !== "POST") {
         return { 
             statusCode: 405, 
@@ -83,31 +81,28 @@ exports.handler = async (event) => {
         });
 
         let conversation = model.startChat({ history: [] });
-
-        const prompt = {
-            role: "user",
-            content: `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news". The values for these keys should be HTML-formatted strings with clear headings and bullet points.
+        const promptContent = `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news". The values for these keys should be HTML-formatted strings with clear headings and bullet points.
             
             Based on the following data:
             Lead Data: ${JSON.stringify(leadData)}
             Ideal Client Profile: ${JSON.stringify(idealClient || {})}
             
             Use the 'googleSearch' tool for relevant, up-to-date information, especially for the 'news' key.
+            If you are unable to generate a valid JSON response for any reason, return the following JSON object exactly:
+            {"report": "<p>Error: The AI could not generate a valid report. Please try again.</p>", "predictive": "", "outreach": "", "questions": "", "news": ""}
+            
             Do not include any conversational text or explanation outside of the JSON object.
-            `
-        };
+            `;
 
-        let response = await conversation.sendMessage(prompt.content);
         let textResponse = "";
-        
-        const firstPart = response.candidates?.[0]?.content?.[0];
+        let response = await conversation.sendMessage(promptContent);
 
-        // Refined tool-call handling
-        if (firstPart?.functionCall) {
-            const { name, args } = firstPart.functionCall;
-            if (name === "googleSearch") {
-                const searchResults = await googleSearch(args.query);
-                const followupResponse = await conversation.sendMessage({
+        // While loop for chained tool calls
+        while (response?.candidates?.[0]?.content?.[0]?.functionCall) {
+            const toolCall = response.candidates[0].content[0].functionCall;
+            if (toolCall.name === "googleSearch") {
+                const searchResults = await googleSearch(toolCall.args.query);
+                response = await conversation.sendMessage({
                     role: "function",
                     content: [{
                         functionResponse: {
@@ -116,26 +111,39 @@ exports.handler = async (event) => {
                         }
                     }]
                 });
-                textResponse = followupResponse?.candidates?.[0]?.content?.[0]?.text || "";
+            } else {
+                console.warn(`Unrecognized function call: ${toolCall.name}`);
+                break;
             }
-        } else {
-          textResponse = firstPart?.text || "";
         }
+        
+        textResponse = response?.candidates?.[0]?.content?.[0]?.text || "";
 
         let parsedData = {};
         try {
-            // Safer JSON parsing by stripping markdown fences
-            textResponse = textResponse.replace(/```json|```/g, "").trim();
-            parsedData = JSON.parse(textResponse);
+            // Safer JSON parsing by stripping markdown fences and trimming braces
+            let cleanedText = textResponse.replace(/```json|```/g, "").trim();
+            const firstBrace = cleanedText.indexOf("{");
+            const lastBrace = cleanedText.lastIndexOf("}");
+            
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanedText = cleanedText.slice(firstBrace, lastBrace + 1);
+            }
+            
+            parsedData = JSON.parse(cleanedText);
         } catch (jsonError) {
             console.error("Failed to parse Gemini's response as JSON:", jsonError);
             console.error("Gemini response was:", textResponse);
+
+            // Conditional error response based on environment
+            const debugInfo = process.env.NODE_ENV === "development" ? `<p>Raw AI Response:</p><pre>${textResponse.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>` : "";
+            
             parsedData = {
                 report: `<p>Error: Could not generate a valid report. The AI returned a non-JSON response.</p>`,
                 predictive: "",
                 outreach: "",
                 questions: "",
-                news: `<p>Raw AI Response:</p><pre>${textResponse.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`
+                news: debugInfo
             };
         }
 
