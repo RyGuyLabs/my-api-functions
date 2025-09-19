@@ -71,7 +71,7 @@ exports.handler = async (event) => {
         }
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5",
+            model: "gemini-pro",
             tools: [{
                 functionDeclarations: [{
                     name: "googleSearch",
@@ -156,3 +156,4 @@ exports.handler = async (event) => {
         };
     }
 };
+
