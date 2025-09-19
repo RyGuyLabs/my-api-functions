@@ -71,9 +71,9 @@ exports.handler = async (event) => {
             };
         }
 
-        // Use a known, stable Gemini model that supports function calling
+        // Use a Gemini 1.5 model that is built to handle function calling
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.0-pro", // This model is widely available and supports tools.
+            model: "gemini-1.5-pro",
             tools: [{
                 functionDeclarations: [{
                     name: "googleSearch",
