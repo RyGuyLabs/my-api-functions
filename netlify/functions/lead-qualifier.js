@@ -1,7 +1,6 @@
 // File: netlify/functions/lead-qualifier.js
-// This is temporary code to find the correct model name
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fetch = require("node-fetch"); // <-- Correctly imports fetch
+const fetch = require("node-fetch"); // Correctly imports fetch
 
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -10,6 +9,7 @@ const CORS_HEADERS = {
 };
 
 exports.handler = async (event) => {
+    // Handle OPTIONS for CORS preflight
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 204, headers: CORS_HEADERS };
     }
@@ -18,7 +18,7 @@ exports.handler = async (event) => {
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiApiKey}`;
-        const response = await fetch(url); // <-- Now 'fetch' is a function
+        const response = await fetch(url); // Now 'fetch' is a function
         const data = await response.json();
         
         // Check if the response has a 'models' array before mapping
