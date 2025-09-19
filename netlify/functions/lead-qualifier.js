@@ -103,7 +103,12 @@ exports.handler = async (event) => {
         let response = await conversation.sendMessage(prompt.content);
         let textResponse = "";
         
-        const firstPart = response.candidates?.[0]?.content?.[0];
+        // This is the new, more robust check
+        if (!response.candidates || response.candidates.length === 0 || !response.candidates[0].content) {
+            throw new Error("Gemini API returned an empty or malformed response.");
+        }
+
+        const firstPart = response.candidates[0].content[0];
 
         // Check for and handle a tool call first
         if (firstPart?.functionCall) {
@@ -119,7 +124,10 @@ exports.handler = async (event) => {
                         }
                     }]
                 });
-                textResponse = followupResponse.response?.candidates?.[0]?.content?.[0]?.text;
+                if (!followupResponse.candidates || followupResponse.candidates.length === 0 || !followupResponse.candidates[0].content) {
+                    throw new Error("Gemini API returned an empty or malformed follow-up response.");
+                }
+                textResponse = followupResponse.candidates[0].content[0].text;
             }
         } else if (firstPart?.text) {
              textResponse = firstPart.text;
