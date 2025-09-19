@@ -71,7 +71,6 @@ exports.handler = async (event) => {
             };
         }
 
-        // Use a Gemini 1.5 model that is built to handle function calling
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
             tools: [{
@@ -83,10 +82,8 @@ exports.handler = async (event) => {
             }]
         });
 
-        // Initialize chat with history
         let conversation = model.startChat({ history: [] });
 
-        // Prompt the model to return a JSON object directly
         const prompt = {
             role: "user",
             content: `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news". The values for these keys should be HTML-formatted strings with clear headings and bullet points.
@@ -103,14 +100,9 @@ exports.handler = async (event) => {
         let response = await conversation.sendMessage(prompt.content);
         let textResponse = "";
         
-        // This is the new, more robust check
-        if (!response.candidates || response.candidates.length === 0 || !response.candidates[0].content) {
-            throw new Error("Gemini API returned an empty or malformed response.");
-        }
+        const firstPart = response.candidates?.[0]?.content?.[0];
 
-        const firstPart = response.candidates[0].content[0];
-
-        // Check for and handle a tool call first
+        // Refined tool-call handling
         if (firstPart?.functionCall) {
             const { name, args } = firstPart.functionCall;
             if (name === "googleSearch") {
@@ -124,22 +116,20 @@ exports.handler = async (event) => {
                         }
                     }]
                 });
-                if (!followupResponse.candidates || followupResponse.candidates.length === 0 || !followupResponse.candidates[0].content) {
-                    throw new Error("Gemini API returned an empty or malformed follow-up response.");
-                }
-                textResponse = followupResponse.candidates[0].content[0].text;
+                textResponse = followupResponse?.candidates?.[0]?.content?.[0]?.text || "";
             }
-        } else if (firstPart?.text) {
-             textResponse = firstPart.text;
+        } else {
+          textResponse = firstPart?.text || "";
         }
 
         let parsedData = {};
         try {
-            parsedData = JSON.parse(textResponse.trim());
+            // Safer JSON parsing by stripping markdown fences
+            textResponse = textResponse.replace(/```json|```/g, "").trim();
+            parsedData = JSON.parse(textResponse);
         } catch (jsonError) {
             console.error("Failed to parse Gemini's response as JSON:", jsonError);
             console.error("Gemini response was:", textResponse);
-            // Fallback to a structured error or default content
             parsedData = {
                 report: `<p>Error: Could not generate a valid report. The AI returned a non-JSON response.</p>`,
                 predictive: "",
@@ -161,8 +151,7 @@ exports.handler = async (event) => {
             statusCode: 500, 
             headers: CORS_HEADERS, 
             body: JSON.stringify({ 
-                error: "Internal server error. Please check logs.", 
-                details: error.message 
+                error: "AI report generation failed. Please retry shortly."
             }) 
         };
     }
