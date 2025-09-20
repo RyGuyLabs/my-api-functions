@@ -14,6 +14,15 @@ const CORS_HEADERS = {
 const geminiApiKey = process.env.FIRST_API_KEY;
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 
+// Define the canonical fallback response as a single source of truth
+const FALLBACK_RESPONSE = {
+    report: "<p>Error: The AI could not generate a valid report. Please try again.</p>",
+    predictive: "",
+    outreach: "",
+    questions: "",
+    news: ""
+};
+
 // Define the schema for the expected JSON response
 const responseSchema = {
     type: "object",
@@ -34,13 +43,12 @@ function fallbackResponse(message, textResponse) {
     const debugInfo = process.env.NODE_ENV === "development"
         ? `<p>Raw AI Response:</p><pre>${(textResponse || "[empty]").replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`
         : "";
-    return {
-        report: `<p>Error: ${message}</p>`,
-        predictive: "",
-        outreach: "",
-        questions: "",
-        news: debugInfo
-    };
+    
+    // Use a canonical object and overwrite the report key
+    const response = { ...FALLBACK_RESPONSE };
+    response.report = `<p>Error: ${message}</p>`;
+    response.news = debugInfo;
+    return response;
 }
 
 // Correctly handle the Google Search Tool Function
@@ -65,10 +73,10 @@ async function googleSearch(query) {
             return "No results found.";
         }
         return data.items.map(item => `
-          <div class="news-item mb-4 p-4 rounded-lg bg-gray-700 bg-opacity-30">
-            <a href="${item.link}" target="_blank" class="text-blue-300 hover:underline"><strong>${item.title}</strong></a>
-            <p class="text-sm mt-1 text-gray-400">${item.snippet}</p>
-          </div>
+            <div class="news-item mb-4 p-4 rounded-lg bg-gray-700 bg-opacity-30">
+                <a href="${item.link}" target="_blank" class="text-blue-300 hover:underline"><strong>${item.title}</strong></a>
+                <p class="text-sm mt-1 text-gray-400">${item.snippet}</p>
+            </div>
         `).join("\n");
     } catch (error) {
         console.error("Google Search error:", error);
@@ -102,6 +110,19 @@ exports.handler = async (event) => {
 
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
+            // Explicitly define safety settings for predictable production behavior
+            safetySettings: [
+                { category: "HARM_CATEGORY_DEROGATORY", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                { category: "HARM_CATEGORY_VIOLENCE", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
+            ],
+            // Use generationConfig to enforce JSON output and avoid fragile parsing
+            generationConfig: {
+                responseMimeType: "application/json"
+            },
             tools: [{
                 functionDeclarations: [{
                     name: "googleSearch",
@@ -111,7 +132,6 @@ exports.handler = async (event) => {
             }]
         });
 
-        let conversation = model.startChat({ history: [] });
         const promptContent = `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news". The values for these keys should be HTML-formatted strings with clear headings and bullet points.
             
             Based on the following data:
@@ -120,52 +140,31 @@ exports.handler = async (event) => {
             
             Use the 'googleSearch' tool for relevant, up-to-date information, especially for the 'news' key.
             If you are unable to generate a valid JSON response for any reason, return the following JSON object exactly:
-            {"report": "<p>Error: The AI could not generate a valid report. Please try again.</p>", "predictive": "", "outreach": "", "questions": "", "news": ""}
+            ${JSON.stringify(FALLBACK_RESPONSE)}
             
-            Do not include any conversational text or explanation outside of the JSON object.
-            `;
+            Do not include any conversational text or explanation outside of the JSON object.`;
 
-        let textResponse = "";
-        let response = await conversation.sendMessage(promptContent);
-
-        while (response?.candidates?.[0]?.content?.[0]?.functionCall) {
-            const toolCall = response.candidates[0].content[0].functionCall;
-            if (toolCall.name === "googleSearch") {
-                const searchResults = await googleSearch(toolCall.args.query);
-                response = await conversation.sendMessage({
-                    role: "function",
-                    content: [{
-                        functionResponse: {
-                            name: "googleSearch",
-                            response: { output: searchResults }
-                        }
-                    }]
-                });
-            } else {
-                console.warn("Unrecognized function call:", toolCall.name);
-                break;
+        // Use the more efficient toolResponseHandler for a single logical API call
+        let conversation = model.startChat({ history: [] });
+        const response = await conversation.sendMessage(promptContent, {
+            toolResponseHandler: async (toolCall) => {
+                if (toolCall.name === "googleSearch") {
+                    const searchResults = await googleSearch(toolCall.args.query);
+                    return { output: searchResults };
+                } else {
+                    console.warn("Unrecognized function call:", toolCall.name);
+                    return { output: "Unrecognized function." };
+                }
             }
-        }
+        });
         
-        textResponse = response?.candidates?.[0]?.content?.[0]?.text || "";
-
+        const textResponse = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
         let parsedData = {};
+
         try {
-            let cleanedText = (textResponse || "").replace(/```json|```/g, "").trim();
-            if (!cleanedText) {
-                throw new Error("Gemini returned an empty response.");
-            }
-
-            const firstBrace = cleanedText.indexOf("{");
-            const lastBrace = cleanedText.lastIndexOf("}");
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanedText = cleanedText.slice(firstBrace, lastBrace + 1);
-            }
-            
-            parsedData = JSON.parse(cleanedText);
-
+            // Because we're using responseMimeType, the response is guaranteed to be clean JSON
+            parsedData = JSON.parse(textResponse);
             if (!validate(parsedData)) {
-                // Log structured error for easier debugging
                 console.error("Schema validation failed", { errors: validate.errors, parsedData });
                 throw new Error("Parsed JSON object did not match the expected schema.");
             }
