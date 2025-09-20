@@ -118,20 +118,22 @@ exports.handler = async (event) => {
             };
         }
 
-		// New check to ensure the API key is available
-		if (!geminiApiKey) {
-			console.error("Missing Gemini API Key in environment variables.");
+		// New check to ensure the API key is available and valid
+		if (!geminiApiKey || geminiApiKey.length < 10) {
+			console.error("Gemini API key is missing or too short. Please check environment variables.");
 			return {
 				statusCode: 500,
 				headers: CORS_HEADERS,
-				body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing."))
+				body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing or invalid."))
 			};
 		}
 		
 		const genAI = new GoogleGenerativeAI(geminiApiKey);
 
         const model = genAI.getGenerativeModel({
-            model: process.env.GEMINI_MODEL || "gemini-2.5-flash-preview-05-20",
+            // This line defaults to "gemini-1.5-pro" if GEMINI_MODEL is not set in Netlify.
+            // This is to avoid a 403 error if a preview model is used without access.
+            model: process.env.GEMINI_MODEL || "gemini-1.5-pro",
             // Explicitly define safety settings for predictable production behavior
             // Using only valid categories
             safetySettings: [
