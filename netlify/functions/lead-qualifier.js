@@ -171,6 +171,10 @@ exports.handler = async (event) => {
         let parsedData = {};
 
         try {
+			// This new check handles the empty string response and prevents JSON.parse from failing
+			if (textResponse.length === 0) {
+				throw new Error("API returned an empty response.");
+			}
             // Because we're using responseMimeType, the response is guaranteed to be clean JSON
             parsedData = JSON.parse(textResponse);
             if (!validate(parsedData)) {
