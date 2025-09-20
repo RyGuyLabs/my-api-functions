@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "ajv": "^8.0.0",
     "google-auth-library": "^10.3.0",
     "marked": "^4.3.0",
     "node-fetch": "^3.3.2",
