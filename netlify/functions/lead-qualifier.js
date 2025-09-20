@@ -1,6 +1,8 @@
 // File: netlify/functions/lead-qualifier.js
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fetch = require("node-fetch");
+const Ajv = require("ajv");
+const ajv = new Ajv();
 
 // Consistent CORS headers for all responses
 const CORS_HEADERS = {
@@ -11,6 +13,35 @@ const CORS_HEADERS = {
 
 const geminiApiKey = process.env.FIRST_API_KEY;
 const genAI = new GoogleGenerativeAI(geminiApiKey);
+
+// Define the schema for the expected JSON response
+const responseSchema = {
+    type: "object",
+    properties: {
+        report: { type: "string", minLength: 0 },
+        predictive: { type: "string", minLength: 0 },
+        outreach: { type: "string", minLength: 0 },
+        questions: { type: "string", minLength: 0 },
+        news: { type: "string", minLength: 0 }
+    },
+    required: ["report", "predictive", "outreach", "questions", "news"],
+    additionalProperties: false
+};
+const validate = ajv.compile(responseSchema);
+
+// Factory function for generating a consistent fallback response
+function fallbackResponse(message, textResponse) {
+    const debugInfo = process.env.NODE_ENV === "development"
+        ? `<p>Raw AI Response:</p><pre>${(textResponse || "[empty]").replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`
+        : "";
+    return {
+        report: `<p>Error: ${message}</p>`,
+        predictive: "",
+        outreach: "",
+        questions: "",
+        news: debugInfo
+    };
+}
 
 // Correctly handle the Google Search Tool Function
 async function googleSearch(query) {
@@ -97,7 +128,6 @@ exports.handler = async (event) => {
         let textResponse = "";
         let response = await conversation.sendMessage(promptContent);
 
-        // While loop for chained tool calls
         while (response?.candidates?.[0]?.content?.[0]?.functionCall) {
             const toolCall = response.candidates[0].content[0].functionCall;
             if (toolCall.name === "googleSearch") {
@@ -112,7 +142,7 @@ exports.handler = async (event) => {
                     }]
                 });
             } else {
-                console.warn(`Unrecognized function call: ${toolCall.name}`);
+                console.warn("Unrecognized function call:", toolCall.name);
                 break;
             }
         }
@@ -121,30 +151,27 @@ exports.handler = async (event) => {
 
         let parsedData = {};
         try {
-            // Safer JSON parsing by stripping markdown fences and trimming braces
-            let cleanedText = textResponse.replace(/```json|```/g, "").trim();
+            let cleanedText = (textResponse || "").replace(/```json|```/g, "").trim();
+            if (!cleanedText) {
+                throw new Error("Gemini returned an empty response.");
+            }
+
             const firstBrace = cleanedText.indexOf("{");
             const lastBrace = cleanedText.lastIndexOf("}");
-            
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanedText = cleanedText.slice(firstBrace, lastBrace + 1);
             }
             
             parsedData = JSON.parse(cleanedText);
-        } catch (jsonError) {
-            console.error("Failed to parse Gemini's response as JSON:", jsonError);
-            console.error("Gemini response was:", textResponse);
 
-            // Conditional error response based on environment
-            const debugInfo = process.env.NODE_ENV === "development" ? `<p>Raw AI Response:</p><pre>${textResponse.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>` : "";
-            
-            parsedData = {
-                report: `<p>Error: Could not generate a valid report. The AI returned a non-JSON response.</p>`,
-                predictive: "",
-                outreach: "",
-                questions: "",
-                news: debugInfo
-            };
+            if (!validate(parsedData)) {
+                // Log structured error for easier debugging
+                console.error("Schema validation failed", { errors: validate.errors, parsedData });
+                throw new Error("Parsed JSON object did not match the expected schema.");
+            }
+        } catch (jsonError) {
+            console.error("Failed to process Gemini's response:", jsonError.message, { textResponse });
+            parsedData = fallbackResponse("Could not generate a valid report.", textResponse);
         }
 
         return { 
@@ -154,13 +181,12 @@ exports.handler = async (event) => {
         };
 
     } catch (error) {
-        console.error("Lead qualifier function error:", error);
+        console.error("Lead qualifier function error:", error.message, { stack: error.stack });
+        const fallback = fallbackResponse("AI report generation failed. Please retry shortly.");
         return { 
             statusCode: 500, 
             headers: CORS_HEADERS, 
-            body: JSON.stringify({ 
-                error: "AI report generation failed. Please retry shortly."
-            }) 
+            body: JSON.stringify(fallback) 
         };
     }
 };
