@@ -11,7 +11,6 @@ const CORS_HEADERS = {
 };
 
 const geminiApiKey = process.env.FIRST_API_KEY;
-const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 // Define the canonical fallback response as a single source of truth
 const FALLBACK_RESPONSE = {
@@ -106,6 +105,18 @@ exports.handler = async (event) => {
                 body: JSON.stringify({ error: "Missing leadData in request body." }) 
             };
         }
+
+		// New check to ensure the API key is available
+		if (!geminiApiKey) {
+			console.error("Missing Gemini API Key in environment variables.");
+			return {
+				statusCode: 500,
+				headers: CORS_HEADERS,
+				body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing."))
+			};
+		}
+		
+		const genAI = new GoogleGenerativeAI(geminiApiKey);
 
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
