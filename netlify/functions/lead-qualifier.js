@@ -309,7 +309,10 @@ exports.handler = async (event) => {
         return { 
             statusCode: 200, 
             headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
-            body: JSON.stringify(parsedData) 
+            body: JSON.stringify({
+                ...parsedData,
+                debug: { rawAIResponse, extraFields }
+            }) 
         };
 
     } catch (error) {
