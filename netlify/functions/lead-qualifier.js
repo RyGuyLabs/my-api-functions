@@ -139,9 +139,10 @@ function extractText(resp) {
 
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
-    // TEMPORARY: This is a test prompt to check API connectivity.
     // The JSON.stringify call safely escapes special characters
-    return `Generate a simple JSON: {"report":"test"}`;
+    return `Based on the following data:
+    Lead Data: ${JSON.stringify(leadData)}
+    Ideal Client Profile: ${JSON.stringify(idealClient || {})}`;
 }
 
 // A map of error messages for a single source of truth
@@ -155,6 +156,22 @@ const ERROR_MESSAGES = {
 
 exports.handler = async (event) => {
     const requestId = crypto.randomUUID();
+    
+    // START: Direct API Key Test
+    try {
+        if (!geminiApiKey || geminiApiKey.length < 10) {
+            console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test: Gemini API key is missing or invalid.`);
+        } else {
+            const testGenAI = new GoogleGenerativeAI(geminiApiKey);
+            const testModel = testGenAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+            const testResult = await testModel.generateContent("Test prompt to verify API key.");
+            const testText = extractText(testResult.response);
+            console.log(`[LeadQualifier] Request ID: ${requestId} - Direct Test Result: ${testText ? "SUCCESS" : "FAILURE (empty response)"}`);
+        }
+    } catch (testError) {
+        console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test Error: ${testError.message}`);
+    }
+    // END: Direct API Key Test
     
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 204, headers: CORS_HEADERS };
@@ -202,8 +219,6 @@ exports.handler = async (event) => {
                 // Set maxOutputTokens to keep the response size predictable
                 maxOutputTokens: 2048
             },
-            // Temporarily remove safety settings to test if they are blocking the response
-            safetySettings: [],
             tools: [{
                 functionDeclarations: [{
                     name: "googleSearch",
