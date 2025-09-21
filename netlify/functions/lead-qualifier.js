@@ -211,9 +211,7 @@ exports.handler = async (event) => {
                 { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
                 { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
                 { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
-                // Block unspecified categories to prevent unexpected blocking
-                { category: "HARM_CATEGORY_UNSPECIFIED", threshold: "BLOCK_NONE" }
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
             ],
             // Use generationConfig to enforce JSON output and avoid fragile parsing
             generationConfig: {
