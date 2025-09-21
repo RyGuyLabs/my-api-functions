@@ -139,16 +139,9 @@ function extractText(resp) {
 
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
+    // TEMPORARY: This is a test prompt to check API connectivity.
     // The JSON.stringify call safely escapes special characters
-    return `Please generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
-
-Based on the following data:
-Lead Data: ${JSON.stringify(leadData)}
-Ideal Client Profile: ${JSON.stringify(idealClient || {})}
-    
-Use the 'googleSearch' tool for relevant, up-to-date information for the 'news' key. The googleSearch tool will return a JSON array of objects. Use the "title", "link", and "snippet" from each object to create a well-formatted HTML output for the "news" key.
-
-If you are unable to generate a valid JSON response for any reason, return the following JSON object exactly: ${JSON.stringify(FALLBACK_RESPONSE)}`;
+    return `Generate a simple JSON: {"report":"test"}`;
 }
 
 // A map of error messages for a single source of truth
