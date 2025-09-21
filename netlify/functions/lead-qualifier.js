@@ -140,17 +140,10 @@ function extractText(resp) {
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
     // The JSON.stringify call safely escapes special characters
-    return `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
-            
-    Based on the following data:
+    return `Generate a professional sales report as a single JSON object based on the following data:
     Lead Data: ${JSON.stringify(leadData)}
     Ideal Client Profile: ${JSON.stringify(idealClient || {})}
-            
-    Use the 'googleSearch' tool for relevant, up-to-date information, especially for the 'news' key. The googleSearch tool will return a JSON array of objects. Use the "title", "link", and "snippet" from each object to create a well-formatted HTML output for the "news" key.
-    If you are unable to generate a valid JSON response for any reason, return the following JSON object exactly:
-    ${JSON.stringify(FALLBACK_RESPONSE)}
-            
-    Do not include any conversational text or explanation outside of the JSON object.`;
+    Use the 'googleSearch' tool for relevant, up-to-date information for the 'news' key. The googleSearch tool will return a JSON array of objects. Use the "title", "link", and "snippet" from each object to create a well-formatted HTML output for the "news" key.`;
 }
 
 // A map of error messages for a single source of truth
@@ -205,6 +198,9 @@ exports.handler = async (event) => {
         const model = genAI.getGenerativeModel({
             // Use a stable, supported model directly
             model: "gemini-1.5-pro",
+            systemInstruction: {
+                parts: [{ text: `You are a professional sales analyst. Your task is to generate a comprehensive sales report in a single JSON object. The JSON object must have the following keys: "report", "predictive", "outreach", "questions", and "news". If you are unable to generate a valid JSON response for any reason, return the following JSON object exactly: ${JSON.stringify(FALLBACK_RESPONSE)}` }]
+            },
             // Explicitly define safety settings for predictable production behavior
             // Using only valid categories
             safetySettings: [
@@ -213,12 +209,6 @@ exports.handler = async (event) => {
                 { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
                 { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
             ],
-            // Use generationConfig to enforce JSON output and avoid fragile parsing
-            generationConfig: {
-                responseMimeType: "application/json",
-                // Set maxOutputTokens to keep the response size predictable
-                maxOutputTokens: 2048
-            },
             tools: [{
                 functionDeclarations: [{
                     name: "googleSearch",
