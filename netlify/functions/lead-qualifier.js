@@ -204,7 +204,7 @@ exports.handler = async (event) => {
 
         const model = genAI.getGenerativeModel({
             // Use a stable, supported model directly
-            model: "gemini-1.5",
+            model: "gemini-1.5-pro",
             // Explicitly define safety settings for predictable production behavior
             // Using only valid categories
             safetySettings: [
