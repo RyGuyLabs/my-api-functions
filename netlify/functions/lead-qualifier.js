@@ -140,9 +140,12 @@ function extractText(resp) {
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
     // The JSON.stringify call safely escapes special characters
-    return `Based on the following data:
+    return `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
+    Based on the following data:
     Lead Data: ${JSON.stringify(leadData)}
-    Ideal Client Profile: ${JSON.stringify(idealClient || {})}`;
+    Ideal Client Profile: ${JSON.stringify(idealClient || {})}
+    Use the 'googleSearch' tool for relevant, up-to-date information, especially for the 'news' key.
+    Do not include any conversational text or explanation outside of the JSON object.`;
 }
 
 // A map of error messages for a single source of truth
