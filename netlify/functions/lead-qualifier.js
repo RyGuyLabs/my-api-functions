@@ -1,4 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const fetch = require("node-fetch");
 const Ajv = require("ajv");
 const ajv = new Ajv();
 const crypto = require("crypto");
@@ -157,6 +158,38 @@ const ERROR_MESSAGES = {
     'quota': "Google Search quota exceeded. Try again later."
 };
 
+// Streaming JSON parser to handle partial responses
+class StreamingJsonParser {
+    constructor() {
+        this.buffer = "";
+        this.parsed = {};
+    }
+
+    processChunk(chunk) {
+        this.buffer += chunk;
+        try {
+            const newParsed = JSON.parse(this.buffer);
+            this.parsed = newParsed;
+            this.buffer = "";
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    getFinalResult() {
+        if (this.buffer.trim() !== "") {
+            try {
+                const finalParsed = JSON.parse(this.buffer);
+                this.parsed = finalParsed;
+            } catch (e) {
+                // Return last good parse
+            }
+        }
+        return this.parsed;
+    }
+}
+
 exports.handler = async (event) => {
     const requestId = crypto.randomUUID();
     
@@ -232,17 +265,15 @@ exports.handler = async (event) => {
         });
         
         const promptContent = createPrompt(leadData, idealClient);
-
-        let parsedData = {};
-        let rawAIResponse = "";
-        let extraFields = null;
+        const parser = new StreamingJsonParser();
 
         try {
             const maxRetries = parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 2;
             const timeoutMs = parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 10000;
-            const response = await retryWithTimeout(async (signal) => {
-                const chat = model.startChat({ history: [] });
-                const result = await chat.sendMessage(promptContent, {
+            const chat = model.startChat({ history: [] });
+
+            await retryWithTimeout(async (signal) => {
+                await chat.streamMessage(promptContent, {
                     signal,
                     toolResponseHandler: async (toolCall) => {
                         if (toolCall.name === "googleSearch") {
@@ -265,39 +296,30 @@ exports.handler = async (event) => {
                             console.warn(`[LeadQualifier] Request ID: ${requestId} - Unrecognized function call: ${toolCall.name}`);
                             return { output: "Unrecognized function." };
                         }
+                    },
+                    onOutput: (chunk) => {
+                        parser.processChunk(chunk.text || "");
                     }
                 });
-                return extractText(result);
             }, maxRetries, timeoutMs);
 
-            rawAIResponse = response;
-            
-            if (!rawAIResponse) {
-                console.error(`[LeadQualifier] Request ID: ${requestId} - Gemini returned an empty response. Check for API key issues or content that violates safety settings.`);
-                throw new Error("API returned an empty response after retries.");
-            }
-            
-            parsedData = JSON.parse(rawAIResponse);
-            
-            const expectedKeys = Object.keys(responseSchema.properties);
-            
-            // Filter extra fields and capture them for debugging
-            extraFields = Object.keys(parsedData).filter(key => !expectedKeys.includes(key));
-            if (extraFields.length > 0 && isDevelopment) {
-                console.warn(`[LeadQualifier] Request ID: ${requestId} - Unexpected extra fields from Gemini:`, extraFields);
-            }
-            
-            parsedData = Object.fromEntries(
-                Object.entries(parsedData).filter(([key]) => expectedKeys.includes(key))
-            );
+            let finalParsedData = parser.getFinalResult();
+            const valid = validate(finalParsedData);
 
-            if (!validate(parsedData)) {
-                // If validation fails, merge valid parsed data with the fallback to salvage partial success
-                console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed: ${ajv.errorsText(validate.errors)}`);
-                parsedData = { ...FALLBACK_RESPONSE, ...parsedData };
+            if (!valid) {
+                 // Complete failure - use the fallback response
+                console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed, and no valid data could be parsed.`, validate.errors);
+                finalParsedData = fallbackResponse("Schema validation failed, and no valid data could be parsed.", "VALIDATION_ERROR", parser.buffer, validate.errors);
             }
+
+            return {
+                statusCode: 200,
+                headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+                body: JSON.stringify(finalParsedData)
+            };
+
         } catch (jsonError) {
-            console.error(`[LeadQualifier] Request ID: ${requestId} - Response processing failed: ${jsonError.message}`, { rawAIResponse, stack: jsonError.stack });
+            console.error(`[LeadQualifier] Request ID: ${requestId} - Response processing failed: ${jsonError.message}`, { rawAIResponse: parser.buffer, stack: jsonError.stack });
             
             let errorMessage = "Could not generate a valid report.";
             const matchedKey = Object.keys(ERROR_MESSAGES).find(key => jsonError.message.includes(key) || jsonError.name === "AbortError" || jsonError.message === "Failed to fetch");
@@ -305,17 +327,13 @@ exports.handler = async (event) => {
                 errorMessage = ERROR_MESSAGES[matchedKey];
             }
 
-            parsedData = fallbackResponse(errorMessage, rawAIResponse, validate.errors, extraFields);
+            const fallback = fallbackResponse(errorMessage, parser.buffer, validate.errors, null);
+            return {
+                statusCode: 500,
+                headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+                body: JSON.stringify(fallback)
+            };
         }
-
-        return { 
-            statusCode: 200, 
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
-            body: JSON.stringify({
-                ...parsedData,
-                debug: { rawAIResponse, extraFields }
-            }) 
-        };
 
     } catch (error) {
         console.error(`[LeadQualifier] Request ID: ${requestId} - Function error: ${error.message}`, { stack: error.stack });
