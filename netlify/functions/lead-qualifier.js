@@ -155,7 +155,7 @@ function createPrompt(leadData, idealClient) {
 
 // A map of error messages for a single source of truth
 const ERROR_MESSAGES = {
-    'empty response': "AI returned an empty response. Please check API key permissions.",
+    'empty response': "AI returned an empty response. Check for API key issues or content that violates safety settings.",
     'validation failed': "Schema validation failed. AI provided an unexpected JSON structure.",
     'JSON': "JSON parsing failed. AI provided an invalid JSON response.",
     'fetch failed': "Network error during API call. Please check your connection or try again.",
@@ -204,7 +204,7 @@ exports.handler = async (event) => {
 
         const model = genAI.getGenerativeModel({
             // Use a stable, supported model directly
-            model: "gemini-1.5-pro",
+            model: "gemini-1.5",
             // Explicitly define safety settings for predictable production behavior
             // Using only valid categories
             safetySettings: [
@@ -270,6 +270,7 @@ exports.handler = async (event) => {
             rawAIResponse = response;
             
             if (!rawAIResponse) {
+                console.error(`[LeadQualifier] Request ID: ${requestId} - Gemini returned an empty response. Check for API key issues or content that violates safety settings.`);
                 throw new Error("API returned an empty response after retries.");
             }
             
