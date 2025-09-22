@@ -118,6 +118,17 @@ function extractText(resp) {
   return parts?.map(part => part.text).filter(Boolean).join('') || "";
 }
 
+/**
+ * Sanitizes a string to prevent JSON parsing errors.
+ * This is a defensive measure to escape unescaped backslashes.
+ * @param {string} text The text to sanitize.
+ * @returns {string} The sanitized string.
+ */
+function sanitizeJsonString(text) {
+    // Escape unescaped backslashes.
+    return text.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+}
+
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
     return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
@@ -139,7 +150,7 @@ function createPrompt(leadData, idealClient) {
     * **Ideal Client Profile:** ${JSON.stringify(idealClient || {})}
     
     Use the 'googleSearch' tool to find relevant, up-to-date information, particularly for the 'news' key.
-    Do not include any conversational text or explanation outside of the JSON object.`;
+    Do not include any conversational text or explanation outside of the JSON object. All string values MUST be valid JSON strings, with all special characters correctly escaped (e.g., use \\n for new lines, and \\" for double quotes).`;
 }
 
 // A map of error messages for a single source of truth
@@ -201,8 +212,8 @@ exports.handler = async (event) => {
                 body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing or invalid."))
             };
         }
-		
-		const genAI = new GoogleGenerativeAI(geminiApiKey);
+    
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
 
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
@@ -259,7 +270,9 @@ exports.handler = async (event) => {
 
             let finalParsedData;
             try {
-                finalParsedData = JSON.parse(responseText);
+                // Sanitize the response string before attempting to parse
+                const sanitizedText = sanitizeJsonString(responseText);
+                finalParsedData = JSON.parse(sanitizedText);
             } catch (jsonError) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - JSON parsing failed: ${jsonError.message}`, { rawAIResponse: responseText });
                 return {
