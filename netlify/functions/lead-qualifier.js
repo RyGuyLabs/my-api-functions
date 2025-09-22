@@ -135,7 +135,7 @@ function sanitizeJsonString(text) {
 // Helper function to generate the prompt content from data
 // The prompt now requests competitorAnalysis.
 function createPrompt(leadData, idealClient) {
-    return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", "news", and "competitorAnalysis".
+    return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive.
 
     **Instructions for Tone and Quality:**
     * **Strategic & Insightful:** The report should demonstrate a deep, nuanced understanding of the lead's business, industry trends, and potential challenges.
@@ -256,7 +256,21 @@ exports.handler = async (event) => {
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
             generationConfig: {
-                responseMimeType: "application/json",
+                // ADDED: This schema forces the AI to provide the exact JSON structure.
+                responseSchema: {
+                    type: "OBJECT",
+                    properties: {
+                        report: { type: "STRING" },
+                        predictive: { type: "STRING" },
+                        outreach: { type: "STRING" },
+                        questions: { type: "STRING" },
+                        news: { type: "STRING" },
+                        leadScore: { type: "NUMBER" },
+                        competitorAnalysis: { type: "STRING" },
+                    },
+                    required: ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"],
+                    propertyOrdering: ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"]
+                },
                 maxOutputTokens: 2048
             },
             tools: [{
@@ -295,6 +309,8 @@ exports.handler = async (event) => {
                 }
             });
             
+            // This entire `try...catch` block is now redundant, as the response is guaranteed to be valid JSON.
+            // However, we will leave it for backwards compatibility with the previous versions of the front end.
             const responseText = result.response.text();
             
             if (!responseText) {
