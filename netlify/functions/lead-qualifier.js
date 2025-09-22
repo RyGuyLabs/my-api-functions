@@ -272,8 +272,8 @@ exports.handler = async (event) => {
             const timeoutMs = parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 10000;
             const chat = model.startChat({ history: [] });
 
-            await retryWithTimeout(async (signal) => {
-                const stream = chat.sendMessageStream(promptContent, {
+            const stream = await retryWithTimeout(async (signal) => {
+                return chat.sendMessageStream(promptContent, {
                     signal,
                     toolResponseHandler: async (toolCall) => {
                         console.log(`[LeadQualifier] Tool call initiated: ${toolCall.name}`);
@@ -302,10 +302,11 @@ exports.handler = async (event) => {
                         }
                     },
                 });
-                for await (const chunk of stream) {
-                    parser.processChunk(chunk.text || "");
-                }
             }, maxRetries, timeoutMs);
+
+            for await (const chunk of stream) {
+                parser.processChunk(chunk.text || "");
+            }
 
             let finalParsedData = parser.getFinalResult();
             const valid = validate(finalParsedData);
