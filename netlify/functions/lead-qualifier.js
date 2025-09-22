@@ -273,7 +273,7 @@ exports.handler = async (event) => {
             const chat = model.startChat({ history: [] });
 
             await retryWithTimeout(async (signal) => {
-                const stream = await chat.sendMessageStream(promptContent, {
+                const stream = chat.sendMessageStream(promptContent, {
                     signal,
                     toolResponseHandler: async (toolCall) => {
                         console.log(`[LeadQualifier] Tool call initiated: ${toolCall.name}`);
