@@ -17,11 +17,14 @@ const FALLBACK_RESPONSE = {
     predictive: "",
     outreach: "",
     questions: "",
-    news: ""
+    news: "",
+    leadScore: 0,
+    competitorAnalysis: "",
 };
 
 // Define the required keys for the JSON response
-const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news"];
+// The leadScore and competitorAnalysis keys have been added.
+const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"];
 
 // Factory function for generating a consistent fallback response
 function fallbackResponse(message, rawAIResponse, extraFields = null) {
@@ -130,8 +133,9 @@ function sanitizeJsonString(text) {
 }
 
 // Helper function to generate the prompt content from data
+// The prompt now requests competitorAnalysis.
 function createPrompt(leadData, idealClient) {
-    return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
+    return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", "news", and "competitorAnalysis".
 
     **Instructions for Tone and Quality:**
     * **Strategic & Insightful:** The report should demonstrate a deep, nuanced understanding of the lead's business, industry trends, and potential challenges.
@@ -144,13 +148,47 @@ function createPrompt(leadData, idealClient) {
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
     * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
+    * **"competitorAnalysis":** A concise, bulleted list of 3-5 top competitors for the lead company. You must use the 'googleSearch' tool to find the most relevant and up-to-date information.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
     * **Ideal Client Profile:** ${JSON.stringify(idealClient || {})}
     
-    Use the 'googleSearch' tool to find relevant, up-to-date information, particularly for the 'news' key.
+    Use the 'googleSearch' tool to find relevant, up-to-date information, particularly for the 'news' and 'competitorAnalysis' keys.
     Do not include any conversational text or explanation outside of the JSON object. All string values MUST be valid JSON strings, with all special characters correctly escaped (e.g., use \\n for new lines, and \\" for double quotes).`;
+}
+
+/**
+ * Calculates a lead score from 0-100 based on matching fields
+ * between the lead data and the ideal client profile.
+ * @param {object} leadData
+ * @param {object} idealClient
+ * @returns {number} The calculated lead score.
+ */
+function calculateLeadScore(leadData, idealClient) {
+    if (!idealClient || Object.keys(idealClient).length === 0) {
+        return 0;
+    }
+
+    const idealKeys = Object.keys(idealClient);
+    let score = 0;
+    const maxPoints = idealKeys.length * 20; // Each field worth 20 points
+    
+    idealKeys.forEach(key => {
+        const leadValue = leadData[key];
+        const idealValue = idealClient[key];
+
+        // Simple string match and case-insensitive check
+        if (typeof leadValue === 'string' && typeof idealValue === 'string') {
+            if (leadValue.toLowerCase().includes(idealValue.toLowerCase())) {
+                score += 20;
+            }
+        }
+    });
+
+    // Normalize the score to a 0-100 scale and round to nearest whole number
+    const normalizedScore = (score / maxPoints) * 100;
+    return Math.round(normalizedScore);
 }
 
 // A map of error messages for a single source of truth
@@ -296,6 +334,10 @@ exports.handler = async (event) => {
                 };
             }
 
+            // Calculate the lead score and add it to the final response
+            const score = calculateLeadScore(leadData, idealClient);
+            finalParsedData.leadScore = score;
+            
             return {
                 statusCode: 200,
                 headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
