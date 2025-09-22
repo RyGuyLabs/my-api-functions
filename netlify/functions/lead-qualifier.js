@@ -129,10 +129,10 @@ function createPrompt(leadData, idealClient) {
 
     **Instructions for Each Key:**
     * **"report":** A comprehensive, one-paragraph strategic summary. Frame the key opportunity and explain the "why" behind the analysis. Connect the dots between the lead's data, ideal client profile, and any relevant search findings.
-    * **"predictive":** A 2-3 sentence empathetic and intelligent prediction about the lead's future needs or challenges. This should be based on your analysis of their current situation.
-    * **"outreach":** A professional, friendly, and highly personalized outreach message. This should feel like it was written specifically for this lead, referencing a key insight from the report.
-    * **"questions":** A list of 3-5 thought-provoking, open-ended questions. These questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
+    * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
+    * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
+    * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
+    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
