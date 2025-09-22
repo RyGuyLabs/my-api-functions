@@ -110,9 +110,11 @@ async function googleSearch(query) {
             snippet: item.snippet
         }));
         console.log(`[LeadQualifier] Google Search successful. Found ${searchResults.length} results.`);
-        return searchResults;
+        // Return a consistent object with a `results` key.
+        return { results: searchResults };
     } catch (error) {
         console.error(`[LeadQualifier] Google Search error after all retries for query "${query}": ${error.message}`);
+        // Return a consistent error object.
         return { error: `All Google Search attempts failed. ${error.message}` };
     }
 }
@@ -294,24 +296,14 @@ exports.handler = async (event) => {
                 toolResponseHandler: async (toolCall) => {
                     console.log(`[LeadQualifier] Tool called: ${toolCall.name} with arguments:`, toolCall.args);
                     if (toolCall.name === "googleSearch") {
-                        try {
-                            const searchResults = await googleSearch(toolCall.args.query);
-                            console.log(`[LeadQualifier] Tool response for googleSearch:`, searchResults);
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: { results: searchResults, error: searchResults.error ? searchResults.error : null }
-                                }
-                            };
-                        } catch (error) {
-                            console.error(`[LeadQualifier] Error within toolResponseHandler for googleSearch: ${error.message}`);
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: { results: [], error: error.message }
-                                }
-                            };
-                        }
+                        const searchResults = await googleSearch(toolCall.args.query);
+                        console.log(`[LeadQualifier] Tool response for googleSearch:`, searchResults);
+                        return { 
+                            functionResponse: {
+                                name: toolCall.name,
+                                response: searchResults
+                            }
+                        };
                     }
                 }
             });
