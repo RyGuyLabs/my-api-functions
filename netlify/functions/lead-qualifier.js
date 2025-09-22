@@ -71,6 +71,7 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
 
 // Correctly handle the Google Search Tool Function
 async function googleSearch(query) {
+    console.log(`[LeadQualifier] Initiating Google Search for query: "${query}"`);
     const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
     const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
     
@@ -100,15 +101,18 @@ async function googleSearch(query) {
 
         const data = await response.json();
         if (!data.items || !data.items.length) {
+            console.log(`[LeadQualifier] Google Search returned no results for query: "${query}"`);
             return { message: "No results found." };
         }
-        return data.items.map(item => ({
+        const searchResults = data.items.map(item => ({
             title: item.title,
             link: item.link,
             snippet: item.snippet
         }));
+        console.log(`[LeadQualifier] Google Search successful. Found ${searchResults.length} results.`);
+        return searchResults;
     } catch (error) {
-        console.error("[LeadQualifier] Google Search error after all retries:", error);
+        console.error(`[LeadQualifier] Google Search error after all retries for query "${query}": ${error.message}`);
         return { error: `All Google Search attempts failed. ${error.message}` };
     }
 }
@@ -288,9 +292,11 @@ exports.handler = async (event) => {
             const result = await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: promptContent }] }],
                 toolResponseHandler: async (toolCall) => {
+                    console.log(`[LeadQualifier] Tool called: ${toolCall.name} with arguments:`, toolCall.args);
                     if (toolCall.name === "googleSearch") {
                         try {
                             const searchResults = await googleSearch(toolCall.args.query);
+                            console.log(`[LeadQualifier] Tool response for googleSearch:`, searchResults);
                             return { 
                                 functionResponse: {
                                     name: toolCall.name,
@@ -298,6 +304,7 @@ exports.handler = async (event) => {
                                 }
                             };
                         } catch (error) {
+                            console.error(`[LeadQualifier] Error within toolResponseHandler for googleSearch: ${error.message}`);
                             return { 
                                 functionResponse: {
                                     name: toolCall.name,
