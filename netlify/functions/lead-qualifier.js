@@ -13,7 +13,7 @@ const geminiApiKey = process.env.FIRST_API_KEY;
 
 // Define the canonical fallback response as a single source of truth
 const FALLBACK_RESPONSE = {
-    report: "<p>Error: The AI could not generate a valid report. Please try again.</p>",
+    report: "",
     predictive: "",
     outreach: "",
     questions: "",
@@ -121,9 +121,23 @@ function extractText(resp) {
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
     return `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
+    
+    **Instructions for Tone and Quality:**
+    * **Professional and Insightful:** The report should sound like it was written by a senior analyst.
+    * **Memorable and Impactful:** Use strong, clear language that is easy to understand and makes a lasting impression.
+    * **Resourceful and Educative:** Provide a clear rationale for your analysis, explaining the "why" behind your conclusions.
+    
+    **Instructions for Each Key:**
+    * **"report":** A comprehensive, yet concise, strategic summary of the lead's potential.
+    * **"predictive":** A friendly and intelligent prediction about the lead's future needs or challenges.
+    * **"outreach":** A compelling, personalized, and friendly outreach message that resonates with the lead.
+    * **"questions":** A list of 3-5 insightful and thought-provoking questions to guide a productive conversation.
+    * **"news":** Synthesize key findings from the 'googleSearch' tool into a professional and relevant news blurb, citing the source concisely (e.g., a headline or publication). Do not include raw URLs or objects.
+    
     Based on the following data:
     Lead Data: ${JSON.stringify(leadData)}
     Ideal Client Profile: ${JSON.stringify(idealClient || {})}
+    
     Use the 'googleSearch' tool for relevant, up-to-date information, especially for the 'news' key.
     Do not include any conversational text or explanation outside of the JSON object.`;
 }
