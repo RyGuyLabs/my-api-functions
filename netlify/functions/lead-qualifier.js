@@ -10,20 +10,22 @@ const CORS_HEADERS = {
 };
 
 const geminiApiKey = process.env.FIRST_API_KEY;
+const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
+const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
 
 // Define the canonical fallback response as a single source of truth
 const FALLBACK_RESPONSE = {
     report: "",
     predictive: "",
     outreach: "",
-    questions: "",
-    news: "",
+    questions: [],
+    news: [],
     leadScore: 0,
-    competitorAnalysis: "",
+    competitorAnalysis: [],
 };
 
 // Define the required keys for the JSON response
-const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"];
+const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news", "competitorAnalysis"];
 
 // Factory function for generating a consistent fallback response
 function fallbackResponse(message, rawAIResponse, extraFields = null) {
@@ -71,16 +73,14 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
 // Correctly handle the Google Search Tool Function
 async function googleSearch(query) {
     console.log(`[LeadQualifier] Initiating Google Search for query: "${query}"`);
-    const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
-    const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
-    
+
     if (!searchApiKey || !searchEngineId) {
         console.error("[LeadQualifier] Missing Google Search API credentials.");
         return { error: "Search credentials missing." };
     }
 
     const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
-    
+
     try {
         const maxRetries = parseInt(process.env.GOOGLE_MAX_RETRIES, 10) || 3;
         const response = await retryWithTimeout(async (signal) => {
@@ -120,7 +120,7 @@ async function googleSearch(query) {
 
 // Helper function to safely extract text from the Gemini response
 function extractText(resp) {
-    const parts = resp.candidates?.flatMap(candidate => 
+    const parts = resp.candidates?.flatMap(candidate =>
         candidate.content?.parts?.filter(part => part.text) || []
     );
     return parts?.map(part => part.text).filter(Boolean).join('') || "";
@@ -150,9 +150,9 @@ function createPrompt(leadData, idealClient) {
     * **"report":** A comprehensive, one-paragraph strategic summary. Frame the key opportunity and explain the "why" behind the analysis. Connect the dots between the lead's data, ideal client profile, and any relevant search findings.
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
-    * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
-    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
-    * **"competitorAnalysis":** A concise, bulleted list of 3-5 top competitors for the lead company. You MUST use the 'googleSearch' tool with the specific query "top competitors of ${leadData.companyName}" to find the most relevant and up-to-date information. If no search results are returned, provide a list of common competitors in the lead's industry.
+    * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
+    * **"news":** An array of up to 3 objects. Each object must have a "title" and a "url" for a recent, relevant news article about the lead's company. You must use the 'googleSearch' tool for this.
+    * **"competitorAnalysis":** An array of up to 5 top competitors for the lead company. You MUST use the 'googleSearch' tool with the specific query "top competitors of ${leadData.company}" to find the most relevant and up-to-date information. If no search results are returned, provide a list of common competitors in the lead's industry based on your knowledge.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
@@ -192,7 +192,7 @@ function calculateLeadScore(leadData, idealClient) {
         const idealValue = idealClient[key];
 
         // Check if the key exists in both objects
-        if (leadValue === undefined || idealValue === undefined) {
+        if (leadValue === undefined || idealValue === undefined || !idealValue) {
              console.log(`[LeadQualifier] Skipping comparison for key: "${key}" because it is missing in one of the profiles.`);
              return;
         }
@@ -201,8 +201,8 @@ function calculateLeadScore(leadData, idealClient) {
         if (typeof leadValue === 'string' && typeof idealValue === 'string') {
             if (key === 'size') {
                 // Special handling for the "50+ employees" format
-                const idealSizeNumber = parseInt(idealValue, 10);
-                const leadSizeNumber = parseInt(leadValue, 10);
+                const idealSizeNumber = parseInt(idealValue.replace(/[^0-9]/g, ''), 10);
+                const leadSizeNumber = parseInt(leadValue.replace(/[^0-9]/g, ''), 10);
                 if (!isNaN(idealSizeNumber) && !isNaN(leadSizeNumber) && leadSizeNumber >= idealSizeNumber) {
                     score += 20;
                     console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
@@ -311,7 +311,6 @@ exports.handler = async (event) => {
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
             generationConfig: {
-                // ADDED: This is the missing line that tells the API to return JSON.
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: "OBJECT",
@@ -319,13 +318,27 @@ exports.handler = async (event) => {
                         report: { type: "STRING" },
                         predictive: { type: "STRING" },
                         outreach: { type: "STRING" },
-                        questions: { type: "STRING" },
-                        news: { type: "STRING" },
-                        leadScore: { type: "NUMBER" },
-                        competitorAnalysis: { type: "STRING" },
+                        questions: {
+                            type: "ARRAY",
+                            items: { type: "STRING" }
+                        },
+                        news: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    title: { type: "STRING" },
+                                    url: { type: "STRING" }
+                                },
+                                required: ["title", "url"]
+                            }
+                        },
+                        competitorAnalysis: {
+                            type: "ARRAY",
+                            items: { type: "STRING" }
+                        },
                     },
-                    required: ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"],
-                    propertyOrdering: ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"]
+                    required: ["report", "predictive", "outreach", "questions", "news", "competitorAnalysis"],
                 },
                 maxOutputTokens: 2048
             },
@@ -358,8 +371,6 @@ exports.handler = async (event) => {
                 }
             });
             
-            // This entire `try...catch` block is now redundant, as the response is guaranteed to be valid JSON.
-            // However, we will leave it for backwards compatibility with the previous versions of the front end.
             const responseText = result.response.text();
             
             if (!responseText) {
@@ -373,7 +384,6 @@ exports.handler = async (event) => {
 
             let finalParsedData;
             try {
-                // Sanitize the response string before attempting to parse
                 const sanitizedText = sanitizeJsonString(responseText);
                 finalParsedData = JSON.parse(sanitizedText);
             } catch (jsonError) {
@@ -385,7 +395,6 @@ exports.handler = async (event) => {
                 };
             }
             
-            // Replaced AJV validation with a native JavaScript check
             const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.keys(finalParsedData).includes(key));
             
             if (!allKeysPresent) {
@@ -399,7 +408,6 @@ exports.handler = async (event) => {
                 };
             }
 
-            // Calculate the lead score and add it to the final response
             const score = calculateLeadScore(leadData, idealClient);
             finalParsedData.leadScore = score;
             
