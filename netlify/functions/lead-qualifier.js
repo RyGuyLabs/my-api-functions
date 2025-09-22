@@ -23,7 +23,6 @@ const FALLBACK_RESPONSE = {
 };
 
 // Define the required keys for the JSON response
-// The leadScore and competitorAnalysis keys have been added.
 const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news", "leadScore", "competitorAnalysis"];
 
 // Factory function for generating a consistent fallback response
@@ -139,7 +138,6 @@ function sanitizeJsonString(text) {
 }
 
 // Helper function to generate the prompt content from data
-// The prompt now requests competitorAnalysis.
 function createPrompt(leadData, idealClient) {
     return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive.
 
@@ -192,6 +190,12 @@ function calculateLeadScore(leadData, idealClient) {
     idealKeys.forEach(key => {
         const leadValue = leadData[key];
         const idealValue = idealClient[key];
+
+        // Check if the key exists in both objects
+        if (leadValue === undefined || idealValue === undefined) {
+             console.log(`[LeadQualifier] Skipping comparison for key: "${key}" because it is missing in one of the profiles.`);
+             return;
+        }
 
         // Perform more robust comparisons for different data types
         if (typeof leadValue === 'string' && typeof idealValue === 'string') {
