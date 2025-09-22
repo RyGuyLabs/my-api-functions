@@ -273,7 +273,7 @@ exports.handler = async (event) => {
             const chat = model.startChat({ history: [] });
 
             await retryWithTimeout(async (signal) => {
-                await chat.streamMessage(promptContent, {
+                const stream = await chat.sendMessageStream(promptContent, {
                     signal,
                     toolResponseHandler: async (toolCall) => {
                         console.log(`[LeadQualifier] Tool call initiated: ${toolCall.name}`);
@@ -301,10 +301,10 @@ exports.handler = async (event) => {
                             return { output: "Unrecognized function." };
                         }
                     },
-                    onOutput: (chunk) => {
-                        parser.processChunk(chunk.text || "");
-                    }
                 });
+                for await (const chunk of stream) {
+                    parser.processChunk(chunk.text || "");
+                }
             }, maxRetries, timeoutMs);
 
             let finalParsedData = parser.getFinalResult();
