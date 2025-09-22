@@ -268,42 +268,38 @@ exports.handler = async (event) => {
         const parser = new StreamingJsonParser();
 
         try {
-            const maxRetries = parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 2;
-            const timeoutMs = parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 10000;
             const chat = model.startChat({ history: [] });
 
-            const stream = await retryWithTimeout(async (signal) => {
-                return chat.sendMessageStream(promptContent, {
-                    signal,
-                    toolResponseHandler: async (toolCall) => {
-                        console.log(`[LeadQualifier] Tool call initiated: ${toolCall.name}`);
-                        if (toolCall.name === "googleSearch") {
-                            try {
-                                const searchResults = await googleSearch(toolCall.args.query);
-                                console.log(`[LeadQualifier] Google Search completed.`);
-                                return { 
-                                    functionResponse: {
-                                        name: toolCall.name,
-                                        response: { results: searchResults, error: searchResults.error ? searchResults.error : null }
-                                    }
-                                };
-                            } catch (error) {
-                                console.error(`[LeadQualifier] Error during Google Search tool call: ${error.message}`);
-                                return { 
-                                    functionResponse: {
-                                        name: toolCall.name,
-                                        response: { results: [], error: error.message }
-                                    }
-                                };
-                            }
-                        } else {
-                            console.warn(`[LeadQualifier] Request ID: ${requestId} - Unrecognized function call: ${toolCall.name}`);
-                            return { output: "Unrecognized function." };
+            const stream = chat.sendMessageStream(promptContent, {
+                toolResponseHandler: async (toolCall) => {
+                    console.log(`[LeadQualifier] Tool call initiated: ${toolCall.name}`);
+                    if (toolCall.name === "googleSearch") {
+                        try {
+                            const searchResults = await googleSearch(toolCall.args.query);
+                            console.log(`[LeadQualifier] Google Search completed.`);
+                            return { 
+                                functionResponse: {
+                                    name: toolCall.name,
+                                    response: { results: searchResults, error: searchResults.error ? searchResults.error : null }
+                                }
+                            };
+                        } catch (error) {
+                            console.error(`[LeadQualifier] Error during Google Search tool call: ${error.message}`);
+                            return { 
+                                functionResponse: {
+                                    name: toolCall.name,
+                                    response: { results: [], error: error.message }
+                                }
+                            };
                         }
-                    },
-                });
-            }, maxRetries, timeoutMs);
-
+                    } else {
+                        console.warn(`[LeadQualifier] Request ID: ${requestId} - Unrecognized function call: ${toolCall.name}`);
+                        return { output: "Unrecognized function." };
+                    }
+                },
+            });
+            
+            // Iterate directly over the stream to process chunks
             for await (const chunk of stream) {
                 parser.processChunk(chunk.text || "");
             }
