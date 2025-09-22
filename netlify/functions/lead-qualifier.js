@@ -276,22 +276,26 @@ exports.handler = async (event) => {
                 await chat.streamMessage(promptContent, {
                     signal,
                     toolResponseHandler: async (toolCall) => {
+                        console.log(`[LeadQualifier] Tool call initiated: ${toolCall.name}`);
                         if (toolCall.name === "googleSearch") {
-                            const searchResults = await googleSearch(toolCall.args.query);
-                            if (searchResults.error) {
+                            try {
+                                const searchResults = await googleSearch(toolCall.args.query);
+                                console.log(`[LeadQualifier] Google Search completed.`);
                                 return { 
                                     functionResponse: {
                                         name: toolCall.name,
-                                        response: { results: [], error: searchResults.error }
+                                        response: { results: searchResults, error: searchResults.error ? searchResults.error : null }
+                                    }
+                                };
+                            } catch (error) {
+                                console.error(`[LeadQualifier] Error during Google Search tool call: ${error.message}`);
+                                return { 
+                                    functionResponse: {
+                                        name: toolCall.name,
+                                        response: { results: [], error: error.message }
                                     }
                                 };
                             }
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: { results: searchResults, error: null }
-                                }
-                            };
                         } else {
                             console.warn(`[LeadQualifier] Request ID: ${requestId} - Unrecognized function call: ${toolCall.name}`);
                             return { output: "Unrecognized function." };
@@ -305,7 +309,7 @@ exports.handler = async (event) => {
 
             let finalParsedData = parser.getFinalResult();
             const valid = validate(finalParsedData);
-
+            
             if (!valid) {
                  // Complete failure - use the fallback response
                 console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed, and no valid data could be parsed.`, validate.errors);
