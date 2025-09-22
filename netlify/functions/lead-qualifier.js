@@ -193,16 +193,45 @@ function calculateLeadScore(leadData, idealClient) {
         const leadValue = leadData[key];
         const idealValue = idealClient[key];
 
-        // Ensure both values are strings before attempting comparison
+        // Perform more robust comparisons for different data types
         if (typeof leadValue === 'string' && typeof idealValue === 'string') {
-            if (leadValue.toLowerCase().includes(idealValue.toLowerCase())) {
+            if (key === 'size') {
+                // Special handling for the "50+ employees" format
+                const idealSizeNumber = parseInt(idealValue, 10);
+                const leadSizeNumber = parseInt(leadValue, 10);
+                if (!isNaN(idealSizeNumber) && !isNaN(leadSizeNumber) && leadSizeNumber >= idealSizeNumber) {
+                    score += 20;
+                    console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
+                } else {
+                    console.log(`[LeadQualifier] No size match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
+                }
+            } else if (key === 'revenue' || key === 'budget') {
+                // Comparison for number-like strings
+                const idealNumber = parseFloat(idealValue.replace(/[^0-9.]/g, ''));
+                const leadNumber = parseFloat(leadValue.replace(/[^0-9.]/g, ''));
+                if (!isNaN(idealNumber) && !isNaN(leadNumber) && leadNumber >= idealNumber) {
+                    score += 20;
+                    console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
+                } else {
+                    console.log(`[LeadQualifier] No number match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
+                }
+            } else {
+                // Standard string comparison
+                if (leadValue.toLowerCase().includes(idealValue.toLowerCase())) {
+                    score += 20;
+                    console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
+                } else {
+                    console.log(`[LeadQualifier] No match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
+                }
+            }
+        } else {
+            // Standard check if values are of the same type and not falsy
+            if (leadValue && idealValue && leadValue === idealValue) {
                 score += 20;
                 console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
             } else {
-                console.log(`[LeadQualifier] No match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
+                 console.log(`[LeadQualifier] No match for key: "${key}" due to different or missing data types. Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
             }
-        } else {
-            console.log(`[LeadQualifier] Skipping comparison for key: "${key}" due to non-string data types.`);
         }
     });
 
