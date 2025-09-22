@@ -233,6 +233,15 @@ exports.handler = async (event) => {
             });
             
             const responseText = result.response.text();
+            
+            if (!responseText) {
+                console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
+                return {
+                    statusCode: 500,
+                    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+                    body: JSON.stringify(fallbackResponse("AI returned an empty response. This could be due to a safety filter or an API issue."))
+                };
+            }
 
             let finalParsedData;
             try {
