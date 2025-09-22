@@ -120,25 +120,25 @@ function extractText(resp) {
 
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
-    return `Generate a professional sales report as a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
-    
+    return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
+
     **Instructions for Tone and Quality:**
-    * **Professional and Insightful:** The report should sound like it was written by a senior analyst.
-    * **Memorable and Impactful:** Use strong, clear language that is easy to understand and makes a lasting impression.
-    * **Resourceful and Educative:** Provide a clear rationale for your analysis, explaining the "why" behind your conclusions.
-    
+    * **Strategic & Insightful:** The report should demonstrate a deep, nuanced understanding of the lead's business, industry trends, and potential challenges.
+    * **Memorable & Impactful:** Frame the lead's profile in a compelling narrative that highlights their unique potential and the specific value our solution can provide.
+    * **Friendly & Resonating:** Use a warm, human tone, especially in the predictive and outreach sections, to build rapport and trust.
+
     **Instructions for Each Key:**
-    * **"report":** A comprehensive, yet concise, strategic summary of the lead's potential.
-    * **"predictive":** A friendly and intelligent prediction about the lead's future needs or challenges.
-    * **"outreach":** A compelling, personalized, and friendly outreach message that resonates with the lead.
-    * **"questions":** A list of 3-5 insightful and thought-provoking questions to guide a productive conversation.
-    * **"news":** Synthesize key findings from the 'googleSearch' tool into a professional and relevant news blurb, citing the source concisely (e.g., a headline or publication). Do not include raw URLs or objects.
+    * **"report":** A comprehensive, one-paragraph strategic summary. Frame the key opportunity and explain the "why" behind the analysis. Connect the dots between the lead's data, ideal client profile, and any relevant search findings.
+    * **"predictive":** A 2-3 sentence empathetic and intelligent prediction about the lead's future needs or challenges. This should be based on your analysis of their current situation.
+    * **"outreach":** A professional, friendly, and highly personalized outreach message. This should feel like it was written specifically for this lead, referencing a key insight from the report.
+    * **"questions":** A list of 3-5 thought-provoking, open-ended questions. These questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
+    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
+
+    **Data for Analysis:**
+    * **Lead Data:** ${JSON.stringify(leadData)}
+    * **Ideal Client Profile:** ${JSON.stringify(idealClient || {})}
     
-    Based on the following data:
-    Lead Data: ${JSON.stringify(leadData)}
-    Ideal Client Profile: ${JSON.stringify(idealClient || {})}
-    
-    Use the 'googleSearch' tool for relevant, up-to-date information, especially for the 'news' key.
+    Use the 'googleSearch' tool to find relevant, up-to-date information, particularly for the 'news' key.
     Do not include any conversational text or explanation outside of the JSON object.`;
 }
 
