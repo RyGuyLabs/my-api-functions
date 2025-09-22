@@ -1,6 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fetch = require("node-fetch");
-const Ajv = new require("ajv")();
 const crypto = require("crypto");
 
 // Consistent CORS headers for all responses.
@@ -21,23 +20,11 @@ const FALLBACK_RESPONSE = {
     news: ""
 };
 
-// Define the schema for the expected JSON response
-const responseSchema = {
-    type: "object",
-    properties: {
-        report: { type: "string", minLength: 0 },
-        predictive: { type: "string", minLength: 0 },
-        outreach: { type: "string", minLength: 0 },
-        questions: { type: "string", minLength: 0 },
-        news: { type: "string", minLength: 0 }
-    },
-    required: ["report", "predictive", "outreach", "questions", "news"],
-    additionalProperties: true
-};
-const validate = ajv.compile(responseSchema);
+// Define the required keys for the JSON response
+const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news"];
 
 // Factory function for generating a consistent fallback response
-function fallbackResponse(message, rawAIResponse, errors = null, extraFields = null) {
+function fallbackResponse(message, rawAIResponse, extraFields = null) {
     const isDevelopment = process.env.NODE_ENV === "development";
 
     const response = { ...FALLBACK_RESPONSE };
@@ -46,7 +33,6 @@ function fallbackResponse(message, rawAIResponse, errors = null, extraFields = n
     if (isDevelopment) {
         response.debug = {
             rawResponse: rawAIResponse,
-            validationErrors: errors,
             message: message,
             extraFields: extraFields,
         };
@@ -260,11 +246,13 @@ exports.handler = async (event) => {
                 };
             }
             
-            const valid = validate(finalParsedData);
+            // Replaced AJV validation with a native JavaScript check
+            const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.keys(finalParsedData).includes(key));
             
-            if (!valid) {
-                console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed.`, validate.errors);
-                const fallback = fallbackResponse("Schema validation failed. AI provided an unexpected JSON structure.", responseText, validate.errors);
+            if (!allKeysPresent) {
+                const missingKeys = REQUIRED_RESPONSE_KEYS.filter(key => !Object.keys(finalParsedData).includes(key));
+                console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed. Missing keys: ${missingKeys.join(', ')}`);
+                const fallback = fallbackResponse("Schema validation failed. AI provided an unexpected JSON structure.", responseText, { missingKeys });
                 return {
                     statusCode: 500,
                     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
