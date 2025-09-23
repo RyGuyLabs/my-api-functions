@@ -376,69 +376,52 @@ exports.handler = async (event) => {
         const promptContent = createPrompt(leadData, idealClient);
 
         try {
+            let finalParsedData;
+            
             // Step 1: Initial call to prompt the model to use the tool
             const initialResponse = await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: promptContent }] }],
             });
 
-            // Step 2: Extract the tool call from the response
-            const toolCalls = initialResponse.response?.candidates?.[0]?.content?.parts?.find(p => p.toolCalls)?.toolCalls;
-            
-            let toolCallResponse = {};
+            const initialCandidate = initialResponse.response.candidates[0];
+            const toolCalls = initialCandidate.content.parts.find(p => p.toolCalls)?.toolCalls;
 
-            // Step 3: Check for the tool call and execute it
+            // Check if the model decided to use a tool
             if (toolCalls && toolCalls.length > 0) {
+                // Step 2: Execute the tool and get the search results
                 const toolCall = toolCalls[0];
-                if (toolCall.name === "googleSearch") {
-                    console.log(`[LeadQualifier] Request ID: ${requestId} - Executing tool: ${toolCall.name} with query: "${toolCall.args.query}"`);
-                    toolCallResponse = await googleSearch(toolCall.args.query);
-                    console.log(`[LeadQualifier] Request ID: ${requestId} - Tool execution result:`, toolCallResponse);
-                }
+                console.log(`[LeadQualifier] Request ID: ${requestId} - Executing tool: ${toolCall.name} with query: "${toolCall.args.query}"`);
+                const toolCallResponse = await googleSearch(toolCall.args.query);
+                console.log(`[LeadQualifier] Request ID: ${requestId} - Tool execution result:`, toolCallResponse);
+                
+                // Step 3: Make the final generation call with the tool's output
+                const finalResponse = await model.generateContent({
+                    contents: [
+                        { role: "user", parts: [{ text: promptContent }] },
+                        { role: "model", parts: [{ toolCalls: toolCalls }] },
+                        { role: "tool", parts: [{ functionResponse: { name: "googleSearch", response: toolCallResponse } }] }
+                    ]
+                });
+                
+                finalParsedData = JSON.parse(extractText(finalResponse.response));
             } else {
-                console.warn(`[LeadQualifier] Request ID: ${requestId} - Gemini did not request a tool call. Proceeding without search results.`);
+                // If no tool call was made, the initial response is the final response
+                console.warn(`[LeadQualifier] Request ID: ${requestId} - Gemini did not request a tool call. Proceeding with the initial response.`);
+                const responseText = extractText(initialResponse.response);
+                if (!responseText) {
+                    throw new Error("AI returned an empty direct response.");
+                }
+                finalParsedData = JSON.parse(responseText);
             }
-
-            // Step 4: Make the final generation call with the tool's output
-            const finalResponse = await model.generateContent({
-                contents: [
-                    { role: "user", parts: [{ text: promptContent }] },
-                    { role: "model", parts: [{ toolCalls: toolCalls }] },
-                    { role: "tool", parts: [{ functionResponse: { name: "googleSearch", response: toolCallResponse } }] }
-                ]
-            });
             
-            const responseText = extractText(finalResponse.response);
-            
-            console.log(`[LeadQualifier] Request ID: ${requestId} - Raw AI Response: ${responseText}`);
-            
-            if (!responseText) {
-                console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
-                return {
-                    statusCode: 500,
-                    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-                    body: JSON.stringify(fallbackResponse("AI returned an empty response. This could be due to a safety filter or an API issue."))
-                };
-            }
-
-            let finalParsedData;
-            try {
-                const sanitizedText = sanitizeJsonString(responseText);
-                finalParsedData = JSON.parse(sanitizedText);
-            } catch (jsonError) {
-                console.error(`[LeadQualifier] Request ID: ${requestId} - JSON parsing failed: ${jsonError.message}`, { rawAIResponse: responseText });
-                return {
-                    statusCode: 500,
-                    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-                    body: JSON.stringify(fallbackResponse("AI provided an invalid JSON response.", responseText))
-                };
-            }
+            console.log(`[LeadQualifier] Request ID: ${requestId} - Final Parsed Data:`, finalParsedData);
             
             const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.keys(finalParsedData).includes(key));
             
             if (!allKeysPresent) {
                 const missingKeys = REQUIRED_RESPONSE_KEYS.filter(key => !Object.keys(finalParsedData).includes(key));
                 console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed. Missing keys: ${missingKeys.join(', ')}`);
-                const fallback = fallbackResponse("Schema validation failed. AI provided an unexpected JSON structure.", responseText, { missingKeys });
+                const fallback = fallbackResponse("Schema validation failed. AI provided an unexpected JSON structure.", JSON.stringify(finalParsedData), { missingKeys });
                 return {
                     statusCode: 500,
                     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
