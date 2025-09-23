@@ -119,7 +119,8 @@ async function googleSearch(query) {
         const data = await response.json();
         if (!data.items || !data.items.length) {
             console.log(`[LeadQualifier] Google Search returned no results for query: "${query}"`);
-            return { message: "No results found." };
+            // The fix is here. Return an empty array to be consistent with the JSON schema.
+            return { results: [] }; 
         }
         const searchResults = data.items.map(item => ({
             title: item.title,
