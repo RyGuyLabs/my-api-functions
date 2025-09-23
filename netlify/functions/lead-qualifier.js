@@ -376,26 +376,40 @@ exports.handler = async (event) => {
         const promptContent = createPrompt(leadData, idealClient);
 
         try {
-            const result = await model.generateContent({
+            // Step 1: Initial call to prompt the model to use the tool
+            const initialResponse = await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: promptContent }] }],
-                toolResponseHandler: async (toolCall) => {
-                    console.log(`[LeadQualifier] Tool called: ${toolCall.name} with arguments:`, toolCall.args);
-                    if (toolCall.name === "googleSearch") {
-                        const searchResults = await googleSearch(toolCall.args.query);
-                        console.log(`[LeadQualifier] Tool response for googleSearch:`, searchResults);
-                        return { 
-                            functionResponse: {
-                                name: toolCall.name,
-                                response: searchResults
-                            }
-                        };
-                    }
+            });
+
+            // Step 2: Extract the tool call from the response
+            const toolCalls = initialResponse.response?.candidates?.[0]?.content?.parts?.find(p => p.toolCalls)?.toolCalls;
+            
+            let toolCallResponse = {};
+
+            // Step 3: Check for the tool call and execute it
+            if (toolCalls && toolCalls.length > 0) {
+                const toolCall = toolCalls[0];
+                if (toolCall.name === "googleSearch") {
+                    console.log(`[LeadQualifier] Request ID: ${requestId} - Executing tool: ${toolCall.name} with query: "${toolCall.args.query}"`);
+                    toolCallResponse = await googleSearch(toolCall.args.query);
+                    console.log(`[LeadQualifier] Request ID: ${requestId} - Tool execution result:`, toolCallResponse);
                 }
+            } else {
+                console.warn(`[LeadQualifier] Request ID: ${requestId} - Gemini did not request a tool call. Proceeding without search results.`);
+            }
+
+            // Step 4: Make the final generation call with the tool's output
+            const finalResponse = await model.generateContent({
+                contents: [
+                    { role: "user", parts: [{ text: promptContent }] },
+                    { role: "model", parts: [{ toolCalls: toolCalls }] },
+                    { role: "tool", parts: [{ functionResponse: { name: "googleSearch", response: toolCallResponse } }] }
+                ]
             });
             
-            const responseText = result.response.text();
-
-            console.log(`[LeadQualifier] Raw AI Response: ${responseText}`);
+            const responseText = extractText(finalResponse.response);
+            
+            console.log(`[LeadQualifier] Request ID: ${requestId} - Raw AI Response: ${responseText}`);
             
             if (!responseText) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
