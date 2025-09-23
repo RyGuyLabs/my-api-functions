@@ -19,12 +19,12 @@ const FALLBACK_RESPONSE = {
     predictive: "",
     outreach: "",
     questions: [],
-    news: [],
+    relevantNews: [],
     leadScore: 0,
 };
 
 // Define the required keys for the JSON response
-const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news"];
+const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "relevantNews"];
 
 // Factory function for generating a consistent fallback response
 function fallbackResponse(message, rawAIResponse, extraFields = null) {
@@ -104,7 +104,7 @@ async function googleSearch(query) {
         }
         const searchResults = data.items.map(item => ({
             title: item.title,
-            link: item.link,
+            url: item.link,
             snippet: item.snippet
         }));
         console.log(`[LeadQualifier] Google Search successful. Found ${searchResults.length} results.`);
@@ -150,7 +150,7 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"news":** An array of up to 3 objects. Each object must have a "title" and a "url" for a recent, relevant news article about the lead's company. You MUST use the 'googleSearch' tool for this.
+    * **"relevantNews":** An array of up to 5 objects. Each object must have a "title", a "url", and a "snippet" for a recent, relevant news article about the lead's company. You MUST use the 'googleSearch' tool for this. The 'url' must be a direct link to the news article.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
@@ -161,18 +161,18 @@ function createPrompt(leadData, idealClient) {
 
 // Helper function to parse values like "$250M+" into a number.
 function parseValue(value) {
-  if (typeof value !== 'string') return null;
-  const cleanedValue = value.replace(/[^0-9.kKmM]/g, '').toLowerCase();
-  const numericValue = parseFloat(cleanedValue);
-  if (isNaN(numericValue)) return null;
+    if (typeof value !== 'string') return null;
+    const cleanedValue = value.replace(/[^0-9.kKmM]/g, '').toLowerCase();
+    const numericValue = parseFloat(cleanedValue);
+    if (isNaN(numericValue)) return null;
 
-  if (cleanedValue.includes('m')) {
-    return numericValue * 1000000;
-  }
-  if (cleanedValue.includes('k')) {
-    return numericValue * 1000;
-  }
-  return numericValue;
+    if (cleanedValue.includes('m')) {
+        return numericValue * 1000000;
+    }
+    if (cleanedValue.includes('k')) {
+        return numericValue * 1000;
+    }
+    return numericValue;
 }
 
 /**
@@ -345,19 +345,20 @@ exports.handler = async (event) => {
                             type: "ARRAY",
                             items: { type: "STRING" }
                         },
-                        news: {
+                        relevantNews: {
                             type: "ARRAY",
                             items: {
                                 type: "OBJECT",
                                 properties: {
                                     title: { type: "STRING" },
-                                    url: { type: "STRING" }
+                                    url: { type: "STRING" },
+                                    snippet: { type: "STRING" }
                                 },
-                                required: ["title", "url"]
+                                required: ["title", "url", "snippet"]
                             }
                         },
                     },
-                    required: ["report", "predictive", "outreach", "questions", "news"],
+                    required: ["report", "predictive", "outreach", "questions", "relevantNews"],
                 },
                 maxOutputTokens: 2048
             },
