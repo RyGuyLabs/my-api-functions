@@ -397,6 +397,8 @@ exports.handler = async (event) => {
             });
             
             const responseText = result.response.text();
+
+            console.log(`[LeadQualifier] Raw AI Response: ${responseText}`);
             
             if (!responseText) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
