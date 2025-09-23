@@ -114,7 +114,7 @@ async function googleSearch(query) {
                 throw error;
             }
             return res;
-        }, maxRetries, 5000);
+        }, maxRetries, 8000); // Increased internal timeout for Google Search
 
         const data = await response.json();
         if (!data.items || !data.items.length) {
@@ -395,7 +395,7 @@ exports.handler = async (event) => {
                 console.warn(`[LeadQualifier] Request ID: ${requestId} - Gemini did not request a tool call. Proceeding with the initial response.`);
                 return initialResponse;
             }
-        }, 3, 15000);
+        }, 3, 25000); // Increased internal timeout for AI generation
 
         const endTime = Date.now();
         console.log(`[LeadQualifier] Request ID: ${requestId} - Total AI process duration: ${endTime - startTime} ms`);
