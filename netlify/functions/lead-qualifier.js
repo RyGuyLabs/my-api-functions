@@ -193,8 +193,8 @@ function calculateLeadScore(leadData, idealClient) {
 
         // Check if the key exists in both objects
         if (leadValue === undefined || idealValue === undefined || !idealValue) {
-             console.log(`[LeadQualifier] Skipping comparison for key: "${key}" because it is missing in one of the profiles.`);
-             return;
+            console.log(`[LeadQualifier] Skipping comparison for key: "${key}" because it is missing in one of the profiles.`);
+            return;
         }
 
         // Perform more robust comparisons for different data types
@@ -234,7 +234,7 @@ function calculateLeadScore(leadData, idealClient) {
                 score += 20;
                 console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
             } else {
-                 console.log(`[LeadQualifier] No match for key: "${key}" due to different or missing data types. Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
+                console.log(`[LeadQualifier] No match for key: "${key}" due to different or missing data types. Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
             }
         }
     });
