@@ -157,7 +157,7 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"relevantNews":** An array of up to 5 objects. Each object MUST have a "title", a "url", and a "snippet". This array MUST be populated with recent, relevant news articles about the lead's company. You are REQUIRED to use the 'googleSearch' tool to find this information. Do not proceed without first making this tool call. The 'url' must be a direct link to the news article.
+    * **"relevantNews":** An array of up to 3 objects. Each object MUST have a "title", a "url", and a "snippet". This array MUST be populated with recent, relevant news articles about the lead's company. You are REQUIRED to use the 'googleSearch' tool to find this information. Do not proceed without first making this tool call. The 'url' must be a direct link to the news article.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
@@ -291,7 +291,13 @@ exports.handler = async (event) => {
             body: JSON.stringify(fallbackResponse(ERROR_MESSAGES.method_not_allowed, 'method_not_allowed'))
         };
     }
-
+    
+    // NOTE: The 19-second duration log indicates that the entire Netlify function
+    // is timing out. This is a Netlify environment setting, not something
+    // that can be configured in the code. To prevent this, you should increase
+    // the function timeout in your Netlify settings to at least 30 seconds.
+    // The code below reduces the amount of data requested to help mitigate
+    // the issue, but it does not fix the root cause.
     try {
         const { leadData, idealClient } = JSON.parse(event.body);
         
