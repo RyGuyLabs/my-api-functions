@@ -29,7 +29,7 @@ const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions",
 
 // Factory function for generating a consistent fallback response
 function fallbackResponse(message, rawAIResponse, extraFields = null) {
-    const isDevelopment = process.env.NODE_ENV === "development";
+    const isDevelopment = process.env.ENV === "development";
 
     const response = { ...FALLBACK_RESPONSE };
     response.report = `<p>Error: ${message}</p>`;
@@ -141,6 +141,8 @@ function sanitizeJsonString(text) {
 function createPrompt(leadData, idealClient) {
     return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive.
 
+    Your primary task is to create a JSON object containing a strategic sales report. To do this, you **MUST** first use the 'googleSearch' tool to gather external, real-time data on the lead and their competitors.
+
     **Instructions for Tone and Quality:**
     * **Strategic & Insightful:** The report should demonstrate a deep, nuanced understanding of the lead's business, industry trends, and potential challenges.
     * **Memorable & Impactful:** Frame the lead's profile in a compelling narrative that highlights their unique potential and the specific value our solution can provide.
@@ -151,8 +153,8 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"news":** An array of up to 3 objects. Each object must have a "title" and a "url" for a recent, relevant news article about the lead's company. You MUST use the 'googleSearch' tool for this.
-    * **"competitorAnalysis":** An array of up to 5 top competitors for the lead company. You MUST use the 'googleSearch' tool with the specific query "top competitors of ${leadData.company}" to find the most relevant and up-to-date information. If no search results are returned, provide a list of common competitors in the lead's industry based on your knowledge.
+    * **"news":** An array of up to 3 objects. Each object must have a "title" and a "url" for a recent, relevant news article about the lead's company. You **MUST** use the 'googleSearch' tool for this.
+    * **"competitorAnalysis":** An array of up to 5 top competitors for the lead company. You **MUST** use the 'googleSearch' tool with the specific query "top competitors of ${leadData.company}" to find the most relevant and up-to-date information. If no search results are returned, provide a list of common competitors in the lead's industry based on your knowledge.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
