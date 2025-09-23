@@ -1,71 +1,57 @@
-// This file is a Netlify serverless function that securely handles API calls
-// to the Google Gemini API, using an environment variable for the API key.
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// The handler function is the entry point for the serverless function.
-exports.handler = async (event) => {
-    // Check if the API key environment variable is set.
-    const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) {
-        console.error("FIRST_API_KEY is not set in environment variables.");
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: "Server configuration error: API key not found." }),
-        };
-    }
-
-    // Ensure the request is a POST request and has a body.
-    if (event.httpMethod !== 'POST' || !event.body) {
+exports.handler = async function(event, context) {
+    if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            body: JSON.stringify({ error: "Method Not Allowed or missing body." }),
+            body: JSON.stringify({ error: "Method Not Allowed" })
         };
     }
 
-    try {
-        // Parse the incoming JSON payload from the request body.
-        const { prompt, text } = JSON.parse(event.body);
+    const { prompt, text } = JSON.parse(event.body);
 
-        // Define the API endpoint and the model to use.
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-        // Construct the payload for the Gemini API call.
-        const payload = {
-            contents: [{ parts: [{ text: `Shift the persona and tone of the following text based on this prompt: "${prompt}"\n\nText to transform: "${text}"` }] }],
-        };
-
-        // Make the API call to the Gemini API.
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-
-        // Check if the API call was successful.
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`API call failed with status: ${response.status}. Details: ${JSON.stringify(errorData)}`);
-        }
-
-        // Get the response data and extract the transformed text.
-        const result = await response.json();
-        const transformedText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        // If the response is empty or malformed, throw an error.
-        if (!transformedText) {
-            throw new Error("API response was empty or malformed.");
-        }
-
-        // Return the transformed text back to the client.
+    if (!prompt || !text) {
         return {
-            statusCode: 200,
-            body: JSON.stringify({ transformedText }),
+            statusCode: 400,
+            body: JSON.stringify({ error: "Missing 'prompt' or 'text' in request body." })
         };
-    } catch (e) {
-        // Handle any errors that occur during the process.
-        console.error("Error in serverless function:", e);
+    }
+
+    const API_KEY = process.env.GEMINI_API_KEY;
+    if (!API_KEY) {
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "Failed to process request.", details: e.message }),
+            body: JSON.stringify({ error: "API key is not set." })
+        };
+    }
+
+    const genAI = new GoogleGenerativeAI(API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-05-20" });
+
+    try {
+        const result = await model.generateContent([
+            `Task: Transform the following text based on the user's prompt.
+            Prompt: ${prompt}
+            Original Text: ${text}
+            
+            Transformed Text:`,
+        ]);
+        const transformedText = result.response.text();
+        
+        // This is the key change: wrapping the text in an object
+        return {
+            statusCode: 200,
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ transformedText: transformedText }),
+        };
+
+    } catch (error) {
+        console.error("API call failed:", error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: "Failed to generate content from AI." }),
         };
     }
 };
