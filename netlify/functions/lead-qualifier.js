@@ -151,8 +151,8 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"news":** An array of up to 3 objects. Each object must have a "title" and a "url" for a recent, relevant news article about the lead's company. For this task, you **MUST** use the 'googleSearch' tool.
-    * **"competitorAnalysis":** An array of up to 5 top competitors for the lead company. You **MUST** use the 'googleSearch' tool with the specific query "top competitors of ${leadData.company}" to find the most relevant and up-to-date information. If no search results are returned, provide a list of common competitors in the lead's industry based on your knowledge.
+    * **"news":** An array of up to 3 objects. Each object must have a "title" and a "url" for a recent, relevant news article about the lead's company. You MUST use the 'googleSearch' tool for this.
+    * **"competitorAnalysis":** An array of up to 5 top competitors for the lead company. You MUST use the 'googleSearch' tool with the specific query "top competitors of ${leadData.company}" to find the most relevant and up-to-date information. If no search results are returned, provide a list of common competitors in the lead's industry based on your knowledge.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
