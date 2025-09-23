@@ -355,6 +355,7 @@ exports.handler = async (event) => {
         
         const promptContent = createPrompt(leadData, idealClient);
         console.log(`[LeadQualifier] Request ID: ${requestId} - Sending prompt to Gemini.`);
+        const startTime = Date.now();
 
         const result = await retryWithTimeout(async () => {
             const initialResponse = await model.generateContent({
@@ -390,6 +391,9 @@ exports.handler = async (event) => {
             }
         }, 3, 15000);
 
+        const endTime = Date.now();
+        console.log(`[LeadQualifier] Request ID: ${requestId} - Total AI process duration: ${endTime - startTime} ms`);
+        
         const responseText = extractText(result.response);
         if (!responseText) {
             console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty direct response.`);
