@@ -354,6 +354,7 @@ exports.handler = async (event) => {
         });
         
         const promptContent = createPrompt(leadData, idealClient);
+        console.log(`[LeadQualifier] Request ID: ${requestId} - Sending prompt to Gemini.`);
 
         const result = await retryWithTimeout(async () => {
             const initialResponse = await model.generateContent({
@@ -394,8 +395,14 @@ exports.handler = async (event) => {
             console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty direct response.`);
             throw new Error('ai_empty_response');
         }
-
-        const finalParsedData = JSON.parse(responseText);
+        
+        let finalParsedData;
+        try {
+            finalParsedData = JSON.parse(responseText);
+        } catch (jsonError) {
+            console.error(`[LeadQualifier] Request ID: ${requestId} - Failed to parse AI response as JSON.`);
+            throw new Error('json_parse_failed');
+        }
         
         console.log(`[LeadQualifier] Request ID: ${requestId} - Final Parsed Data:`, finalParsedData);
         
