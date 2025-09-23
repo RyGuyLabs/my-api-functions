@@ -9,6 +9,8 @@ const CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Set your environment variables in the Netlify UI.
+// They will be available here automatically.
 const geminiApiKey = process.env.FIRST_API_KEY;
 const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
 const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
