@@ -74,7 +74,6 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
             return result;
         } catch (err) {
             if (err.name === "AbortError" || err.retriable) {
-                // If it's a timeout or a retriable error and we have more attempts, retry.
                 if (attempt < maxRetries) {
                     attempt++;
                     console.warn(`[LeadQualifier] Fetch failed, retrying... (Attempt ${attempt}/${maxRetries + 1})`);
@@ -82,7 +81,7 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
                     continue;
                 }
             }
-            throw err; // Re-throw the error if it's not retriable or we've run out of attempts.
+            throw err;
         } finally {
             clearTimeout(timeout);
         }
@@ -128,11 +127,9 @@ async function googleSearch(query) {
             snippet: item.snippet
         }));
         console.log(`[LeadQualifier] Google Search successful. Found ${searchResults.length} results.`);
-        // Return a consistent object with a `results` key.
         return { results: searchResults };
     } catch (error) {
         console.error(`[LeadQualifier] Google Search error after all retries for query "${query}": ${error.message}`);
-        // Return a consistent error object.
         return { error: `All Google Search attempts failed. ${error.message}` };
     }
 }
@@ -147,6 +144,7 @@ function extractText(resp) {
 
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
+    // --- BEGINNING OF MODIFIED PROMPT SECTION ---
     return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive.
 
     **Instructions for Tone and Quality:**
@@ -159,13 +157,14 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"relevantNews":** An array of up to 5 objects. Each object must have a "title", a "url", and a "snippet" for a recent, relevant news article about the lead's company. You MUST use the 'googleSearch' tool for this. The 'url' must be a direct link to the news article.
+    * **"relevantNews":** An array of up to 5 objects. Each object MUST have a "title", a "url", and a "snippet". This array MUST be populated with recent, relevant news articles about the lead's company. You are REQUIRED to use the 'googleSearch' tool to find this information. Do not proceed without first making this tool call. The 'url' must be a direct link to the news article.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
     * **Ideal Client Profile:** ${JSON.stringify(idealClient || {})}
     
     Do not include any conversational text or explanation outside of the JSON object. All string values MUST be valid JSON strings, with all special characters correctly escaped (e.g., use \\n for new lines, and \\" for double quotes).`;
+    // --- END OF MODIFIED PROMPT SECTION ---
 }
 
 // Helper function to parse values like "$250M+" into a number.
@@ -203,7 +202,7 @@ function calculateLeadScore(leadData, idealClient) {
 
     const idealKeys = Object.keys(idealClient);
     let score = 0;
-    const maxPoints = idealKeys.length * 20; // Each field worth 20 points
+    const maxPoints = idealKeys.length * 20;
     
     if (maxPoints === 0) {
         console.log("[LeadQualifier] Ideal client profile has no fields. Returning score 0.");
@@ -214,16 +213,13 @@ function calculateLeadScore(leadData, idealClient) {
         const leadValue = leadData[key];
         const idealValue = idealClient[key];
 
-        // Check if the key exists in both objects
         if (leadValue === undefined || idealValue === undefined || !idealValue) {
             console.log(`[LeadQualifier] Skipping comparison for key: "${key}" because it is missing in one of the profiles.`);
             return;
         }
 
-        // Perform more robust comparisons for different data types
         if (typeof leadValue === 'string' && typeof idealValue === 'string') {
             if (key === 'size') {
-                // Special handling for the "50+ employees" format
                 const idealSizeNumber = parseInt(idealValue.replace(/[^0-9]/g, ''), 10);
                 const leadSizeNumber = parseInt(leadValue.replace(/[^0-9]/g, ''), 10);
                 if (!isNaN(idealSizeNumber) && !isNaN(leadSizeNumber) && leadSizeNumber >= idealSizeNumber) {
@@ -233,7 +229,6 @@ function calculateLeadScore(leadData, idealClient) {
                     console.log(`[LeadQualifier] No size match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
                 }
             } else if (key === 'revenue' || key === 'budget') {
-                // Comparison for number-like strings
                 const idealNumber = parseValue(idealValue);
                 const leadNumber = parseValue(leadValue);
                 if (!isNaN(idealNumber) && !isNaN(leadNumber) && leadNumber >= idealNumber) {
@@ -243,7 +238,6 @@ function calculateLeadScore(leadData, idealClient) {
                     console.log(`[LeadQualifier] No number match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
                 }
             } else if (key === 'role') {
-                // Check if lead's role is in the list of ideal roles
                 const idealRoles = idealValue.split(',').map(s => s.trim().toLowerCase());
                 if (idealRoles.includes(leadValue.toLowerCase())) {
                     score += 20;
@@ -252,7 +246,6 @@ function calculateLeadScore(leadData, idealClient) {
                     console.log(`[LeadQualifier] No role match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
                 }
             } else {
-                // Standard string comparison
                 if (leadValue.toLowerCase().includes(idealValue.toLowerCase())) {
                     score += 20;
                     console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
@@ -261,7 +254,6 @@ function calculateLeadScore(leadData, idealClient) {
                 }
             }
         } else {
-            // Standard check if values are of the same type and not falsy
             if (leadValue && idealValue && leadValue === idealValue) {
                 score += 20;
                 console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
@@ -271,7 +263,6 @@ function calculateLeadScore(leadData, idealClient) {
         }
     });
 
-    // Normalize the score to a 0-100 scale and round to nearest whole number
     const normalizedScore = (score / maxPoints) * 100;
     const finalScore = Math.round(normalizedScore);
     console.log(`[LeadQualifier] Final Score: ${finalScore}`);
@@ -364,7 +355,6 @@ exports.handler = async (event) => {
         
         const promptContent = createPrompt(leadData, idealClient);
 
-        // Wrap the core API call logic in the retry mechanism.
         const result = await retryWithTimeout(async () => {
             const initialResponse = await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: promptContent }] }],
@@ -397,7 +387,7 @@ exports.handler = async (event) => {
                 console.warn(`[LeadQualifier] Request ID: ${requestId} - Gemini did not request a tool call. Proceeding with the initial response.`);
                 return initialResponse;
             }
-        }, 3, 15000); // 3 retries, 15-second timeout
+        }, 3, 15000);
 
         const responseText = extractText(result.response);
         if (!responseText) {
