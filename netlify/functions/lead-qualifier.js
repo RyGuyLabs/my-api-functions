@@ -161,6 +161,22 @@ function createPrompt(leadData, idealClient) {
     Do not include any conversational text or explanation outside of the JSON object. All string values MUST be valid JSON strings, with all special characters correctly escaped (e.g., use \\n for new lines, and \\" for double quotes).`;
 }
 
+// Helper function to parse values like "$250M+" into a number.
+function parseValue(value) {
+  if (typeof value !== 'string') return null;
+  const cleanedValue = value.replace(/[^0-9.kKmM]/g, '').toLowerCase();
+  const numericValue = parseFloat(cleanedValue);
+  if (isNaN(numericValue)) return null;
+
+  if (cleanedValue.includes('m')) {
+    return numericValue * 1000000;
+  }
+  if (cleanedValue.includes('k')) {
+    return numericValue * 1000;
+  }
+  return numericValue;
+}
+
 /**
  * Calculates a lead score from 0-100 based on matching fields
  * between the lead data and the ideal client profile.
@@ -211,13 +227,22 @@ function calculateLeadScore(leadData, idealClient) {
                 }
             } else if (key === 'revenue' || key === 'budget') {
                 // Comparison for number-like strings
-                const idealNumber = parseFloat(idealValue.replace(/[^0-9.]/g, ''));
-                const leadNumber = parseFloat(leadValue.replace(/[^0-9.]/g, ''));
+                const idealNumber = parseValue(idealValue);
+                const leadNumber = parseValue(leadValue);
                 if (!isNaN(idealNumber) && !isNaN(leadNumber) && leadNumber >= idealNumber) {
                     score += 20;
                     console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
                 } else {
                     console.log(`[LeadQualifier] No number match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
+                }
+            } else if (key === 'role') {
+                // Check if lead's role is in the list of ideal roles
+                const idealRoles = idealValue.split(',').map(s => s.trim().toLowerCase());
+                if (idealRoles.includes(leadValue.toLowerCase())) {
+                    score += 20;
+                    console.log(`[LeadQualifier] Match found for key: "${key}". Score: ${score}`);
+                } else {
+                    console.log(`[LeadQualifier] No role match for key: "${key}". Lead value: "${leadValue}", Ideal value: "${idealValue}"`);
                 }
             } else {
                 // Standard string comparison
