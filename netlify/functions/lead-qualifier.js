@@ -225,31 +225,36 @@ exports.handler = async (event) => {
         const promptContent = createPrompt(leadData, idealClient);
 
         try {
-            const result = await model.generateContent({
-                contents: [{ role: "user", parts: [{ text: promptContent }] }],
-                toolResponseHandler: async (toolCall) => {
-                    if (toolCall.name === "googleSearch") {
-                        try {
-                            const searchResults = await googleSearch(toolCall.args.query);
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: searchResults
-                                }
-                            };
-                        } catch (error) {
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: { results: [], error: error.message }
-                                }
-                            };
-                        }
-                    }
-                }
+            let result = await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: promptContent }] }]
             });
-            
-            const responseText = result.response.text();
+
+            // Multi-turn tool execution loop
+            while (result.response.candidates?.[0]?.content?.parts?.some(p => p.functionCall)) {
+                const toolCalls = result.response.candidates[0].content.parts.filter(p => p.functionCall);
+
+                const toolResponses = await Promise.all(toolCalls.map(async (call) => {
+                    if (call.functionCall.name === "googleSearch") {
+                        const query = call.functionCall.args.query;
+                        const searchResults = await googleSearch(query);
+                        return {
+                            functionResponse: {
+                                name: call.functionCall.name,
+                                response: searchResults
+                            }
+                        };
+                    }
+                }));
+
+                result = await model.generateContent({
+                    contents: [
+                        ...result.response.candidates[0].content.parts,
+                        ...toolResponses
+                    ]
+                });
+            }
+
+            const responseText = extractText(result.response);
             
             if (!responseText) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
