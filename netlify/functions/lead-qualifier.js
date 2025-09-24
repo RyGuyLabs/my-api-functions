@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fetch = require("node-fetch");
 const crypto = require("crypto");
 
-// Consistent CORS headers for all responses.
+// Consistent CORS headers for all responses. This is critical for cross-origin requests.
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
