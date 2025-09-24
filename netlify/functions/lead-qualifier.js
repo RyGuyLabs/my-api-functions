@@ -21,8 +21,7 @@ const FALLBACK_RESPONSE = {
 };
 
 // Define the required keys for the JSON response
-// The "news" key is intentionally left out to prevent validation failures.
-const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions"];
+const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news"];
 
 // Factory function for generating a consistent fallback response
 function fallbackResponse(message, rawAIResponse, extraFields = null) {
@@ -133,14 +132,14 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
-    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)". **If no relevant news is found, return an empty string.**
+    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
     * **Ideal Client Profile:** ${JSON.stringify(idealClient || {})}
     
     Use the 'googleSearch' tool to find relevant, up-to-date information, particularly for the 'news' key.
-    Do not include any conversational text or explanation outside of the JSON object. All string values MUST be valid JSON strings, with all special characters correctly escaped (e.g., use \\n for new lines, and \\" for double quotes).`;
+    Do not include any conversational text or explanation outside of the JSON object.`;
 }
 
 // A map of error messages for a single source of truth
@@ -202,8 +201,8 @@ exports.handler = async (event) => {
                 body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing or invalid."))
             };
         }
-    
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
+		
+		const genAI = new GoogleGenerativeAI(geminiApiKey);
 
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
@@ -260,7 +259,6 @@ exports.handler = async (event) => {
 
             let finalParsedData;
             try {
-                // The AI's response is already valid JSON, so no sanitization is needed.
                 finalParsedData = JSON.parse(responseText);
             } catch (jsonError) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - JSON parsing failed: ${jsonError.message}`, { rawAIResponse: responseText });
@@ -283,11 +281,6 @@ exports.handler = async (event) => {
                     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
                     body: JSON.stringify(fallback)
                 };
-            }
-
-            // Ensure the news key is always present, even if empty.
-            if (!finalParsedData.hasOwnProperty('news')) {
-                finalParsedData.news = "";
             }
 
             return {
@@ -316,3 +309,4 @@ exports.handler = async (event) => {
         };
     }
 };
+
