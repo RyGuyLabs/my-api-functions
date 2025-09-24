@@ -154,37 +154,38 @@ const ERROR_MESSAGES = {
 };
 
 exports.handler = async (event) => {
-    const requestId = crypto.randomUUID();
-    
-    // START: Direct API Key Test
+    // This top-level try...catch block is a safety net to ensure a valid response is always returned.
     try {
-        if (!geminiApiKey || geminiApiKey.length < 10) {
-            console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test: Gemini API key is missing or invalid.`);
-        } else {
-            const testGenAI = new GoogleGenerativeAI(geminiApiKey);
-            const testModel = testGenAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-            const testResult = await testModel.generateContent("Test prompt to verify API key.");
-            const testText = extractText(testResult.response);
-            console.log(`[LeadQualifier] Request ID: ${requestId} - Direct Test Result: ${testText ? "SUCCESS" : "FAILURE (empty response)"}`);
+        const requestId = crypto.randomUUID();
+        
+        // START: Direct API Key Test
+        try {
+            if (!geminiApiKey || geminiApiKey.length < 10) {
+                console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test: Gemini API key is missing or invalid.`);
+            } else {
+                const testGenAI = new GoogleGenerativeAI(geminiApiKey);
+                const testModel = testGenAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+                const testResult = await testModel.generateContent("Test prompt to verify API key.");
+                const testText = extractText(testResult.response);
+                console.log(`[LeadQualifier] Request ID: ${requestId} - Direct Test Result: ${testText ? "SUCCESS" : "FAILURE (empty response)"}`);
+            }
+        } catch (testError) {
+            console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test Error: ${testError.message}`);
         }
-    } catch (testError) {
-        console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test Error: ${testError.message}`);
-    }
-    // END: Direct API Key Test
-    
-    if (event.httpMethod === "OPTIONS") {
-        return { statusCode: 204, headers: CORS_HEADERS };
-    }
-    
-    if (event.httpMethod !== "POST") {
-        return { 
-            statusCode: 405, 
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
-            body: JSON.stringify({ error: "Method Not Allowed" }) 
-        };
-    }
+        // END: Direct API Key Test
+        
+        if (event.httpMethod === "OPTIONS") {
+            return { statusCode: 204, headers: CORS_HEADERS };
+        }
+        
+        if (event.httpMethod !== "POST") {
+            return { 
+                statusCode: 405, 
+                headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
+                body: JSON.stringify({ error: "Method Not Allowed" }) 
+            };
+        }
 
-    try {
         const { leadData, idealClient } = JSON.parse(event.body);
         
         if (!leadData || Object.keys(leadData).length === 0) {
@@ -302,8 +303,8 @@ exports.handler = async (event) => {
         }
 
     } catch (error) {
-        console.error(`[LeadQualifier] Request ID: ${requestId} - Function error: ${error.message}`, { stack: error.stack });
-        const fallback = fallbackResponse("AI report generation failed. Please retry shortly.");
+        console.error(`[LeadQualifier] Function error: ${error.message}`, { stack: error.stack });
+        const fallback = fallbackResponse(`An unknown error occurred on the server. Please check the Netlify function logs for more details.`);
         return { 
             statusCode: 500, 
             headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
