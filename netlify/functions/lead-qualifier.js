@@ -88,53 +88,6 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
     }
 }
 
-// Correctly handle the Google Search Tool Function
-async function googleSearch(query) {
-    console.log(`[LeadQualifier] Initiating Google Search for query: "${query}"`);
-
-    if (!searchApiKey || !searchEngineId) {
-        console.error("[LeadQualifier] Missing Google Search API credentials.");
-        return { error: "Search credentials missing." };
-    }
-
-    const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
-
-    try {
-        const maxRetries = parseInt(process.env.GOOGLE_MAX_RETRIES, 10) || 3;
-        const response = await retryWithTimeout(async (signal) => {
-            const res = await fetch(url, { signal });
-            if (res.status === 429) {
-                const error = new Error(ERROR_MESSAGES.search_quota_exceeded);
-                error.retriable = false;
-                throw error;
-            }
-            if (!res.ok) {
-                const error = new Error(`Google Search failed with status: ${res.status}`);
-                error.retriable = res.status >= 500 && res.status < 600;
-                throw error;
-            }
-            return res;
-        }, maxRetries, 8000); // Increased internal timeout for Google Search
-
-        const data = await response.json();
-        if (!data.items || !data.items.length) {
-            console.log(`[LeadQualifier] Google Search returned no results for query: "${query}"`);
-            // The fix is here. Return an empty array to be consistent with the JSON schema.
-            return { results: [] }; 
-        }
-        const searchResults = data.items.map(item => ({
-            title: item.title,
-            url: item.link,
-            snippet: item.snippet
-        }));
-        console.log(`[LeadQualifier] Google Search successful. Found ${searchResults.length} results.`);
-        return { results: searchResults };
-    } catch (error) {
-        console.error(`[LeadQualifier] Google Search error after all retries for query "${query}": ${error.message}`);
-        return { error: `All Google Search attempts failed. ${error.message}` };
-    }
-}
-
 // Helper function to safely extract text from the Gemini response
 function extractText(resp) {
     const parts = resp.candidates?.flatMap(candidate =>
@@ -145,27 +98,25 @@ function extractText(resp) {
 
 // Helper function to generate the prompt content from data
 function createPrompt(leadData, idealClient) {
-    // --- BEGINNING OF MODIFIED PROMPT SECTION ---
     return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive.
+    
+    Instructions for Tone and Quality:
+    * Strategic & Insightful: The report should demonstrate a deep, nuanced understanding of the lead's business, industry trends, and potential challenges.
+    * Memorable & Impactful: Frame the lead's profile in a compelling narrative that highlights their unique potential and the specific value our solution can provide.
+    * Friendly & Resonating: Use a warm, human tone, especially in the predictive and outreach sections, to build rapport and trust.
 
-    **Instructions for Tone and Quality:**
-    * **Strategic & Insightful:** The report should demonstrate a deep, nuanced understanding of the lead's business, industry trends, and potential challenges.
-    * **Memorable & Impactful:** Frame the lead's profile in a compelling narrative that highlights their unique potential and the specific value our solution can provide.
-    * **Friendly & Resonating:** Use a warm, human tone, especially in the predictive and outreach sections, to build rapport and trust.
+    Instructions for Each Key:
+    * "report": A comprehensive, one-paragraph strategic summary. Frame the key opportunity and explain the "why" behind the analysis. Connect the dots between the lead's data and ideal client profile.
+    * "predictive": A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
+    * "outreach": A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
+    * "questions": An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
+    * "relevantNews": An array of up to 3 objects. Each object MUST have a "title", a "url", and a "snippet". This array MUST be populated with recent, relevant news articles about the lead's company. You must use the provided search tool to find this information.
 
-    **Instructions for Each Key:**
-    * **"report":** A comprehensive, one-paragraph strategic summary. Frame the key opportunity and explain the "why" behind the analysis. Connect the dots between the lead's data and ideal client profile.
-    * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
-    * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
-    * **"questions":** An array of 3-5 thought-provoking, open-ended questions. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead.
-    * **"relevantNews":** An array of up to 3 objects. Each object MUST have a "title", a "url", and a "snippet". This array MUST be populated with recent, relevant news articles about the lead's company. You are REQUIRED to use the 'googleSearch' tool to find this information. Do not proceed without first making this tool call. The 'url' must be a direct link to the news article.
-
-    **Data for Analysis:**
-    * **Lead Data:** ${JSON.stringify(leadData)}
-    * **Ideal Client Profile:** ${JSON.stringify(idealClient || {})}
+    Data for Analysis:
+    * Lead Data: ${JSON.stringify(leadData)}
+    * Ideal Client Profile: ${JSON.stringify(idealClient || {})}
     
     Do not include any conversational text or explanation outside of the JSON object. All string values MUST be valid JSON strings, with all special characters correctly escaped (e.g., use \\n for new lines, and \\" for double quotes).`;
-    // --- END OF MODIFIED PROMPT SECTION ---
 }
 
 // Helper function to parse values like "$250M+" into a number.
@@ -293,12 +244,6 @@ exports.handler = async (event) => {
         };
     }
     
-    // NOTE: The 19-second duration log indicates that the entire Netlify function
-    // is timing out. This is a Netlify environment setting, not something
-    // that can be configured in the code. To prevent this, you should increase
-    // the function timeout in your Netlify settings to at least 30 seconds.
-    // The code below reduces the amount of data requested to help mitigate
-    // the issue, but it does not fix the root cause.
     try {
         const { leadData, idealClient } = JSON.parse(event.body);
         
@@ -318,10 +263,10 @@ exports.handler = async (event) => {
                 body: JSON.stringify(fallbackResponse(ERROR_MESSAGES.api_key_missing, 'api_key_missing'))
             };
         }
-    
+        
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-pro",
+            model: "gemini-2.5-flash-preview-05-20",
             generationConfig: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -351,13 +296,9 @@ exports.handler = async (event) => {
                 },
                 maxOutputTokens: 2048
             },
-            tools: [{
-                functionDeclarations: [{
-                    name: "googleSearch",
-                    description: "Search Google for up-to-date lead or industry information.",
-                    parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
-                }]
-            }]
+            tools: {
+                google_search: {}
+            }
         });
         
         const promptContent = createPrompt(leadData, idealClient);
@@ -365,38 +306,10 @@ exports.handler = async (event) => {
         const startTime = Date.now();
 
         const result = await retryWithTimeout(async () => {
-            const initialResponse = await model.generateContent({
+            return await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: promptContent }] }],
             });
-
-            const initialCandidate = initialResponse.response.candidates[0];
-            const toolCalls = initialCandidate.content.parts.find(p => p.toolCalls)?.toolCalls;
-        
-            if (toolCalls && toolCalls.length > 0) {
-                const toolCall = toolCalls[0];
-                console.log(`[LeadQualifier] Request ID: ${requestId} - Executing tool: ${toolCall.name} with query: "${toolCall.args.query}"`);
-                const toolCallResponse = await googleSearch(toolCall.args.query);
-                console.log(`[LeadQualifier] Request ID: ${requestId} - Tool execution result:`, toolCallResponse);
-                
-                if (toolCallResponse.error) {
-                    const error = new Error(`Tool call failed: ${toolCallResponse.error}`);
-                    error.retriable = false;
-                    throw error;
-                }
-
-                const finalResponse = await model.generateContent({
-                    contents: [
-                        { role: "user", parts: [{ text: promptContent }] },
-                        { role: "model", parts: [{ toolCalls: toolCalls }] },
-                        { role: "tool", parts: [{ functionResponse: { name: "googleSearch", response: toolCallResponse } }] }
-                    ]
-                });
-                return finalResponse;
-            } else {
-                console.warn(`[LeadQualifier] Request ID: ${requestId} - Gemini did not request a tool call. Proceeding with the initial response.`);
-                return initialResponse;
-            }
-        }, 3, 25000); // Increased internal timeout for AI generation
+        }, 3, 25000); 
 
         const endTime = Date.now();
         console.log(`[LeadQualifier] Request ID: ${requestId} - Total AI process duration: ${endTime - startTime} ms`);
@@ -414,8 +327,6 @@ exports.handler = async (event) => {
             console.error(`[LeadQualifier] Request ID: ${requestId} - Failed to parse AI response as JSON.`);
             throw new Error('json_parse_failed');
         }
-        
-        console.log(`[LeadQualifier] Request ID: ${requestId} - Final Parsed Data:`, finalParsedData);
         
         const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.keys(finalParsedData).includes(key));
         
@@ -437,6 +348,22 @@ exports.handler = async (event) => {
 
         const score = calculateLeadScore(leadData, idealClient);
         finalParsedData.leadScore = score;
+        
+        // Extract the grounding metadata (search results) and add to the response
+        let relevantNews = [];
+        const groundingMetadata = result.response.candidates?.[0]?.groundingMetadata;
+        if (groundingMetadata && groundingMetadata.groundingAttributions) {
+            relevantNews = groundingMetadata.groundingAttributions
+                .map(attribution => ({
+                    url: attribution.web?.uri,
+                    title: attribution.web?.title,
+                    snippet: attribution.web?.snippet
+                }))
+                .filter(source => source.url && source.title);
+        }
+        finalParsedData.relevantNews = relevantNews;
+
+        console.log(`[LeadQualifier] Request ID: ${requestId} - Final Parsed Data:`, finalParsedData);
         
         return {
             statusCode: 200,
