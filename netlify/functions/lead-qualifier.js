@@ -16,8 +16,8 @@ const FALLBACK_RESPONSE = {
     report: "",
     predictive: "",
     outreach: "",
-    questions: "",
-    news: ""
+    questions: [],
+    news: []
 };
 
 // Define the required keys for the JSON response
@@ -73,7 +73,7 @@ async function googleSearch(query) {
     
     if (!searchApiKey || !searchEngineId) {
         console.error("[LeadQualifier] Missing Google Search API credentials.");
-        return { error: "Search credentials missing." };
+        return { results: [], error: "Search credentials missing." };
     }
 
     const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
@@ -97,16 +97,18 @@ async function googleSearch(query) {
 
         const data = await response.json();
         if (!data.items || !data.items.length) {
-            return { message: "No results found." };
+            return { results: [], message: "No results found." };
         }
-        return data.items.map(item => ({
-            title: item.title,
-            link: item.link,
-            snippet: item.snippet
-        }));
+        return {
+            results: data.items.map(item => ({
+                title: item.title,
+                link: item.link,
+                snippet: item.snippet
+            }))
+        };
     } catch (error) {
         console.error("[LeadQualifier] Google Search error after all retries:", error);
-        return { error: `All Google Search attempts failed. ${error.message}` };
+        return { results: [], error: `All Google Search attempts failed. ${error.message}` };
     }
 }
 
@@ -132,7 +134,7 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
-    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
+    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a **JSON Array of Objects**, where each object has a "title" and a "link". Provide 2-3 of the most relevant news items. If no relevant news is found, return an empty array `[]`. Do not include any extra text.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
@@ -231,7 +233,7 @@ exports.handler = async (event) => {
                             return { 
                                 functionResponse: {
                                     name: toolCall.name,
-                                    response: { results: searchResults, error: searchResults.error ? searchResults.error : null }
+                                    response: searchResults
                                 }
                             };
                         } catch (error) {
@@ -309,4 +311,3 @@ exports.handler = async (event) => {
         };
     }
 };
-
