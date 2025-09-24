@@ -134,7 +134,7 @@ function createPrompt(leadData, idealClient) {
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
     * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
     * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
-    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a **JSON Array of Objects**, where each object has a "title" and a "link". Provide 2-3 of the most relevant news items. If no relevant news is found, return an empty array `[]`. Do not include any extra text.
+    * **"news":** An empty JSON array `[]`. The system will populate this with real search results after you are done. Do not include any extra text.
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
@@ -152,6 +152,15 @@ const ERROR_MESSAGES = {
     'fetch failed': "Network error during API call. Please check your connection or try again.",
     'quota': "Google Search quota exceeded. Try again later."
 };
+
+// Helper function to consistently return a response object with headers.
+function createResponse(statusCode, body) {
+    return {
+        statusCode,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    };
+}
 
 exports.handler = async (event) => {
     // This top-level try...catch block is a safety net to ensure a valid response is always returned.
@@ -179,30 +188,18 @@ exports.handler = async (event) => {
         }
         
         if (event.httpMethod !== "POST") {
-            return { 
-                statusCode: 405, 
-                headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
-                body: JSON.stringify({ error: "Method Not Allowed" }) 
-            };
+            return createResponse(405, { error: "Method Not Allowed" });
         }
 
         const { leadData, idealClient } = JSON.parse(event.body);
         
         if (!leadData || Object.keys(leadData).length === 0) {
-            return { 
-                statusCode: 400, 
-                headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
-                body: JSON.stringify({ error: "Missing leadData in request body." }) 
-            };
+            return createResponse(400, { error: "Missing leadData in request body." });
         }
 
         if (!geminiApiKey || geminiApiKey.length < 10) {
             console.error(`[LeadQualifier] Request ID: ${requestId} - Gemini API key is missing or too short. Please check environment variables.`);
-            return {
-                statusCode: 500,
-                headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing or invalid."))
-            };
+            return createResponse(500, fallbackResponse("Server configuration error: Gemini API key is missing or invalid."));
         }
 		
 		const genAI = new GoogleGenerativeAI(geminiApiKey);
@@ -258,11 +255,7 @@ exports.handler = async (event) => {
             
             if (!responseText) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
-                return {
-                    statusCode: 500,
-                    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-                    body: JSON.stringify(fallbackResponse("AI returned an empty response. This could be due to a safety filter or an API issue."))
-                };
+                return createResponse(500, fallbackResponse("AI returned an empty response. This could be due to a safety filter or an API issue."));
             }
 
             let finalParsedData;
@@ -270,11 +263,7 @@ exports.handler = async (event) => {
                 finalParsedData = JSON.parse(responseText);
             } catch (jsonError) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - JSON parsing failed: ${jsonError.message}`, { rawAIResponse: responseText });
-                return {
-                    statusCode: 500,
-                    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-                    body: JSON.stringify(fallbackResponse("AI provided an invalid JSON response.", responseText))
-                };
+                return createResponse(500, fallbackResponse("AI provided an invalid JSON response.", responseText));
             }
             
             // Replaced AJV validation with a native JavaScript check
@@ -284,36 +273,40 @@ exports.handler = async (event) => {
                 const missingKeys = REQUIRED_RESPONSE_KEYS.filter(key => !Object.keys(finalParsedData).includes(key));
                 console.error(`[LeadQualifier] Request ID: ${requestId} - Schema validation failed. Missing keys: ${missingKeys.join(', ')}`);
                 const fallback = fallbackResponse("Schema validation failed. AI provided an unexpected JSON structure.", responseText, { missingKeys });
-                return {
-                    statusCode: 500,
-                    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-                    body: JSON.stringify(fallback)
-                };
+                return createResponse(500, fallback);
+            }
+            
+            // Step 1: Get the search query from leadData
+            const searchQuery = leadData.company || leadData.name;
+            let newsLinks = [];
+
+            if (searchQuery) {
+                // Step 2: Run a real Google Search using the company name
+                const searchResults = await googleSearch(searchQuery);
+
+                if (searchResults.results && searchResults.results.length > 0) {
+                    // Step 3: Populate the news array with the real search results
+                    newsLinks = searchResults.results.slice(0, 3).map(result => ({
+                        title: result.title,
+                        link: result.link
+                    }));
+                }
             }
 
-            return {
-                statusCode: 200,
-                headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-                body: JSON.stringify(finalParsedData)
-            };
+            // Step 4: Inject the real news into the final response object
+            finalParsedData.news = newsLinks;
+
+            return createResponse(200, finalParsedData);
 
         } catch (apiError) {
             console.error(`[LeadQualifier] Request ID: ${requestId} - API call failed: ${apiError.message}`, { stack: apiError.stack });
             const fallback = fallbackResponse("AI report generation failed. Please retry shortly.");
-            return {
-                statusCode: 500,
-                headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify(fallback)
-            };
+            return createResponse(500, fallback);
         }
 
     } catch (error) {
         console.error(`[LeadQualifier] Function error: ${error.message}`, { stack: error.stack });
         const fallback = fallbackResponse(`An unknown error occurred on the server. Please check the Netlify function logs for more details.`);
-        return { 
-            statusCode: 500, 
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
-            body: JSON.stringify(fallback) 
-        };
+        return createResponse(500, fallback);
     }
 };
