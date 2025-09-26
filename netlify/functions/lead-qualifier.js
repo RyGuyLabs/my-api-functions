@@ -3,16 +3,16 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fetch = require("node-fetch");
 const crypto = require("crypto");
 
-// Consistent CORS headers for all responses. This is critical for cross-origin requests.
+// Consistent CORS headers for all responses — now matches your frontend origin explicitly
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
 const geminiApiKey = process.env.FIRST_API_KEY || process.env.GEMINI_API_KEY;
 
-// Define the canonical fallback response as a single source of truth
+// Canonical fallback response
 const FALLBACK_RESPONSE = {
   report: "",
   predictive: "",
@@ -21,10 +21,9 @@ const FALLBACK_RESPONSE = {
   news: []
 };
 
-// Define the required keys for the JSON response
+// Required keys
 const REQUIRED_RESPONSE_KEYS = ["report", "predictive", "outreach", "questions", "news"];
 
-// Factory function for generating a consistent fallback response
 function fallbackResponse(message, rawAIResponse, extraFields = null) {
   const isDevelopment = process.env.NODE_ENV === "development";
 
@@ -41,7 +40,7 @@ function fallbackResponse(message, rawAIResponse, extraFields = null) {
   return response;
 }
 
-// A generic helper function to handle retries with exponential backoff and timeout
+// Retry helper
 async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
   let attempt = 0;
   while (attempt <= maxRetries) {
@@ -67,7 +66,7 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
   }
 }
 
-// Correctly handle the Google Search wrapper
+// Google Search helper
 async function googleSearch(query) {
   const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
   const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
@@ -104,7 +103,7 @@ async function googleSearch(query) {
       results: data.items.map(item => ({
         title: item.title,
         link: item.link,
-        snippet: item.snippet // still available here if you ever want it
+        snippet: item.snippet
       }))
     };
   } catch (error) {
@@ -113,15 +112,14 @@ async function googleSearch(query) {
   }
 }
 
-// Helper function to safely extract text from the Gemini response
+// Extract text from Gemini response
 function extractText(resp) {
-  // Accept either the response object or the nested response
   const candidates = resp?.candidates || resp?.response?.candidates || [];
   const parts = candidates.flatMap(candidate => (candidate.content?.parts || []).filter(p => p.text));
   return parts.map(p => p.text).join('') || "";
 }
 
-// Helper function to generate the prompt content from data
+// Create prompt
 function createPrompt(leadData, idealClient) {
   return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
 
@@ -135,7 +133,7 @@ function createPrompt(leadData, idealClient) {
 * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
 * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
 * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
-* **"news":** An empty JSON array `[]`. The system will populate this with real search results after you are done. Do not include any extra text.
+* **"news":** An empty JSON array \`[]\`. The system will populate this with real search results after you are done. Do not include any extra text.
 
 **Data for Analysis:**
 * **Lead Data:** ${JSON.stringify(leadData)}
@@ -145,7 +143,7 @@ Use the 'googleSearch' tool to find relevant, up-to-date information, particular
 Do not include any conversational text or explanation outside of the JSON object.`;
 }
 
-// Helper function to consistently return a response object with headers.
+// Response helper
 function createResponse(statusCode, body) {
   return {
     statusCode,
@@ -154,7 +152,7 @@ function createResponse(statusCode, body) {
   };
 }
 
-// Run the one-off API key test once per cold start (non-blocking)
+// Cold start key test
 let geminiKeyTested = false;
 (async function runColdStartTest() {
   if (geminiKeyTested) return;
@@ -166,7 +164,6 @@ let geminiKeyTested = false;
   try {
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    // Non-blocking test call — do not await inside request handling
     model.generateContent({ contents: [{ role: "user", parts: [{ text: "Health check" }] }] })
       .then(res => {
         const txt = extractText(res.response);
@@ -180,11 +177,12 @@ let geminiKeyTested = false;
   }
 })();
 
+// Main handler
 exports.handler = async (event) => {
   try {
     const requestId = crypto.randomUUID();
 
-    // Handle preflight early (guaranteed CORS headers)
+    // Handle preflight
     if (event.httpMethod === "OPTIONS") {
       return { statusCode: 204, headers: CORS_HEADERS };
     }
@@ -193,7 +191,7 @@ exports.handler = async (event) => {
       return createResponse(405, { error: "Method Not Allowed" });
     }
 
-    // Parse body robustly
+    // Parse body
     let parsedBody;
     try {
       parsedBody = JSON.parse(event.body || "{}");
@@ -201,7 +199,6 @@ exports.handler = async (event) => {
       return createResponse(400, { error: "Invalid JSON request body." });
     }
 
-    // Accept either { leadData, idealClient } or a raw leadData payload
     const leadData = parsedBody.leadData || parsedBody;
     const idealClient = parsedBody.idealClient || {};
 
@@ -216,15 +213,12 @@ exports.handler = async (event) => {
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
 
-    // Use the model to produce structured JSON (news left empty intentionally)
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-pro",
       generationConfig: {
         responseMimeType: "application/json",
         maxOutputTokens: 2048
       },
-      // You can keep functionDeclarations here if you ever want the model to call tools;
-      // we will, however, populate `news` ourselves after parsing.
       tools: [{
         functionDeclarations: [{
           name: "googleSearch",
@@ -247,8 +241,7 @@ exports.handler = async (event) => {
       return createResponse(500, fallback);
     }
 
-    // If the model attempted tool calls, handle them (multi-turn)
-    // (This is safe even if the model didn't call any tools.)
+    // Handle tool calls
     while (result.response.candidates?.[0]?.content?.parts?.some(p => p.functionCall)) {
       const toolCalls = result.response.candidates[0].content.parts.filter(p => p.functionCall);
 
@@ -263,7 +256,6 @@ exports.handler = async (event) => {
             }
           };
         }
-        // Unknown tool: return empty response
         return {
           functionResponse: {
             name: call.functionCall.name,
@@ -280,7 +272,6 @@ exports.handler = async (event) => {
       });
     }
 
-    // Extract the text output (expected to be the JSON string)
     const responseText = extractText(result.response);
 
     if (!responseText) {
@@ -288,7 +279,6 @@ exports.handler = async (event) => {
       return createResponse(500, fallbackResponse("AI returned an empty response. This could be due to a safety filter or an API issue."));
     }
 
-    // Try parsing JSON, with a simple cleanup fallback attempt
     let finalParsedData;
     try {
       finalParsedData = JSON.parse(responseText);
@@ -303,7 +293,6 @@ exports.handler = async (event) => {
       }
     }
 
-    // Validate required keys
     const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.prototype.hasOwnProperty.call(finalParsedData, key));
     if (!allKeysPresent) {
       const missingKeys = REQUIRED_RESPONSE_KEYS.filter(key => !Object.prototype.hasOwnProperty.call(finalParsedData, key));
@@ -312,7 +301,6 @@ exports.handler = async (event) => {
       return createResponse(500, fallback);
     }
 
-    // --- Inject real news for every new lead ---
     const searchQuery = leadData.company || leadData.name || leadData.industry || "industry trends";
     let newsLinks = [];
 
@@ -324,7 +312,6 @@ exports.handler = async (event) => {
           link: item.link
         }));
       } else {
-        // If no results were returned, provide a placeholder link so UI can render gracefully
         newsLinks = [{ title: "No relevant news found", link: "#" }];
       }
     } catch (err) {
@@ -334,7 +321,6 @@ exports.handler = async (event) => {
 
     finalParsedData.news = newsLinks;
 
-    // Return final object with CORS
     return createResponse(200, finalParsedData);
 
   } catch (error) {
