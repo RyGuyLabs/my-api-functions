@@ -1,72 +1,91 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// Define standard CORS headers for all responses
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
 };
 
 exports.handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
-  }
+  // Handle preflight OPTIONS request for CORS
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+  }
 
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
-  }
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
+  }
 
-  try {
-    const body = JSON.parse(event.body);
-    const { action, base64Audio, prompt, mimeType } = body;
+  try {
+    const body = JSON.parse(event.body);
+    const { action, base64Audio, prompt, mimeType } = body;
 
-    const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) {
-      return {
-        statusCode: 500,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ error: "API key is not configured." }),
-      };
-    }
+    const apiKey = process.env.FIRST_API_KEY;
+    if (!apiKey) {
+      console.error("API Key (FIRST_API_KEY) is not set in environment variables.");
+      return {
+        statusCode: 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: "Server configuration error: API key missing." }),
+      };
+    }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
+    if (action === 'generate_script') {
+      // Use a faster model for simple text generation
+      const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    if (action === 'generate_script') {
-      const prompts = [
-        "Speak like you're inspiring a team to reach their monthly goals.",
-        "Deliver a short pitch about the importance of customer empathy.",
-        "Recite a 15-word motivational message for a cold-calling sales rep.",
-        "Speak a one-liner that could close a deal on the spot.",
-        "Say something that would boost a discouraged teammate's confidence.",
-        "Create a 10-15 word pitch introducing yourself and your company.",
-        "Share a quick elevator pitch that excites a potential client.",
-        "Speak a phrase that sounds confident, encouraging, and assertive.",
-        "Say something that communicates leadership in less than 20 words.",
-        "Deliver a sentence that would energize a sales team in the morning."
-      ];
+      const prompts = [
+        "Speak like you're inspiring a team to reach their monthly goals.",
+        "Deliver a short pitch about the importance of customer empathy.",
+        "Recite a 15-word motivational message for a cold-calling sales rep.",
+        "Speak a one-liner that could close a deal on the spot.",
+        "Say something that would boost a discouraged teammate's confidence.",
+        "Create a 10-15 word pitch introducing yourself and your company.",
+        "Share a quick elevator pitch that excites a potential client.",
+        "Speak a phrase that sounds confident, encouraging, and assertive.",
+        "Say something that communicates leadership in less than 20 words.",
+        "Deliver a sentence that would energize a sales team in the morning."
+      ];
 
-      const promptText = prompts[Math.floor(Math.random() * prompts.length)];
+      const promptText = "Generate only the requested short, professional speech/pitch. " + 
+                         prompts[Math.floor(Math.random() * prompts.length)];
 
-      const result = await model.generateContent(promptText);
-      const script = await result.response.text();
+      try {
+        const result = await textModel.generateContent(promptText);
+        const script = result.response.text.trim();
 
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ script: script.trim() }),
-      };
-    }
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ script: script }),
+        };
+      } catch (apiError) {
+        console.error("Error during script generation:", apiError);
+        return {
+          statusCode: 500,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: "Failed to generate script from AI model." }),
+        };
+      }
+    }
 
-    if (action === 'analyze_audio') {
-      if (!base64Audio || !prompt || !mimeType) {
-        return {
-          statusCode: 400,
-          headers: CORS_HEADERS,
-          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
-        };
-      }
+    if (action === 'analyze_audio') {
+      // FIX: Updated model name from 'gemini-1.5-pro' to the correct, generally available 'gemini-2.5-pro' 
+      // to resolve the 404/Not Found API error.
+      const audioModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-      const systemInstruction = `
+      if (!base64Audio || !prompt || !mimeType) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
+        };
+      }
+
+      const systemInstruction = `
 You are a vocal coach and sales communication expert. Analyze a user reading a short sales script.
 
 Rate performance in 9 categories (1–10), total score = 90:
@@ -87,79 +106,78 @@ Also include:
 
 Respond ONLY in raw JSON format (no markdown, no formatting). Example:
 {
-  "scores": { "Tone": 7, ... },
-  "totalScore": 75,
-  "summary": {
-    "strengths": "Clarity and tone were strong.",
-    "areasForImprovement": "More energy and pacing control needed."
-  },
-  "observations": "Voice sounded slightly rushed, but articulate."
+  "scores": { "Tone": 7, ... },
+  "totalScore": 75,
+  "summary": {
+    "strengths": "Clarity and tone were strong.",
+    "areasForImprovement": "More energy and pacing control needed."
+  },
+  "observations": "Voice sounded slightly rushed, but articulate."
 }
 `;
 
-      const payload = {
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              {
-                inlineData: {
-                  mimeType: mimeType,
-                  data: base64Audio,
-                },
-              },
-            ],
-          },
-        ],
-        systemInstruction: {
-          parts: [{ text: systemInstruction }],
-        },
-      };
+      const payload = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Audio,
+                },
+              },
+            ],
+          },
+        ],
+        systemInstruction: {
+          parts: [{ text: systemInstruction }],
+        },
+      };
+      
+      try {
+        const result = await audioModel.generateContent(payload);
+        const responseText = result.response.text.trim();
 
-      const result = await model.generateContent(payload);
-      const responseText = (await result.response.text()).trim();
+        // Fix: Clean markdown code block wrappers before JSON.parse
+        const cleanedResponseText = responseText
+          .replace(/^```json\s*/, '') 
+          .replace(/```$/, '')        
+          .trim();
 
-      try {
-        // Fix: Clean markdown code block wrappers before JSON.parse
-        const cleanedResponseText = responseText
-          .replace(/^```json\s*/, '')   // Remove starting ```json (if present)
-          .replace(/```$/, '')           // Remove trailing ```
-          .trim();
+        const feedback = JSON.parse(cleanedResponseText);
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify(feedback),
+        };
+      } catch (jsonOrApiError) {
+        console.error("Error during audio analysis (AI response/API error):", jsonOrApiError);
+        return {
+          statusCode: 500,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            error: "Failed to process audio analysis or model response.",
+            detail: (jsonOrApiError.message || "Unknown API/JSON failure").substring(0, 100) + "...",
+          }),
+        };
+      }
+    }
 
-        const feedback = JSON.parse(cleanedResponseText);
-        return {
-          statusCode: 200,
-          headers: CORS_HEADERS,
-          body: JSON.stringify(feedback),
-        };
-      } catch (jsonError) {
-        console.error("Failed to parse AI model response:", jsonError);
-        return {
-          statusCode: 500,
-          headers: CORS_HEADERS,
-          body: JSON.stringify({
-            error: "Invalid response from the AI model.",
-            raw: responseText,
-          }),
-        };
-      }
-    }
+    return {
+      statusCode: 400,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: "Invalid action specified." }),
+    };
 
-    return {
-      statusCode: 400,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ error: "Invalid action specified." }),
-    };
-
-  } catch (error) {
-    console.error("Function error:", error);
-    return {
-      statusCode: 500,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ error: "An unexpected error occurred." }),
-    };
-  }
+  } catch (error) {
+    // Catches errors outside of the specific action blocks (e.g., JSON.parse failure)
+    console.error("Top-level function error:", error);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: "An unexpected top-level server error occurred." }),
+    };
+  }
 };
-
-
