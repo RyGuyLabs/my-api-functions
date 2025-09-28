@@ -1,5 +1,4 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fetch = require("node-fetch");
 const crypto = require("crypto");
 
 // Consistent CORS headers for all responses.
@@ -154,22 +153,6 @@ const ERROR_MESSAGES = {
 exports.handler = async (event) => {
     const requestId = crypto.randomUUID();
     
-    // START: Direct API Key Test
-    try {
-        if (!geminiApiKey || geminiApiKey.length < 10) {
-            console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test: Gemini API key is missing or invalid.`);
-        } else {
-            const testGenAI = new GoogleGenerativeAI(geminiApiKey);
-            const testModel = testGenAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-            const testResult = await testModel.generateContent("Test prompt to verify API key.");
-            const testText = extractText(testResult.response);
-            console.log(`[LeadQualifier] Request ID: ${requestId} - Direct Test Result: ${testText ? "SUCCESS" : "FAILURE (empty response)"}`);
-        }
-    } catch (testError) {
-        console.error(`[LeadQualifier] Request ID: ${requestId} - Direct Test Error: ${testError.message}`);
-    }
-    // END: Direct API Key Test
-    
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 204, headers: CORS_HEADERS };
     }
@@ -269,7 +252,6 @@ exports.handler = async (event) => {
                 };
             }
             
-            // Replaced AJV validation with a native JavaScript check
             const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.keys(finalParsedData).includes(key));
             
             if (!allKeysPresent) {
@@ -309,4 +291,3 @@ exports.handler = async (event) => {
         };
     }
 };
-
