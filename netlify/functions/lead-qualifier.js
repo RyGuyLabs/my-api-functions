@@ -8,7 +8,8 @@ const CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
-const geminiApiKey = process.env.FIRST_API_KEY;
+// FINAL CHANGE: The function now strictly uses the dedicated, isolated environment variable.
+const geminiApiKey = process.env.LEAD_QUALIFIER_API_KEY;
 
 // Define the canonical fallback response as a single source of truth
 const FALLBACK_RESPONSE = {
@@ -180,18 +181,19 @@ exports.handler = async (event) => {
         }
 
         if (!geminiApiKey || geminiApiKey.length < 10) {
-            console.error(`[LeadQualifier] Request ID: ${requestId} - Gemini API key is missing or too short. Please check environment variables.`);
+            console.error(`[LeadQualifier] Request ID: ${requestId} - Dedicated LEAD_QUALIFIER_API_KEY is missing or too short. Please ensure the isolated key is set.`);
             return {
                 statusCode: 500,
                 headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify(fallbackResponse("Server configuration error: Gemini API key is missing or invalid."))
+                body: JSON.stringify(fallbackResponse("Server configuration error: The dedicated API key for this function is missing or invalid."))
             };
         }
 		
 		const genAI = new GoogleGenerativeAI(geminiApiKey);
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-pro",
+            // Model: gemini-2.5-flash is used for its structured output and function calling support.
+            model: "gemini-2.5-flash",
             generationConfig: {
                 responseMimeType: "application/json",
                 maxOutputTokens: 2048
@@ -232,7 +234,7 @@ exports.handler = async (event) => {
                 }
             });
             
-            // FIX: Await result.response.text() to resolve the promise.
+            // Await result.response.text() to resolve the promise.
             const responseText = await result.response.text();
             
             if (!responseText) {
