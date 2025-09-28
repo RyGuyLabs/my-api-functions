@@ -55,7 +55,8 @@ exports.handler = async (event) => {
 
       try {
         const result = await textModel.generateContent(promptText);
-        const script = result.response.text.trim();
+        // FIX: Use (await result.response.text()) to properly resolve the content promise
+        const script = (await result.response.text()).trim();
 
         return {
           statusCode: 200,
@@ -73,8 +74,7 @@ exports.handler = async (event) => {
     }
 
     if (action === 'analyze_audio') {
-      // FIX: Updated model name from 'gemini-1.5-pro' to the correct, generally available 'gemini-2.5-pro' 
-      // to resolve the 404/Not Found API error.
+      // Model name is now corrected to 'gemini-2.5-pro'
       const audioModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
       if (!base64Audio || !prompt || !mimeType) {
@@ -138,7 +138,8 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
       
       try {
         const result = await audioModel.generateContent(payload);
-        const responseText = result.response.text.trim();
+        // FIX: Use (await result.response.text()) to properly resolve the content promise
+        const responseText = (await result.response.text()).trim();
 
         // Fix: Clean markdown code block wrappers before JSON.parse
         const cleanedResponseText = responseText
