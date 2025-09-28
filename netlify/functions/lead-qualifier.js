@@ -52,6 +52,7 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
             if (err.name === "AbortError") {
                 console.warn(`[LeadQualifier] Request timed out. (Attempt ${attempt + 1}/${maxRetries + 1})`);
             }
+            // Check for retriable errors (timeout or 5xx status from fetch)
             if ((err.name === "AbortError" || err.retriable) && attempt < maxRetries) {
                 attempt++;
                 console.warn(`[LeadQualifier] Fetch failed, retrying... (Attempt ${attempt}/${maxRetries})`);
@@ -110,6 +111,8 @@ async function googleSearch(query) {
 }
 
 // Helper function to safely extract text from the Gemini response
+// NOTE: This helper is now redundant since we await response.text() directly later, 
+// but is kept here in case of tool-call based response extraction.
 function extractText(resp) {
   const parts = resp.candidates?.flatMap(candidate => 
       candidate.content?.parts?.filter(part => part.text) || []
@@ -229,7 +232,8 @@ exports.handler = async (event) => {
                 }
             });
             
-            const responseText = result.response.text();
+            // FIX: Await result.response.text() to resolve the promise.
+            const responseText = await result.response.text();
             
             if (!responseText) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - AI returned an empty response.`);
