@@ -78,7 +78,7 @@ const responseSchema = {
         },
         predictive: {
             type: "STRING",
-            description: "Predictive Insights & Strategy (3-5 bullet points in Markdown). What competitive pressures or industry shifts is the lead facing? Suggest 2-3 specific strategies for the sales rep."
+            description: "Predictive Insights & Strategy (5-7 bullet points in Markdown). What competitive pressures or industry shifts is the lead facing? Suggest 2-3 specific strategies for the sales rep."
         },
         questions: {
             type: "STRING",
