@@ -107,7 +107,18 @@ exports.handler = async (event) => {
     const corsHeaders = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS', // <-- ADDED for Preflight
     };
+    
+    // ** CORS FIX: Handle the Preflight OPTIONS Request **
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200, // CRITICAL: Must return 200 OK status for preflight to succeed
+            headers: corsHeaders,
+            body: '',
+        };
+    }
+    // ** END CORS FIX **
     
     // Check for required API Keys
     const apiKey = process.env.LEAD_QUALIFIER_API_KEY;
