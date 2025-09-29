@@ -154,19 +154,27 @@ exports.handler = async (event) => {
 
     let leadData, idealClient;
 
+    // --- CRITICAL DEBUGGING STEP ADDED ---
+    console.log('Received event body (raw):', event.body);
+    // -------------------------------------
+    
     try {
+        // Netlify function event.body is a string, which needs to be parsed
         const body = JSON.parse(event.body);
         leadData = body.leadData;
         idealClient = body.idealClient;
 
         if (!leadData || !idealClient) {
-            throw new Error("Missing required leadData or idealClient payload.");
+            // Throw a specific error if the required top-level keys are missing
+            throw new Error("Missing required leadData or idealClient payload in the parsed JSON body.");
         }
     } catch (e) {
+        // This catch block handles both JSON parse failures AND missing keys
+        console.error("Payload validation failed (400):", e.message, "Body was:", event.body ? event.body.substring(0, 200) : 'null/empty'); // Log error and snippet
         return {
             statusCode: 400,
             headers: corsHeaders,
-            body: JSON.stringify({ error: "Invalid JSON payload format.", details: e.message }),
+            body: JSON.stringify({ error: "Invalid JSON payload format or missing required data.", details: e.message }),
         };
     }
 
