@@ -229,7 +229,8 @@ exports.handler = async (event) => {
         contents: [{ parts: [{ text: userPrompt }] }],
         
         // Enforce JSON output and define the structure
-        config: {
+        // FIX: Renaming 'config' to 'generationConfig' to comply with Gemini API structure
+        generationConfig: {
             responseMimeType: "application/json",
             responseSchema: responseSchema
         },
