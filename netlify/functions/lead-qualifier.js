@@ -1,5 +1,3 @@
-const { process } = require('process');
-
 // Configuration for the Gemini API
 const GEMINI_API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
 const MODEL_NAME = "gemini-2.5-flash-preview-05-20"; // Supports JSON output
@@ -31,6 +29,7 @@ async function fetchWithBackoff(fn, maxRetries = 5) {
  * @returns {Promise<Array<Object> | null>} Array of structured search results or null on error.
  */
 async function googleSearch(query) {
+    // The 'process' global object is typically available in Netlify/Lambda environments.
     const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
     const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
     
@@ -200,9 +199,6 @@ exports.handler = async (event) => {
     const payload = {
         contents: [{ parts: [{ text: userPrompt }] }],
         
-        // REMOVED: Native Google Search grounding tool is now removed.
-        // tools: [{ "google_search": {} }], 
-
         // Enforce JSON output and define the structure
         config: {
             responseMimeType: "application/json",
