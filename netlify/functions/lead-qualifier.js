@@ -8,7 +8,7 @@ const CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
-// FINAL CHANGE: The function now strictly uses the dedicated, isolated environment variable.
+// The function strictly uses the dedicated, isolated environment variable.
 const geminiApiKey = process.env.LEAD_QUALIFIER_API_KEY;
 
 // Define the canonical fallback response as a single source of truth
@@ -28,9 +28,11 @@ function fallbackResponse(message, rawAIResponse, extraFields = null) {
     const isDevelopment = process.env.NODE_ENV === "development";
 
     const response = { ...FALLBACK_RESPONSE };
+    // Use a simple, readable error message for the front end
     response.report = `<p>Error: ${message}</p>`;
 
     if (isDevelopment) {
+        // Include debug info only in development environments
         response.debug = {
             rawResponse: rawAIResponse,
             message: message,
@@ -40,7 +42,10 @@ function fallbackResponse(message, rawAIResponse, extraFields = null) {
     return response;
 }
 
-// A generic helper function to handle retries with exponential backoff and timeout
+/**
+ * A generic helper function to handle retries with exponential backoff and timeout
+ * for any fetch-based API call (like the Custom Search API).
+ */
 async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
     let attempt = 0;
     while (attempt <= maxRetries) {
@@ -50,57 +55,66 @@ async function retryWithTimeout(fn, maxRetries = 2, timeoutMs = 10000) {
             const result = await fn(controller.signal);
             return result;
         } catch (err) {
-            if (err.name === "AbortError") {
-                console.warn(`[LeadQualifier] Request timed out. (Attempt ${attempt + 1}/${maxRetries + 1})`);
+            // Log retries and apply backoff
+            if (err.name === "AbortError" || err.retriable) {
+                if (attempt < maxRetries) {
+                    attempt++;
+                    console.warn(`[LeadQualifier] Fetch failed, retrying... (Attempt ${attempt}/${maxRetries})`);
+                    await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
+                    continue;
+                }
             }
-            // Check for retriable errors (timeout or 5xx status from fetch)
-            if ((err.name === "AbortError" || err.retriable) && attempt < maxRetries) {
-                attempt++;
-                console.warn(`[LeadQualifier] Fetch failed, retrying... (Attempt ${attempt}/${maxRetries})`);
-                await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
-                continue;
-            }
-            throw err;
+            throw err; // Re-throw unretriable errors or after max retries
         } finally {
             clearTimeout(timeout);
         }
     }
 }
 
-// Correctly handle the Google Search Tool Function
+/**
+ * Executes a Google Custom Search API call using environment variables.
+ * This function is used by the Gemini SDK's function calling mechanism.
+ * @param {string} query The search query provided by the Gemini model.
+ * @returns {Promise<Array<Object>|Object>} Array of results or an error object.
+ */
 async function googleSearch(query) {
     const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
     const searchEngineId = process.env.RYGUY_SEARCH_ENGINE_ID;
     
     if (!searchApiKey || !searchEngineId) {
-        console.error("[LeadQualifier] Missing Google Search API credentials.");
-        return { error: "Search credentials missing." };
+        // Return an object with an 'error' key if credentials are missing.
+        return { error: "Search credentials missing in environment." };
     }
 
     const url = `https://www.googleapis.com/customsearch/v1?key=${searchApiKey}&cx=${searchEngineId}&q=${encodeURIComponent(query)}`;
     
     try {
         const maxRetries = parseInt(process.env.GOOGLE_MAX_RETRIES, 10) || 3;
+        
         const response = await retryWithTimeout(async (signal) => {
             const res = await fetch(url, { signal });
+            
             if (res.status === 429) {
                 const error = new Error("Google Search quota exceeded.");
-                error.retriable = false;
+                error.retriable = false; // Do not retry on quota error
                 throw error;
             }
             if (!res.ok) {
                 const error = new Error(`Google Search failed with status: ${res.status}`);
-                error.retriable = res.status >= 500 && res.status < 600;
+                error.retriable = res.status >= 500 && res.status < 600; // Retry on 5xx server errors
                 throw error;
             }
             return res;
-        }, maxRetries, 5000);
+        }, maxRetries, 5000); // 5 second timeout for search API
 
         const data = await response.json();
+        
         if (!data.items || !data.items.length) {
-            return { message: "No results found." };
+            return { message: "No relevant news results found." };
         }
-        return data.items.map(item => ({
+        
+        // Return only the necessary fields for the LLM
+        return data.items.slice(0, 3).map(item => ({
             title: item.title,
             link: item.link,
             snippet: item.snippet
@@ -111,17 +125,12 @@ async function googleSearch(query) {
     }
 }
 
-// Helper function to safely extract text from the Gemini response
-// NOTE: This helper is now redundant since we await response.text() directly later, 
-// but is kept here in case of tool-call based response extraction.
-function extractText(resp) {
-  const parts = resp.candidates?.flatMap(candidate => 
-      candidate.content?.parts?.filter(part => part.text) || []
-  );
-  return parts?.map(part => part.text).filter(Boolean).join('') || "";
-}
-
-// Helper function to generate the prompt content from data
+/**
+ * Helper function to generate the comprehensive, structured prompt content.
+ * @param {Object} leadData The incoming lead data.
+ * @param {Object} idealClient The ideal client profile.
+ * @returns {string} The full prompt string.
+ */
 function createPrompt(leadData, idealClient) {
     return `You are a seasoned sales consultant specializing in strategic lead qualification. Your goal is to generate a comprehensive, actionable, and highly personalized sales report for an account executive. Your output MUST be a single JSON object with the following keys: "report", "predictive", "outreach", "questions", and "news".
 
@@ -133,9 +142,9 @@ function createPrompt(leadData, idealClient) {
     **Instructions for Each Key:**
     * **"report":** A comprehensive, one-paragraph strategic summary. Frame the key opportunity and explain the "why" behind the analysis. Connect the dots between the lead's data, ideal client profile, and any relevant search findings.
     * **"predictive":** A strategic plan with in-depth and elaborate insights. Start with a 1-2 sentence empathetic and intelligent prediction about the lead's future needs or challenges, and then use a bulleted list to detail a strategy for communicating with them.
-    * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use "\\n" to create line breaks for new paragraphs.
-    * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list. The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
-    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This should be a single string containing a title (e.g., "Latest News") followed by 2-3 bullet points. Each bullet point should summarize a key finding and include a concise citation, with line breaks ("\\n\\n") separating each bullet point. Do not include raw URLs or objects, but a clean citation like "(Source: TechCrunch)".
+    * **"outreach":** A professional, friendly, and highly personalized outreach message formatted as a plan with appropriate line breaks for easy copy-pasting. Use the markdown pattern for line breaks (two spaces at the end of a line) or just new lines in the string if necessary.
+    * **"questions":** A list of 3-5 thought-provoking, open-ended questions formatted as a bulleted list (e.g., "* Question one"). The questions should be designed to validate your assumptions and guide a productive, two-way conversation with the lead. Do not add a comma after the question mark.
+    * **"news":** A professional and relevant news blurb based on the 'googleSearch' tool. This must be formatted as a single string of **Markdown**. Include a brief title (e.g., "Latest News") followed by 2-3 concise bullet points. Each bullet point should summarize a key finding and include a clean citation, such as (Source: TechCrunch). Do not use raw URLs or attempt to use line break escapes (like \\n).
 
     **Data for Analysis:**
     * **Lead Data:** ${JSON.stringify(leadData)}
@@ -145,18 +154,10 @@ function createPrompt(leadData, idealClient) {
     Do not include any conversational text or explanation outside of the JSON object.`;
 }
 
-// A map of error messages for a single source of truth
-const ERROR_MESSAGES = {
-    'empty response': "AI returned an empty response. Check for API key issues or content that violates safety settings.",
-    'validation failed': "Schema validation failed. AI provided an unexpected JSON structure.",
-    'JSON': "JSON parsing failed. AI provided an invalid JSON response.",
-    'fetch failed': "Network error during API call. Please check your connection or try again.",
-    'quota': "Google Search quota exceeded. Try again later."
-};
-
 exports.handler = async (event) => {
     const requestId = crypto.randomUUID();
     
+    // Handle CORS pre-flight request
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 204, headers: CORS_HEADERS };
     }
@@ -181,15 +182,15 @@ exports.handler = async (event) => {
         }
 
         if (!geminiApiKey || geminiApiKey.length < 10) {
-            console.error(`[LeadQualifier] Request ID: ${requestId} - Dedicated LEAD_QUALIFIER_API_KEY is missing or too short. Please ensure the isolated key is set.`);
+            console.error(`[LeadQualifier] Request ID: ${requestId} - Dedicated LEAD_QUALIFIER_API_KEY is missing or too short.`);
             return {
                 statusCode: 500,
                 headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" },
                 body: JSON.stringify(fallbackResponse("Server configuration error: The dedicated API key for this function is missing or invalid."))
             };
         }
-		
-		const genAI = new GoogleGenerativeAI(geminiApiKey);
+        
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
 
         // Define the JSON schema for the required output structure
         const responseSchema = {
@@ -206,17 +207,18 @@ exports.handler = async (event) => {
         };
 
         const model = genAI.getGenerativeModel({
-            // Model: gemini-2.5-flash is used for its structured output and function calling support.
+            // Use gemini-2.5-flash for its speed and reliability with structured output and function calling.
             model: "gemini-2.5-flash",
             generationConfig: {
-                // FIX: responseSchema enables structured JSON output while allowing function calling (unlike responseMimeType)
                 responseSchema: responseSchema,
-                maxOutputTokens: 2048
+                maxOutputTokens: 2048,
+                temperature: 0.5 // Add temperature for controlled, creative responses
             },
+            // Define the custom tool for Google Search
             tools: [{
                 functionDeclarations: [{
                     name: "googleSearch",
-                    description: "Search Google for up-to-date lead or industry information.",
+                    description: "Search Google for up-to-date lead or industry information. Use this only once, passing a single, targeted query.",
                     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
                 }]
             }]
@@ -227,29 +229,23 @@ exports.handler = async (event) => {
         try {
             const result = await model.generateContent({
                 contents: [{ role: "user", parts: [{ text: promptContent }] }],
+                // The toolResponseHandler executes the googleSearch function when the model calls for it.
                 toolResponseHandler: async (toolCall) => {
                     if (toolCall.name === "googleSearch") {
-                        try {
-                            const searchResults = await googleSearch(toolCall.args.query);
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: { results: searchResults, error: searchResults.error ? searchResults.error : null }
-                                }
-                            };
-                        } catch (error) {
-                            return { 
-                                functionResponse: {
-                                    name: toolCall.name,
-                                    response: { results: [], error: error.message }
-                                }
-                            };
-                        }
+                        const searchResults = await googleSearch(toolCall.args.query);
+                        // Return the search results to the model to use as grounding data
+                        return { 
+                            functionResponse: {
+                                name: toolCall.name,
+                                // Pass results or error from the custom search function
+                                response: { data: searchResults }
+                            }
+                        };
                     }
                 }
             });
             
-            // Await result.response.text() to resolve the promise.
+            // Await result.response.text() to resolve the final response promise.
             const responseText = await result.response.text();
             
             if (!responseText) {
@@ -263,6 +259,7 @@ exports.handler = async (event) => {
 
             let finalParsedData;
             try {
+                // The model output is expected to be a valid JSON string matching the schema
                 finalParsedData = JSON.parse(responseText);
             } catch (jsonError) {
                 console.error(`[LeadQualifier] Request ID: ${requestId} - JSON parsing failed: ${jsonError.message}`, { rawAIResponse: responseText });
@@ -273,6 +270,7 @@ exports.handler = async (event) => {
                 };
             }
             
+            // Final validation to ensure all required fields are present
             const allKeysPresent = REQUIRED_RESPONSE_KEYS.every(key => Object.keys(finalParsedData).includes(key));
             
             if (!allKeysPresent) {
@@ -286,6 +284,7 @@ exports.handler = async (event) => {
                 };
             }
 
+            // Success response
             return {
                 statusCode: 200,
                 headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
@@ -294,7 +293,7 @@ exports.handler = async (event) => {
 
         } catch (apiError) {
             console.error(`[LeadQualifier] Request ID: ${requestId} - API call failed: ${apiError.message}`, { stack: apiError.stack });
-            const fallback = fallbackResponse("AI report generation failed. Please retry shortly.");
+            const fallback = fallbackResponse("AI report generation failed. Please retry shortly. Check Netlify logs for details.");
             return {
                 statusCode: 500,
                 headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" },
@@ -304,7 +303,7 @@ exports.handler = async (event) => {
 
     } catch (error) {
         console.error(`[LeadQualifier] Request ID: ${requestId} - Function error: ${error.message}`, { stack: error.stack });
-        const fallback = fallbackResponse("AI report generation failed. Please retry shortly.");
+        const fallback = fallbackResponse("Internal Server Error: Failed to process request body.");
         return { 
             statusCode: 500, 
             headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Accept": "application/json" }, 
