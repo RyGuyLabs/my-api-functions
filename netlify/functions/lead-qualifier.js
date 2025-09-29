@@ -103,6 +103,12 @@ const responseSchema = {
 
 // Main Netlify handler function
 exports.handler = async (event) => {
+    // Standard CORS headers for all responses
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+    
     // Check for required API Keys
     const apiKey = process.env.LEAD_QUALIFIER_API_KEY;
     const searchApiKey = process.env.RYGUY_SEARCH_API_KEY;
@@ -112,6 +118,7 @@ exports.handler = async (event) => {
         console.error("LEAD_QUALIFIER_API_KEY not found in environment variables.");
         return {
             statusCode: 500,
+            headers: corsHeaders,
             body: JSON.stringify({ error: "Configuration Error: Gemini API Key is missing." }),
         };
     }
@@ -121,6 +128,7 @@ exports.handler = async (event) => {
         console.error("RYGUY_SEARCH_API_KEY or RYGUY_SEARCH_ENGINE_ID not found in environment variables.");
         return {
             statusCode: 500,
+            headers: corsHeaders,
             body: JSON.stringify({ error: "Configuration Error: Custom Search API credentials are missing." }),
         };
     }
@@ -128,6 +136,7 @@ exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
+            headers: corsHeaders,
             body: JSON.stringify({ error: "Method Not Allowed" }),
         };
     }
@@ -145,6 +154,7 @@ exports.handler = async (event) => {
     } catch (e) {
         return {
             statusCode: 400,
+            headers: corsHeaders,
             body: JSON.stringify({ error: "Invalid JSON payload format.", details: e.message }),
         };
     }
@@ -231,6 +241,7 @@ exports.handler = async (event) => {
 
                 return {
                     statusCode: response.status,
+                    headers: corsHeaders,
                     body: JSON.stringify({ 
                         error: `Gemini API failed with status ${response.status}.`, 
                         report: `**Error:** API call failed. Status: ${response.status}. Details: ${typeof errorBody === 'object' ? JSON.stringify(errorBody) : errorBody}` 
@@ -257,6 +268,7 @@ exports.handler = async (event) => {
                 console.error("Failed to parse JSON response from Gemini:", jsonText, parseError);
                 return {
                     statusCode: 500,
+                    headers: corsHeaders,
                     body: JSON.stringify({ 
                         error: "Failed to parse AI-generated report.", 
                         report: `**Fatal Error:** The AI model returned invalid JSON. Please check the model output. Raw output: ${jsonText.substring(0, 500)}...` 
@@ -267,13 +279,17 @@ exports.handler = async (event) => {
             // Success response
             return {
                 statusCode: 200,
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...corsHeaders
+                },
                 body: JSON.stringify(reportData)
             };
         } else {
             console.error("Gemini response missing content:", result);
             return {
                 statusCode: 500,
+                headers: corsHeaders,
                 body: JSON.stringify({ 
                     error: "AI response was empty or malformed.", 
                     report: "**Fatal Error:** The AI did not return a valid content block." 
@@ -285,6 +301,7 @@ exports.handler = async (event) => {
         console.error("Unhandled network or general error:", e);
         return {
             statusCode: 500,
+            headers: corsHeaders,
             body: JSON.stringify({ 
                 error: "Internal Server Error during fetch process.", 
                 report: `**Fatal Error:** Network or internal process failed. Details: ${e.message}`
