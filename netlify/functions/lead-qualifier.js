@@ -191,11 +191,26 @@ exports.handler = async (event) => {
 		
 		const genAI = new GoogleGenerativeAI(geminiApiKey);
 
+        // Define the JSON schema for the required output structure
+        const responseSchema = {
+            type: "OBJECT",
+            properties: {
+                report: { type: "STRING" },
+                predictive: { type: "STRING" },
+                outreach: { type: "STRING" },
+                questions: { type: "STRING" },
+                news: { type: "STRING" },
+            },
+            required: REQUIRED_RESPONSE_KEYS,
+            propertyOrdering: REQUIRED_RESPONSE_KEYS,
+        };
+
         const model = genAI.getGenerativeModel({
             // Model: gemini-2.5-flash is used for its structured output and function calling support.
             model: "gemini-2.5-flash",
             generationConfig: {
-                responseMimeType: "application/json",
+                // FIX: responseSchema enables structured JSON output while allowing function calling (unlike responseMimeType)
+                responseSchema: responseSchema,
                 maxOutputTokens: 2048
             },
             tools: [{
