@@ -277,6 +277,8 @@ exports.handler = async (event) => {
         console.error('Lead Generator Error:', err);
         return { 
             statusCode: 500, 
+            // FIX: Ensure CORS header is present on error response
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
             body: JSON.stringify({ error: err.message, details: err.cause || 'No cause provided' }) 
         };
     }
