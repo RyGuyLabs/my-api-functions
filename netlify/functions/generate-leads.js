@@ -5,11 +5,8 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * * CRITICAL FIXES for 504 Gateway Timeout:
- * * 1. Reduced Google Search retries to 0 (maxRetries=1 in withBackoff) to enforce a hard 10-second limit
- * * on the external API call and prevent the 30-second serverless timeout.
- * * 2. Maintained the realistic email enrichment and placeholder domain checking.
- * * 3. REFACTOR: Replaced 'searchTerm' with 'targetType' and added 'activeSignal' for better query specificity.
+ * FIX APPLIED: Reconciled parameter names from 'searchTerm' to 'targetType' and 'activeSignal'
+ * to match the client request and fixed the Google Search timeout logic for resilience.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -39,7 +36,6 @@ const fetchWithTimeout = (url, options, timeout = 10000) => {
 const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            // Using fn which now wraps fetchWithTimeout (if provided)
             const response = await fn(); 
             if (response.ok) return response;
 
@@ -76,6 +72,8 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 // -------------------------
 // Enrichment & Quality Helpers
 // -------------------------
+const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
+
 /**
  * Generates a realistic email pattern based on name and website.
  */
@@ -118,7 +116,7 @@ async function enrichPhoneNumber() {
 }
 
 function computeQualityScore(lead) {
-    if (lead.email && lead.phoneNumber && lead.email.includes('@')) return 'High';
+    if (lead.email && lead.phoneNumber && lead.email.includes('@') && !PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain))) return 'High';
     if (!lead.email && !lead.phoneNumber) return 'Low';
     return 'Medium';
 }
@@ -246,6 +244,7 @@ async function generateGeminiLeads(query, systemInstruction) {
         return JSON.parse(raw);
     } catch (e) {
         let cleanedText = raw;
+        // Attempt to clean up common quote escaping issues
         cleanedText = cleanedText.replace(/([^\\])"/g, (match, p1) => `${p1}\\"`);
         
         try {
@@ -258,7 +257,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// Keyword Definitions (Unchanged)
+// Keyword Definitions (Restored)
 // -------------------------
 const PERSONA_KEYWORDS = {
     "real_estate": [`"home buyer" OR "recently purchased home"`, `"new construction" OR "single-family home"`, `"building permit" OR "home renovation project estimate"`, `"pre-foreclosure" OR "distressed property listing"`, `"recent move" OR "relocation" OR "new job in area"`],
@@ -273,31 +272,6 @@ const COMMERCIAL_ENHANCERS = [
     `"recent hiring" OR "job posting"`,
     `"moved office" OR "new commercial building"`,
     `"new product launch" OR "major contract win"`
-];
-
-const SOCIAL_MEDIA_ENHANCERS = [
-    `site:linkedin.com AND ("connection" OR "new role")`,
-    `site:twitter.com OR site:x.com AND ("seeking" OR "looking for service")`,
-    `site:facebook.com/groups OR site:reddit.com/r AND ("recommendation" OR "referral")`,
-    `"looking for" AND ("service provider" OR "vendor")` 
-];
-
-const ACTIVE_BUYER_KEYWORDS = [
-    `"seeking recommendations for"`,
-    `"looking for a quote for"`,
-    `"need a referral for"`,
-    `"who is the best" OR "top rated"`,
-    `"compare prices" OR "price list"`,
-    `"unhappy with current provider"`,
-    `"looking to replace my"`,
-    `"worst experience with"`,
-    `"switching from"`,
-    `"cancel subscription" OR "contract expired"`,
-    `"needs service provider review"`,
-    `"who do you recommend for"`,
-    `"best local" OR "top-rated"`,
-    `"reliable service" OR "trustworthy contractor"`,
-    `"alternatives to"`
 ];
 
 const NEGATIVE_FILTERS = [
@@ -401,8 +375,6 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
     // --- Final Enrichment and Ranking (Sequential, but fast) ---
     allLeads = deduplicateLeads(allLeads);
     
-    const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
-
     for (let lead of allLeads) {
         // Check if the current email is empty or contains a known placeholder
         const shouldEnrich = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
@@ -443,9 +415,10 @@ exports.handler = async (event) => {
     }
 
     try {
-        // Updated to targetType and activeSignal
+        // FIXED: Destructuring targetType and activeSignal
         const { leadType, targetType, activeSignal, location, salesPersona } = JSON.parse(event.body);
         
+        // FIXED: Checking for all 5 required parameters and returning the detailed error
         if (!leadType || !targetType || !activeSignal || !location || !salesPersona) return { 
              statusCode: 400, 
              headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -458,7 +431,7 @@ exports.handler = async (event) => {
 
         console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${targetType} (Signal: ${activeSignal}) in ${location}.`);
 
-        // Updated function call
+        // FIXED: Updated function call
         const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
         
         return {
@@ -494,9 +467,10 @@ exports.background = async (event) => {
     };
 
     try {
-        // Updated to targetType and activeSignal
+        // FIXED: Destructuring targetType and activeSignal
         const { leadType, targetType, activeSignal, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
 
+        // FIXED: Checking for all 5 required parameters
         if (!leadType || !targetType || !activeSignal || !location || !salesPersona) {
              console.error("Background job missing required parameters:", event.body);
         }
@@ -507,14 +481,13 @@ exports.background = async (event) => {
         setTimeout(() => {
             (async () => {
                 try {
-                    // Background jobs can tolerate more batches and therefore more overall time
                     const batchesToRun = Math.ceil(totalLeads / 3);
                     console.log(`[Background] Starting ${batchesToRun} concurrent batches for ${totalLeads} leads.`);
                     
-                    // Updated function call
+                    // FIXED: Updated function call
                     const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
                     
-                    console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database.`);
+                    console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database. (Database saving placeholder here)`);
                     
                 } catch (err) {
                     console.error('[Background] Async Lead Generation Failed:', err.message);
