@@ -226,8 +226,14 @@ Output MUST be a JSON array of 3 objects with fields: name, description, website
     // We run this in sequence (not concurrently) to ensure the search results for one batch
     // are generated before the next batch search starts, which may help diversify results.
     for (let i = 0; i < totalBatches; i++) {
-        const searchKeywords = `${searchTerm} in ${location} ${template} ${financialTerm || ''} -batch-${i}`;
+        // --- MODIFIED SEARCH QUERY ---
+        // Simplified the search query to only include the core terms and added "company website" 
+        // to force more specific, non-generic results from Google Custom Search.
+        const baseSearchQuery = `${searchTerm} in ${location}`;
+        const searchKeywords = `${baseSearchQuery} company website`;
         
+        console.log(`[Batch ${i+1}/${totalBatches}] Searching with keywords: "${searchKeywords}"`); // Added specific batch log
+
         // 1. Get verified search results using Custom Search
         const gSearchResults = await googleSearch(searchKeywords, 5); // Search for 5 results to give Gemini options
         
