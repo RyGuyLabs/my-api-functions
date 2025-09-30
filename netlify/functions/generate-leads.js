@@ -79,7 +79,6 @@ exports.handler = async (event) => {
             tools: [{ "google_search": {} }],
             // Include the system instruction for formatting
             systemInstruction: { parts: [{ text: systemInstruction }] },
-            // The 'config' field was removed to fix the 400 'Unknown name "config"' error.
         };
 
         // 5. Call the Gemini API (Assumes global fetch is available, typical in Node 18+ environments)
@@ -110,21 +109,25 @@ exports.handler = async (event) => {
             };
         }
 
-        // Clean up the JSON text just in case the model added leading/trailing spaces or new lines
-        const cleanJsonText = rawJsonText.trim();
+        // CRITICAL FIX: Strip markdown code block wrappers (```json\n...\n```) from the output.
+        // This makes the code resilient to the LLM including the wrapper despite instructions.
+        let cleanJsonText = rawJsonText.trim();
+        const jsonWrapperRegex = /^```json\s*|^\s*```\s*|^\s*```\s*json\s*|\s*```\s*$/gmi;
+        cleanJsonText = cleanJsonText.replace(jsonWrapperRegex, '').trim();
+
         let leadsArray;
 
         // CRITICAL FIX: Add try...catch around JSON.parse for model output resilience
         try {
             leadsArray = JSON.parse(cleanJsonText);
         } catch (parseError) {
-             console.error("JSON Parsing Error:", parseError.message, "Raw Text:", cleanJsonText);
+             console.error("JSON Parsing Error:", parseError.message, "Raw Text:", rawJsonText); // Use rawJsonText for better debugging context
              return {
                 statusCode: 500,
                 body: JSON.stringify({ 
                     error: "Failed to parse JSON response from the language model. The model did not return perfect JSON.", 
                     details: parseError.message,
-                    rawOutput: cleanJsonText // Return the raw output to help debug the model's failure
+                    rawOutput: rawJsonText // Return the raw output to help debug the model's failure
                 }),
             };
         }
@@ -134,7 +137,7 @@ exports.handler = async (event) => {
             console.error("AI did not return exactly 3 leads or structure is incorrect. Array Length:", leadsArray ? leadsArray.length : 0);
             return {
                 statusCode: 500,
-                body: JSON.stringify({ error: "AI did not return exactly 3 leads as expected, or the array structure is incorrect.", rawOutput: cleanJsonText })
+                body: JSON.stringify({ error: "AI did not return exactly 3 leads as expected, or the array structure is incorrect.", rawOutput: rawJsonText })
             };
         }
 
