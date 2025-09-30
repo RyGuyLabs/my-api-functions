@@ -5,10 +5,11 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * * CRITICAL FIXES for Generic Emails:
- * * 1. Updated generateGeminiLeads system prompt to instruct the model to avoid placeholders.
- * * 2. Updated enrichEmail to use realistic patterns (first.last@domain) and avoid generic domains.
- * * 3. Added logic to generateLeadsBatch to detect and overwrite any placeholder domains returned by the model.
+ * * CRITICAL FIXES for 504 Gateway Timeout:
+ * * 1. Reduced Google Search retries to 0 (maxRetries=1 in withBackoff) to enforce a hard 10-second limit
+ * * on the external API call and prevent the 30-second serverless timeout.
+ * * 2. Maintained the realistic email enrichment and placeholder domain checking.
+ * * 3. REFACTOR: Replaced 'searchTerm' with 'targetType' and added 'activeSignal' for better query specificity.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -38,7 +39,7 @@ const fetchWithTimeout = (url, options, timeout = 10000) => {
 const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            // Using fn which now wraps fetchWithTimeout
+            // Using fn which now wraps fetchWithTimeout (if provided)
             const response = await fn(); 
             if (response.ok) return response;
 
@@ -50,6 +51,9 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
                 console.error(`API Fatal Error (Status ${response.status}):`, errorBody);
                 throw new Error(`API Fatal Error: Status ${response.status}`, { cause: errorBody });
             }
+            
+            // Only retry if we are not on the last attempt
+            if (attempt === maxRetries) throw new Error(`Max retries reached. Status: ${response.status}`);
 
             const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
             
@@ -58,6 +62,8 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
             
         } catch (err) {
             if (attempt === maxRetries) throw err;
+            
+            // If the error is the 10-second timeout, we still respect the retry count
             const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
             
             console.warn(`Attempt ${attempt} failed with network error or timeout. Retrying in ${Math.round(delay)}ms...`, err.message);
@@ -70,10 +76,8 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 // -------------------------
 // Enrichment & Quality Helpers
 // -------------------------
-
 /**
  * Generates a realistic email pattern based on name and website.
- * Cycles through common patterns like first.last, first_initial.last, or first@domain.
  */
 async function enrichEmail(name, website) {
     try {
@@ -163,23 +167,28 @@ async function googleSearch(query, numResults = 3) {
 
     const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
     
-    // CRITICAL DEBUGGING LOG: Log the final query being sent.
     console.log(`[Google Search] Sending Query: ${query}`); 
     
-    // Use fetchWithTimeout inside withBackoff
-    const response = await withBackoff(() => fetchWithTimeout(url), 2, 500); // Reduce max retries for speed
-    const data = await response.json();
-    
-    if (data.error) {
-        console.error("Google Custom Search API Error:", data.error);
-        return [];
-    }
+    try {
+        // CRITICAL FIX: Max retries set to 1 (meaning no retries) to enforce fail-fast within 10 seconds.
+        const response = await withBackoff(() => fetchWithTimeout(url, {}), 1, 500); 
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error("Google Custom Search API Error:", data.error);
+            return [];
+        }
 
-    return (data.items || []).map(item => ({
-        name: item.title,
-        website: item.link,
-        description: item.snippet
-    }));
+        return (data.items || []).map(item => ({
+            name: item.title,
+            website: item.link,
+            description: item.snippet
+        }));
+    } catch (e) {
+        console.error("Google Search failed on the only attempt (Max 10s):", e.message);
+        // If the single attempt times out or fails, return empty results immediately
+        return []; 
+    }
 }
 
 // -------------------------
@@ -221,6 +230,7 @@ async function generateGeminiLeads(query, systemInstruction) {
         }
     };
     
+    // Gemini call can be more forgiving with 4 retries, as it's typically faster than Google Search
     const response = await withBackoff(() =>
         fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
             method: 'POST',
@@ -272,21 +282,17 @@ const SOCIAL_MEDIA_ENHANCERS = [
     `"looking for" AND ("service provider" OR "vendor")` 
 ];
 
-// Combined list of all high-intent keywords to broaden the search
 const ACTIVE_BUYER_KEYWORDS = [
-    // Intent
     `"seeking recommendations for"`,
     `"looking for a quote for"`,
     `"need a referral for"`,
     `"who is the best" OR "top rated"`,
     `"compare prices" OR "price list"`,
-    // Pain Point
     `"unhappy with current provider"`,
     `"looking to replace my"`,
     `"worst experience with"`,
     `"switching from"`,
     `"cancel subscription" OR "contract expired"`,
-    // Review Focus
     `"needs service provider review"`,
     `"who do you recommend for"`,
     `"best local" OR "top-rated"`,
@@ -309,13 +315,13 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 // -------------------------
 // Lead Generator Core (CONCURRENT EXECUTION)
 // -------------------------
-async function generateLeadsBatch(leadType, searchTerm, location, salesPersona, totalBatches = 4) {
+async function generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, totalBatches = 4) {
     
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
 
-    // CRITICAL: Instruction to the model to avoid placeholders
+    // Instruction to the model to avoid generic placeholders
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: When fabricating an email address, you MUST use a domain from the provided 'website' field. NEVER use placeholder domains like 'example.com', 'placeholder.net', or 'test.com'.`;
@@ -331,30 +337,24 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
         const batchPromise = (async (batchIndex) => {
             let searchKeywords;
             
-            // Cycle through enhancers for variety
-            const socialEnhancer = SOCIAL_MEDIA_ENHANCERS[batchIndex % SOCIAL_MEDIA_ENHANCERS.length];
-            const activeBuyerEnhancer = ACTIVE_BUYER_KEYWORDS[batchIndex % ACTIVE_BUYER_KEYWORDS.length]; 
+            // Cycle through hardcoded enhancers for variety/safety
+            const personaEnhancer = personaKeywords[batchIndex % personaKeywords.length]; 
+            const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
 
-            // Combine Social and Active Buyer signals using OR.
-            const combinedIntent = `(${socialEnhancer}) OR (${activeBuyerEnhancer})`;
-            
             // Determine primary search keywords
             if (isResidential) {
-                // CRITICAL FIX: Shorten the user's potentially massive search term 
+                // Shorten the user's potentially massive targetType term 
                 const maxWords = 15;
-                const shortSearchTerm = searchTerm.split(' ').slice(0, maxWords).join(' ');
+                const shortTargetType = targetType.split(' ').slice(0, maxWords).join(' ');
                 
-                // Primary Query Structure: SHORT_TERM + LOCATION + (SOCIAL OR ACTIVE_BUYER) + NEGATIVES
-                searchKeywords = `${shortSearchTerm} in ${location} AND (${combinedIntent}) ${NEGATIVE_QUERY}`;
+                // NEW RESIDENTIAL QUERY: User's target + location + (User's active signal OR hardcoded persona signal)
+                searchKeywords = `"${shortTargetType}" in "${location}" AND ("${activeSignal}" OR ${personaEnhancer}) ${NEGATIVE_QUERY}`;
             } else {
-                // For B2B, the commercial enhancer is still necessary for specificity
-                const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
-                
-                // Primary Query Structure: TERM + LOCATION + B2B + (SOCIAL OR ACTIVE_BUYER) + NEGATIVES
-                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer}) AND (${combinedIntent}) ${NEGATIVE_QUERY}`;
+                // NEW B2B QUERY: User's target + location + (User's active signal OR hardcoded B2B signal)
+                searchKeywords = `"${targetType}" in "${location}" AND ("${activeSignal}" OR ${b2bEnhancer}) ${NEGATIVE_QUERY}`;
             }
             
-            // 1. Get verified search results (Primary)
+            // 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
             let gSearchResults = await googleSearch(searchKeywords, 3); 
             
             // 2. Fallback search if primary fails (Simplified Logic)
@@ -362,14 +362,14 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
                 console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
                 let fallbackSearchKeywords;
                 if (isResidential) {
-                    // Fallback uses just the best persona-specific keyword + location
-                    const fallbackQuery = personaKeywords[0]; 
-                    fallbackSearchKeywords = `${fallbackQuery} in ${location} ${NEGATIVE_QUERY}`;
+                    // Fallback to the most basic persona keyword
+                    fallbackSearchKeywords = `${personaKeywords[0]} in ${location} ${NEGATIVE_QUERY}`;
                 } else {
-                    // Fallback uses just the best commercial keyword + location
-                    const fallbackQuery = COMMERCIAL_ENHANCERS[0];
-                    fallbackSearchKeywords = `${searchTerm} in ${location} AND (${fallbackQuery}) ${NEGATIVE_QUERY}`;
+                    // Fallback to the user's target type combined with the most basic commercial enhancer
+                    fallbackSearchKeywords = `${targetType} in ${location} AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
                 }
+                
+                // Fallback also uses the Fail-Fast approach
                 const fallbackResults = await googleSearch(fallbackSearchKeywords, 3); 
                 gSearchResults.push(...fallbackResults);
 
@@ -380,7 +380,7 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
             } 
 
             // 3. Feed results to Gemini for qualification
-            const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${searchTerm}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
+            const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${targetType}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
 
             const geminiLeads = await generateGeminiLeads(
                 geminiQuery,
@@ -443,21 +443,23 @@ exports.handler = async (event) => {
     }
 
     try {
-        const { leadType, searchTerm, location, salesPersona } = JSON.parse(event.body);
+        // Updated to targetType and activeSignal
+        const { leadType, targetType, activeSignal, location, salesPersona } = JSON.parse(event.body);
         
-        if (!leadType || !searchTerm || !location || !salesPersona) return { 
+        if (!leadType || !targetType || !activeSignal || !location || !salesPersona) return { 
              statusCode: 400, 
              headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-             body: JSON.stringify({ error: "Missing required parameters." }) 
+             body: JSON.stringify({ error: "Missing required parameters: leadType, targetType, activeSignal, location, or salesPersona." }) 
         };
 
         // CRITICAL: Hard limit the synchronous job to 1 batch (3 leads)
         const batchesToRun = 1; 
         const requiredLeads = 3;
 
-        console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${searchTerm} in ${location}.`);
+        console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${targetType} (Signal: ${activeSignal}) in ${location}.`);
 
-        const leads = await generateLeadsBatch(leadType, searchTerm, location, salesPersona, batchesToRun);
+        // Updated function call
+        const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
         
         return {
             statusCode: 200,
@@ -492,9 +494,10 @@ exports.background = async (event) => {
     };
 
     try {
-        const { leadType, searchTerm, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
+        // Updated to targetType and activeSignal
+        const { leadType, targetType, activeSignal, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
 
-        if (!leadType || !searchTerm || !location || !salesPersona) {
+        if (!leadType || !targetType || !activeSignal || !location || !salesPersona) {
              console.error("Background job missing required parameters:", event.body);
         }
 
@@ -504,10 +507,12 @@ exports.background = async (event) => {
         setTimeout(() => {
             (async () => {
                 try {
+                    // Background jobs can tolerate more batches and therefore more overall time
                     const batchesToRun = Math.ceil(totalLeads / 3);
                     console.log(`[Background] Starting ${batchesToRun} concurrent batches for ${totalLeads} leads.`);
                     
-                    const leads = await generateLeadsBatch(leadType, searchTerm, location, salesPersona, batchesToRun);
+                    // Updated function call
+                    const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
                     
                     console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database.`);
                     
