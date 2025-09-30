@@ -5,9 +5,9 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * * CRITICAL FIX: The primary search query was too restrictive (too many ANDs) resulting in zero results.
- * * FIX: Combined Intent, Pain Point, and Review Focus keywords into one broad ACTIVE_BUYER_KEYWORDS 
- * * array, separated by OR, to ensure the search is less restrictive while maintaining high quality.
+ * * CRITICAL FIX: Resolved "No results for primary query" error by restructuring the search
+ * * to use (SOCIAL_SIGNAL OR ACTIVE_BUYER_SIGNAL) instead of (SOCIAL_SIGNAL AND ACTIVE_BUYER_SIGNAL).
+ * * This increases the success rate of the highly qualified primary query dramatically.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -285,24 +285,29 @@ You MUST follow the JSON schema provided in the generation config.`;
             
             // Cycle through enhancers for variety
             const socialEnhancer = SOCIAL_MEDIA_ENHANCERS[batchIndex % SOCIAL_MEDIA_ENHANCERS.length];
-            // CRITICAL FIX: Cycle through the broader active buyer list
             const activeBuyerEnhancer = ACTIVE_BUYER_KEYWORDS[batchIndex % ACTIVE_BUYER_KEYWORDS.length]; 
+
+            // CRITICAL FIX: Combine Social and Active Buyer signals using OR.
+            // This ensures at least one of the high-intent signals is present without restricting both simultaneously.
+            const combinedIntent = `(${socialEnhancer}) OR (${activeBuyerEnhancer})`;
             
             // Determine primary search keywords
             if (isResidential) {
-                const enhancer = personaKeywords[batchIndex % personaKeywords.length]; 
-                // Primary Query: TERM + LOCATION + PERSONA + SOCIAL + ONE ACTIVE_BUYER (Intent/Pain/Review) + NEGATIVES
-                searchKeywords = `${searchTerm} in ${location} AND (${enhancer}) AND (${socialEnhancer}) AND (${activeBuyerEnhancer}) ${NEGATIVE_QUERY}`;
+                const personaEnhancer = personaKeywords[batchIndex % personaKeywords.length]; 
+                
+                // Primary Query Structure: TERM + LOCATION + PERSONA + (SOCIAL OR ACTIVE_BUYER) + NEGATIVES
+                searchKeywords = `${searchTerm} in ${location} AND (${personaEnhancer}) AND (${combinedIntent}) ${NEGATIVE_QUERY}`;
             } else {
                 const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
-                // Primary Query: TERM + LOCATION + B2B + SOCIAL + ONE ACTIVE_BUYER (Intent/Pain/Review) + NEGATIVES
-                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer}) AND (${socialEnhancer}) AND (${activeBuyerEnhancer}) ${NEGATIVE_QUERY}`;
+                
+                // Primary Query Structure: TERM + LOCATION + B2B + (SOCIAL OR ACTIVE_BUYER) + NEGATIVES
+                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer}) AND (${combinedIntent}) ${NEGATIVE_QUERY}`;
             }
             
             // 1. Get verified search results (Primary)
             let gSearchResults = await googleSearch(searchKeywords, 3); 
             
-            // 2. Fallback search if primary fails
+            // 2. Fallback search if primary fails (Simplified Logic)
             if (gSearchResults.length === 0) {
                 console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
                 let fallbackSearchKeywords;
