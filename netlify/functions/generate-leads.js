@@ -145,83 +145,64 @@ async function generateGeminiLeads(query, systemInstruction) {
         throw new Error("LEAD_QUALIFIER_API_KEY (GEMINI_API_KEY) is missing.");
     }
     
+    // Define the expected structure for the model to follow
+    const responseSchema = {
+        type: "ARRAY",
+        description: "A list of high-quality, verified business leads.",
+        items: {
+            type: "OBJECT",
+            properties: {
+                name: { type: "STRING", description: "Official business name." },
+                description: { type: "STRING", description: "A concise summary of the business derived from search results." },
+                website: { type: "STRING", description: "The primary website URL." },
+                email: { type: "STRING", description: "A placeholder or suggested email address." },
+                phoneNumber: { type: "STRING", description: "A placeholder or suggested phone number." },
+                qualityScore: { type: "STRING", description: "Rating of the lead quality (High, Medium, or Low)." },
+                insights: { type: "STRING", description: "Premium insight derived from search results." },
+                suggestedAction: { type: "STRING", description: "The next best action to pursue this lead." },
+                draftPitch: { type: "STRING", description: "A one-sentence draft sales pitch." },
+                socialSignal: { type: "STRING", description: "Recent social or news signal about the company." },
+            },
+            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal"]
+        }
+    };
+
     const payload = {
         contents: [{ parts: [{ text: query }] }],
-        // IMPORTANT: We explicitly REMOVE the 'google_search' tool here
-        // because we are already feeding the results from the Custom Search API.
         systemInstruction: { parts: [{ text: systemInstruction }] },
-        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
+        generationConfig: { 
+            temperature: 0.2, 
+            maxOutputTokens: 2048,
+            // CRITICAL FIX: Enforce JSON output structure
+            responseMimeType: "application/json",
+            responseSchema: responseSchema
+        }
     };
     
     // FIX: Apply stricter backoff limits (max 4 retries, 1000ms base delay) 
-    // to prevent the cumulative wait time from exceeding the 30s function limit.
-    console.log('[Gemini] Sending request to Gemini API...'); // Added log before the slow call
+    console.log('[Gemini] Sending request to Gemini API...'); 
     const response = await withBackoff(() =>
         fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        }), 4, 1000 // Added maxRetries and baseDelay for Gemini call
+        }), 4, 1000 
     );
     const result = await response.json();
+    
+    // Since responseMimeType is set to application/json, the output should be clean JSON text.
     let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
     
-    // 1. Strip markdown code fences
-    raw = raw.replace(/^```json\s*|^\s*```\s*|^\s*```\s*json\s*|\s*```\s*$/gmi, '').trim();
-
-    // CRITICAL FIX: Attempt to extract the JSON array structure if the output is wrapped in text
-    const firstBracket = raw.indexOf('[');
-    const lastBracket = raw.lastIndexOf(']');
+    // With responseMimeType="application/json", we skip the complicated string manipulation (stripping markdown/conversational text)
+    // and go straight to parsing the output.
     
-    if (firstBracket === -1 || lastBracket === -1 || lastBracket < firstBracket) {
-        console.warn("Gemini output could not find valid '[' or ']'. Model failed to follow JSON instruction and likely provided an explanation instead. Returning empty list.");
-        console.warn("Non-JSON output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
-        return [];
-    }
-    
-    // Extract the JSON array content only, handling conversational wrapper text
-    if (firstBracket > 0 || lastBracket < raw.length - 1) {
-        console.warn(`Attempting to trim conversational wrapper text from Gemini output. Trimming from index ${firstBracket} to ${lastBracket}.`);
-        raw = raw.substring(firstBracket, lastBracket + 1);
-    }
-    // End CRITICAL FIX
-
     try {
-        // Attempt 1: Standard parse (Clean input)
+        // Attempt 1: Standard parse 
         return JSON.parse(raw);
     } catch (e) {
-        // If parsing fails, attempt repair
-        if (e instanceof SyntaxError) {
-             console.warn("SyntaxError in Gemini output. Attempting conservative newline/tab repair...");
-             
-             // Conservative Repair 2a (Newline/Tab removal)
-             let repairedRaw = raw.replace(/[\r\n\t]/g, ' '); 
-             
-             try {
-                 // Attempt 2: Parse repaired string (after newline/tab fix)
-                 return JSON.parse(repairedRaw);
-             } catch (repairedError) {
-                 
-                 // Aggressive Repair 2b (Unescaped quote fix - most common second failure mode)
-                 console.warn("Newline/tab repair failed. Attempting aggressive unescaped quote repair...");
-                 
-                 // IMPORTANT: This heuristic attempts to find double quotes that are NOT preceded by a backslash (i.e., unescaped quotes)
-                 // and escape them. This requires a regex negative lookbehind (safe in modern Node/Netlify).
-                 let aggressiveRaw = repairedRaw.replace(/(?<!\\)"/g, '\\"');
-
-                 try {
-                      // Attempt 3: Parse aggressively repaired string (after quote fix)
-                      return JSON.parse(aggressiveRaw);
-                 } catch (aggressiveError) {
-                     // If the aggressively repaired string still fails, log the problematic string and re-throw.
-                     console.error("Gemini output failed even after aggressive quote repair. Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
-                     console.error("Full raw output size:", raw.length);
-                     throw new Error("Failed to parse Gemini output as JSON (even after aggressive repair). Check logs for details.", { cause: aggressiveError.message });
-                 }
-             }
-        }
-        // Re-throw any non-SyntaxErrors
-        throw e;
+        // Log the failure to parse the forced JSON output
+        console.error("Failed to parse Gemini output as JSON, even with structured output enforcement. Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
+        throw new Error("Failed to parse Gemini output as JSON.", { cause: e.message });
     }
 }
 
@@ -235,7 +216,7 @@ async function generateLeadsBatch(leadType, searchTerm, location, financialTerm,
         : "Focus on businesses, size, industry relevance, recent developments.";
 
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
-Output MUST be a JSON array of 3 objects with fields: name, description, website, email, phoneNumber, qualityScore, insights, suggestedAction, draftPitch, socialSignal.`;
+You MUST follow the JSON schema provided in the generation config.`; // Simplified instruction as schema handles the structure
 
     let allLeads = [];
     
