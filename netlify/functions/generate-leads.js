@@ -79,11 +79,7 @@ exports.handler = async (event) => {
             tools: [{ "google_search": {} }],
             // Include the system instruction for formatting
             systemInstruction: { parts: [{ text: systemInstruction }] },
-            // Model configuration (must be present)
-            config: {
-                // Ensure API key is set for the fetch call if not using the environment's default
-                // Though Netlify functions typically require the key to be passed via the URL or headers
-            }
+            // The 'config' field was removed to fix the 400 'Unknown name "config"' error.
         };
 
         // 5. Call the Gemini API (Assumes global fetch is available, typical in Node 18+ environments)
