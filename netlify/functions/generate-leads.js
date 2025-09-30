@@ -83,9 +83,9 @@ function rankLeads(leads) {
 }
 
 // ====================
-// Exponential Backoff with Jitter (FIXED: Added Jitter)
+// Exponential Backoff with Jitter (UPDATED: Increased delay and retries)
 // ====================
-const withBackoff = async (fn, maxRetries = 5, delay = 1000) => {
+const withBackoff = async (fn, maxRetries = 6, delay = 2000) => { // maxRetries set to 6, delay set to 2000ms
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const response = await fn();
