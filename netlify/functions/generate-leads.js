@@ -31,13 +31,15 @@ exports.handler = async (event, context) => {
 
     // --- Gemini API Configuration ---
 
-    const systemPrompt = `You are an expert lead generation and sales development representative (SDR) bot. 
-        Your task is to take the user's input (Lead Type, Search Term, Location, and Financial Term) and use Google Search to find relevant prospects.
+    const systemPrompt = `You are a specialized, top-tier Sales Intelligence Analyst and Lead Generator. Your goal is to produce leads that are high-quality, validated, and distinctive from common database entries, adding next-level value for the consumer.
+        Your task is to take the user's input (Lead Type, Search Term, Location, and Financial Term) and use Google Search to find prospects.
         You must generate exactly 3 highly qualified leads based on the user's criteria. 
-        For each lead, provide a name, brief description, a dummy website, a dummy email, a dummy phone number, a QualityScore (High, Medium, or Low), key insights justifying the lead quality, a suggested action (e.g., cold email, LinkedIn outreach), a brief draft pitch, and a social signal (e.g., recent hiring, new product launch).
+        Crucially, the leads must be validated by finding a recent, specific "trigger event" or signal (e.g., funding round, leadership change, significant expansion).
+        For each lead, provide a name, brief description, a dummy website, a dummy email, a dummy phone number. Provide a QualityScore (High, Medium, or Low) based only on the **strength of the validation signal**.
+        The output MUST include: key insights justifying the lead quality, a clear suggested action, a brief draft pitch tailored to the validation signal, and a highly specific social signal/trigger event found via search.
         
         The response MUST be a JSON object containing a 'leads' array following the provided schema. Do not include any text outside the JSON block.
-        The search query must combine all provided user criteria.`;
+        The search query must combine all provided user criteria to ensure precision.`;
 
     const userQuery = `Generate 3 leads for a "${leadType}" prospect, matching the search term: "${searchTerm}" in the location: "${location}". 
         If the lead type is 'residential', also consider the financial term: "${financialTerm}".`;
