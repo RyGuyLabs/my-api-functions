@@ -224,74 +224,64 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// NEW: Targeted B2C Keyword Definitions
+// NEW: Targeted B2C Keyword Definitions (Persona-Based)
 // -------------------------
 
 /**
- * Maps sales verticals to high-intent, verifiable search keywords for B2C leads.
- * The system will cycle through these enhancers for batches to maximize diversity.
+ * Maps sales personas to high-intent, verifiable search keywords for B2C leads.
+ * The system will cycle through these keyword arrays for batches to maximize diversity.
  */
-const B2C_VERTICAL_KEYWORDS = {
-    // Keywords for Real Estate / Mortgage / Home Services (Homebuyers, Property Owners)
-    real_estate: [
-        `"just listed" OR "new mortgage application"`,
+const PERSONA_KEYWORDS = {
+    // Real Estate Agent: Targets high-intent movers and property owners.
+    "real_estate": [
+        `"homeowner" AND "recently purchased home"`,
+        `"new construction" OR "single-family home"`,
         `"building permit" OR "home renovation project estimate"`,
         `"pre-foreclosure" OR "distressed property listing"`,
-        `"recent property value assessment" OR "tax records change"`
+        `"recent move" OR "relocation" OR "new job in area"`
     ],
-    // Keywords for Financial / Insurance / Wealth Management (Seniors, High Net Worth)
-    insurance_finance: [
-        `"IRA rollover" OR "retirement planning seminar"`,
-        `"elder care services" OR "assisted living facility"`,
+    // Life Insurance Agent: Targets age/wealth-based life events.
+    "life_insurance": [
+        `"high net worth" OR "affluent"`,
+        `"age 35-65" OR "financial planning seminar"`,
         `"estate planning attorney" OR "trust fund establishment"`,
-        `"annuity comparison" OR "high-net-worth investment advisor"`
+        `"IRA rollover" OR "annuity comparison"`
     ],
-    // Keywords for Auto Sales / Automotive (New Car Buyers, Maintenance)
-    auto: [
-        `"lease ending" OR "trade-in value estimate"`,
-        `"car loan pre-approval" OR "new vehicle incentives"`,
-        `"expired car warranty" OR "major auto repair quote"`,
-        `"DMV records new registration" OR "vehicle inspection required"`
+    // Financial Advisor / Wealth Management: Targets investors and business owners.
+    "financial_advisor": [
+        `"business owner" OR "recent funding"`,
+        `"property investor" OR "real estate portfolio management"`,
+        `"401k rollover" OR "retirement planning specialist"`,
+        `"S-Corp filing" OR "new business incorporation"`
     ],
-    // General / Local Services (High-intent consumers for general local B2C sales)
-    default: [
-        `"wedding planning" OR "event venue booking"`, // Life event spending
-        `"new job relocation" OR "moving company quotes"`, // Relocation/change of life
-        `"business license application" OR "small business startup help"`, // Entrepreneurial intent
-        `"recent college graduate" OR "first apartment furniture"` // Young adult milestones
+    // Local Services / Contractors: Targets residents planning home projects.
+    "local_services": [
+        `"home improvement" OR "major repair needed"`,
+        `"renovation quote" OR "remodeling project bid"`,
+        `"new construction start date" OR "large landscaping project"`,
+        `"local homeowner review" OR "service provider recommendations"`
+    ],
+    // Mortgage / Loan Officer: Targets prospective buyers and refinance candidates.
+    "mortgage": [
+        `"mortgage application pre-approved" OR "refinancing quote"`,
+        `"recent purchase contract signed" OR "new home loan needed"`,
+        `"first-time home buyer seminar" OR "closing date soon"`,
+        `"VA loan eligibility" OR "FHA loan requirements"`
+    ],
+    // Default fallback for any unlisted B2C type.
+    "default": [
+        `"wedding planning" OR "event venue booking"`,
+        `"new job relocation" OR "moving company quotes"`,
+        `"recent college graduate" OR "first apartment furniture"`,
+        `"business license application" OR "small business startup help"`
     ]
 };
-
-/**
- * Determines the target vertical based on the user's primary search term.
- * @param {string} searchTerm The user's input search term.
- * @returns {string} The key for the appropriate keyword set ('real_estate', 'insurance_finance', 'auto', or 'default').
- */
-function determineVertical(searchTerm) {
-    const term = searchTerm.toLowerCase();
-    
-    // Real Estate
-    if (term.includes('home') || term.includes('buyer') || term.includes('property') || term.includes('mortgage') || term.includes('realty') || term.includes('realtor') || term.includes('house')) {
-        return 'real_estate';
-    }
-    // Financial/Insurance
-    if (term.includes('insurance') || term.includes('net worth') || term.includes('senior') || term.includes('retire') || term.includes('finance') || term.includes('wealth')) {
-        return 'insurance_finance';
-    }
-    // Auto
-    if (term.includes('car') || term.includes('auto') || term.includes('vehicle') || term.includes('dealership') || term.includes('truck') || term.includes('automobile')) {
-        return 'auto';
-    }
-    
-    // General Services (catch-all for life-event triggers)
-    return 'default';
-}
 
 // -------------------------
 // Lead Generator
 // -------------------------
-async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, totalBatches = 4) {
-    console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Total batches: ${totalBatches}`); // ADDED LOG
+async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, totalBatches = 4) {
+    console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Persona: ${salesPersona}. Total batches: ${totalBatches}`); // ADDED LOG
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
@@ -301,24 +291,23 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
 
     let allLeads = [];
     
+    // Determine the specific keyword set based on the provided persona, falling back to 'default'
+    const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
+    
     // We run this in sequence (not concurrently) to ensure the search results for one batch
     // are generated before the next batch search starts, which may help diversify results.
     for (let i = 0; i < totalBatches; i++) {
         
         const baseSearchQuery = `${searchTerm} in ${location}`;
-        let searchKeywords;
         
-        // --- START ENHANCEMENT: Conditional Search Keywords based on leadType ---
+        // --- START ENHANCEMENT: Conditional Search Keywords based on salesPersona ---
+        let searchKeywords;
         if (leadType === 'residential') {
-            // Determine the specific vertical and select the appropriate keyword enhancers
-            const verticalKey = determineVertical(searchTerm);
-            const b2cEnhancers = B2C_VERTICAL_KEYWORDS[verticalKey];
-
-            // Cycle through the selected enhancers for diversity
-            const enhancer = b2cEnhancers[i % b2cEnhancers.length]; 
+            // Cycle through the persona-specific keyword array for diversity
+            const enhancer = personaKeywords[i % personaKeywords.length]; 
             searchKeywords = `${baseSearchQuery} ${enhancer}`;
         } else {
-            // For B2B, maintain company focus but add a growth signal for higher qualification
+            // For B2B (commercial), maintain company focus but add a growth signal for higher qualification
             searchKeywords = `${baseSearchQuery} company website OR "new funding" OR "business expansion"`;
         }
         // --- END ENHANCEMENT ---
@@ -387,19 +376,22 @@ exports.handler = async (event) => {
     }
 
     try {
-        const { leadType, searchTerm, location, financialTerm, totalLeads } = JSON.parse(event.body);
-        console.log(`[Handler] Request received for: ${searchTerm} in ${location}`); // ADDED LOG
-        if (!leadType || !searchTerm || !location) return { 
+        // Updated to accept salesPersona
+        const { leadType, searchTerm, location, financialTerm, totalLeads, salesPersona } = JSON.parse(event.body);
+        console.log(`[Handler] Request received for: ${searchTerm} in ${location}. Persona: ${salesPersona}`); // ADDED LOG
+        
+        // salesPersona is now required for B2C logic
+        if (!leadType || !searchTerm || !location || !salesPersona) return { 
              statusCode: 400, 
              headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-             body: JSON.stringify({ error: "Missing required parameters." }) 
+             body: JSON.stringify({ error: "Missing required parameters (leadType, searchTerm, location, or salesPersona)." }) 
         };
 
         const requiredLeads = totalLeads || 12;
         // Since Gemini generates 3 leads per call, calculate the batches needed.
         const batchesToRun = Math.ceil(requiredLeads / 3);
 
-        const leads = await generateLeadsBatch(leadType, searchTerm, location, financialTerm, batchesToRun);
+        const leads = await generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, batchesToRun);
         
         console.log(`[Handler] Successfully generated ${leads.length} leads.`); // ADDED LOG
 
