@@ -213,6 +213,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 // Lead Generator
 // -------------------------
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, totalBatches = 4) {
+    console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Total batches: ${totalBatches}`); // ADDED LOG
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
@@ -269,6 +270,7 @@ exports.handler = async (event) => {
 
     try {
         const { leadType, searchTerm, location, financialTerm, totalLeads } = JSON.parse(event.body);
+        console.log(`[Handler] Request received for: ${searchTerm} in ${location}`); // ADDED LOG
         if (!leadType || !searchTerm || !location) return { statusCode: 400, body: JSON.stringify({ error: "Missing required parameters." }) };
 
         const requiredLeads = totalLeads || 12;
@@ -276,6 +278,8 @@ exports.handler = async (event) => {
         const batchesToRun = Math.ceil(requiredLeads / 3);
 
         const leads = await generateLeadsBatch(leadType, searchTerm, location, financialTerm, batchesToRun);
+        
+        console.log(`[Handler] Successfully generated ${leads.length} leads.`); // ADDED LOG
 
         return {
             statusCode: 200,
