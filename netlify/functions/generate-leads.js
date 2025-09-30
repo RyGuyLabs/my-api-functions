@@ -1,25 +1,17 @@
 /**
- * Ultimate Premium Lead Generator
+ * Ultimate Premium Lead Generator (Simplified)
  *
- * This version implements premium, production-ready features:
- * - Redis caching for persistent data storage and reduced API calls.
+ * This version removes Redis for maximum deployment simplicity.
  * - Batch processing with controlled concurrency to generate large lists faster.
  * - Deduplication to ensure unique leads.
  * - Dynamic priority ranking based on enriched data.
  * - Robust exponential backoff with FULL JITTER for high reliability against 503 errors.
  *
- * NOTE: This function requires the 'node-fetch' and 'ioredis' packages to be installed
- * and available in the serverless environment dependencies (as confirmed in package.json).
+ * NOTE: This function only requires the 'node-fetch' package.
  */
 
 const fetch = require('node-fetch');
-const Redis = require('ioredis');
-
-// ====================
-// Redis Setup
-// ====================
-// Assumes process.env.REDIS_URL is configured in Netlify environment variables
-const redis = new Redis(process.env.REDIS_URL);
+// const Redis = require('ioredis'); <--- REMOVED
 
 // ====================
 // Gemini API Setup
@@ -90,7 +82,14 @@ const withBackoff = async (fn, maxRetries = 6, delay = 2000) => {
             const response = await fn();
             if (response.ok) return response;
             
-            const errorBody = await response.json();
+            // Try to parse error body but don't fail if it's not JSON
+            let errorBody = {};
+            try {
+                errorBody = await response.json();
+            } catch (e) {
+                // Ignore parsing errors for non-JSON responses
+            }
+
             // Fatal, non-retryable errors
             if (response.status >= 400 && response.status < 500 && response.status !== 429) {
                 console.error(`Gemini Fatal Error (Status ${response.status}):`, errorBody);
@@ -137,7 +136,6 @@ function getLeadTypeTemplate(leadType) {
 // Generate Lead Batch with Concurrency
 // ====================
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, batchCount) {
-    // System instruction is simplified here since enrichment happens post-LLM call
     const systemInstruction = `You are an expert Lead Generation analyst using Google Search for real-time data.
         Your response MUST be a single, valid JSON array containing exactly 3 objects.
         Do NOT include any surrounding text, comments, or markdown ticks (\`\`\`) in your final output.
@@ -145,14 +143,14 @@ async function generateLeadsBatch(leadType, searchTerm, location, financialTerm,
 
     const template = getLeadTypeTemplate(leadType);
 
-    // Queue creation for batches (each batch generates 3 leads)
     const queue = Array.from({ length: batchCount }, (_, i) => i);
     const leads = [];
-    const CONCURRENCY = 2; // Reduced from 3 to 2 to ease load on a busy model
+    const CONCURRENCY = 2; // Controlled concurrency
 
     const processQueue = async () => {
         while (queue.length > 0) {
-            queue.shift(); // Get next batch task
+            // Use queue.pop() to prevent multiple workers from pulling the same index simultaneously
+            if (queue.pop() === undefined) break; 
             
             const userQuery = `Generate 3 high-quality ${leadType} leads for ${searchTerm} in ${location}.
 ${template}${leadType === 'residential' && financialTerm ? ` Financial filter: ${financialTerm}` : ''}`;
@@ -175,7 +173,6 @@ ${template}${leadType === 'residential' && financialTerm ? ` Financial filter: $
 
                 const result = await response.json();
                 let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
-                // Strip markdown wrappers
                 raw = raw.replace(/^```json\s*|^\s*```\s*|^\s*```\s*json\s*|\s*```\s*$/gmi, '').trim();
 
                 const parsed = JSON.parse(raw);
@@ -183,14 +180,14 @@ ${template}${leadType === 'residential' && financialTerm ? ` Financial filter: $
                     leads.push(...parsed);
                 }
             } catch (err) {
-                // Log and continue processing other batches
                 console.warn('Failed to process a batch of leads, skipping batch.', err.message);
             }
         }
     };
 
-    // Run batches concurrently
-    await Promise.all(Array.from({ length: CONCURRENCY }, processQueue));
+    const workers = Array.from({ length: CONCURRENCY }, processQueue);
+    await Promise.all(workers);
+    
     return leads;
 }
 
@@ -200,7 +197,6 @@ ${template}${leadType === 'residential' && financialTerm ? ` Financial filter: $
 function deduplicateLeads(leads) {
     const seen = new Set();
     return leads.filter(lead => {
-        // Use a composite key based on name and website for deduplication
         const key = `${lead.name}-${lead.website}`;
         if (seen.has(key)) return false;
         seen.add(key);
@@ -231,51 +227,30 @@ exports.handler = async (event) => {
         const { leadType, searchTerm, location, financialTerm, totalLeads } = JSON.parse(event.body);
         if (!leadType || !searchTerm || !location) return { statusCode: 400, body: JSON.stringify({ error: "Missing required parameters." }) };
 
-        // Default to a small batch size if not specified
         const requestedTotalLeads = totalLeads || 12;
 
-        const cacheKey = `leads:${leadType}:${searchTerm}:${location}:${financialTerm || ''}:${requestedTotalLeads}`;
-        
-        // 1. CACHE CHECK
-        const cached = await redis.get(cacheKey);
-        if (cached) {
-            console.log('Serving from Redis cache.');
-            return {
-                statusCode: 200,
-                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-                body: cached, // Cached response already includes { leads: [], count: X }
-            };
-        }
-
-        // 2. GENERATE BATCHES
+        // 1. GENERATE BATCHES (Directly, no cache check needed)
         const batchesNeeded = Math.ceil(requestedTotalLeads / 3);
         let rawLeads = await generateLeadsBatch(leadType, searchTerm, location, financialTerm, batchesNeeded);
 
-        // 3. DEDUPLICATION & TRUNCATION
+        // 2. DEDUPLICATION & TRUNCATION
         rawLeads = deduplicateLeads(rawLeads).slice(0, requestedTotalLeads);
 
-        // 4. ENRICHMENT & SCORING
+        // 3. ENRICHMENT & SCORING
         for (let lead of rawLeads) {
-            // Apply dummy enrichment if LLM failed to provide the data
             lead.email = lead.email || await enrichEmail(lead.name, lead.website);
             lead.phoneNumber = lead.phoneNumber || await enrichPhoneNumber();
             
-            // Re-calculate the quality score based on enriched data
             lead.qualityScore = computeQualityScore(lead);
-            
-            // Generate premium insights
             lead.socialSignal = lead.socialSignal || await generatePremiumInsights(lead);
         }
 
-        // 5. RANKING
+        // 4. RANKING
         const rankedLeads = rankLeads(rawLeads);
 
-        // 6. CACHE WRITE & RETURN
+        // 5. RETURN
         const responseBody = JSON.stringify({ leads: rankedLeads, count: rankedLeads.length, cached: false });
         
-        // Cache result for 1 hour (3600 seconds)
-        await redis.set(cacheKey, responseBody, 'EX', 3600); 
-
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -283,7 +258,6 @@ exports.handler = async (event) => {
         };
 
     } catch (error) {
-        // Centralized error handling
         console.error('Ultimate Premium Lead Generator Error:', error);
         return { 
             statusCode: 500, 
