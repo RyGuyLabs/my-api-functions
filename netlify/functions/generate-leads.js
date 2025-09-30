@@ -6,7 +6,7 @@
  * - Batch processing with controlled concurrency to generate large lists faster.
  * - Deduplication to ensure unique leads.
  * - Dynamic priority ranking based on enriched data.
- * - Robust exponential backoff for high reliability.
+ * - Robust exponential backoff with **FULL JITTER** for high reliability.
  *
  * NOTE: This function requires the 'node-fetch' and 'ioredis' packages to be installed
  * and available in the serverless environment dependencies for proper execution.
@@ -50,7 +50,7 @@ async function enrichPhoneNumber() {
 
 function computeQualityScore(lead) {
     if (lead.email && lead.phoneNumber && lead.email.includes('@')) return 'High';
-    if (!lead.email && !lead.    phoneNumber) return 'Low';
+    if (!lead.email && !lead.phoneNumber) return 'Low';
     return 'Medium';
 }
 
@@ -83,7 +83,7 @@ function rankLeads(leads) {
 }
 
 // ====================
-// Exponential Backoff
+// Exponential Backoff with Jitter (FIXED: Added Jitter)
 // ====================
 const withBackoff = async (fn, maxRetries = 5, delay = 1000) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -98,14 +98,24 @@ const withBackoff = async (fn, maxRetries = 5, delay = 1000) => {
                 throw new Error(`Gemini API Fatal Error: Status ${response.status}`, { cause: errorBody });
             }
             
+            // Calculate randomized delay (Full Jitter)
+            const maxDelay = delay * Math.pow(2, attempt - 1);
+            const jitterDelay = Math.random() * maxDelay; // Random delay between 0 and maxDelay
+            
             // Retryable errors (e.g., 500, 503, 429)
-            console.warn(`Attempt ${attempt} failed with status ${response.status}. Retrying in ${delay * Math.pow(2, attempt - 1)}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay * 2 ** (attempt - 1)));
+            console.warn(`Attempt ${attempt} failed with status ${response.status}. Retrying in ${Math.round(jitterDelay)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, jitterDelay));
+            
         } catch (err) {
             // Network errors are also retryable
             if (attempt === maxRetries) throw err;
-            console.warn(`Attempt ${attempt} failed with network error. Retrying in ${delay * Math.pow(2, attempt - 1)}ms...`, err.message);
-            await new Promise(resolve => setTimeout(resolve, delay * 2 ** (attempt - 1)));
+            
+            // Calculate randomized delay (Full Jitter) for network errors too
+            const maxDelay = delay * Math.pow(2, attempt - 1);
+            const jitterDelay = Math.random() * maxDelay;
+            
+            console.warn(`Attempt ${attempt} failed with network error. Retrying in ${Math.round(jitterDelay)}ms...`, err.message);
+            await new Promise(resolve => setTimeout(resolve, jitterDelay));
         }
     }
     throw new Error("Max retries reached. Request failed permanently.");
@@ -125,7 +135,7 @@ function getLeadTypeTemplate(leadType) {
 }
 
 // ====================
-// Generate Lead Batch with Concurrency
+// Generate Lead Batch with Concurrency (FIXED: Reduced CONCURRENCY)
 // ====================
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, batchCount) {
     // System instruction is simplified here since enrichment happens post-LLM call
@@ -139,7 +149,7 @@ async function generateLeadsBatch(leadType, searchTerm, location, financialTerm,
     // Queue creation for batches (each batch generates 3 leads)
     const queue = Array.from({ length: batchCount }, (_, i) => i);
     const leads = [];
-    const CONCURRENCY = 3; // Number of simultaneous API calls
+    const CONCURRENCY = 2; // REDUCED from 3 to 2 to ease load on a busy model
 
     const processQueue = async () => {
         while (queue.length > 0) {
