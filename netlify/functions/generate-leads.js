@@ -240,8 +240,12 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
         }
 
         // 2. Feed results to Gemini for formatting, enrichment, and qualification
+        
+        // CRITICAL FIX: Embed the B2C/B2B context from 'template' directly into the user query.
+        const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${searchTerm}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
+
         const geminiLeads = await generateGeminiLeads(
-            `Generate 3 high-quality leads for "${searchTerm}" in "${location}" based on the following search results: ${JSON.stringify(gSearchResults)}`,
+            geminiQuery,
             systemInstruction
         );
         allLeads.push(...geminiLeads);
