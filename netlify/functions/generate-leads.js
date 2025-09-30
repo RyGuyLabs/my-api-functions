@@ -240,11 +240,20 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
     // We run this in sequence (not concurrently) to ensure the search results for one batch
     // are generated before the next batch search starts, which may help diversify results.
     for (let i = 0; i < totalBatches; i++) {
-        // --- MODIFIED SEARCH QUERY ---
-        // Simplified the search query to only include the core terms and added "company website" 
-        // to force more specific, non-generic results from Google Custom Search.
+        
         const baseSearchQuery = `${searchTerm} in ${location}`;
-        const searchKeywords = `${baseSearchQuery} company website`;
+        let searchKeywords;
+        
+        // --- START FIX: Conditional Search Keywords based on leadType ---
+        if (leadType === 'residential') {
+            // For B2C, focus on local/individual results and remove "company website".
+            // Adding a general term like "property owners" or "local home services" to guide search.
+            searchKeywords = `${baseSearchQuery} "property owners" or "local home services"`;
+        } else {
+            // For B2B, keep the structure that finds business entities.
+            searchKeywords = `${baseSearchQuery} company website`;
+        }
+        // --- END FIX ---
         
         console.log(`[Batch ${i+1}/${totalBatches}] Searching with keywords: "${searchKeywords}"`); // Added specific batch log
 
