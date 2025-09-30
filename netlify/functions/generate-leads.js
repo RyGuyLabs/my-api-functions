@@ -5,9 +5,10 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * * CRITICAL FIXES for 504 Gateway Timeout:
- * * 1. Added a 10-second hard timeout to the Google Search fetch request to fail fast.
- * * 2. Limited the user's 'searchTerm' to the first 15 words in the search query to reduce complexity and latency.
+ * * CRITICAL FIXES for Generic Emails:
+ * * 1. Updated generateGeminiLeads system prompt to instruct the model to avoid placeholders.
+ * * 2. Updated enrichEmail to use realistic patterns (first.last@domain) and avoid generic domains.
+ * * 3. Added logic to generateLeadsBatch to detect and overwrite any placeholder domains returned by the model.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -67,14 +68,44 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 };
 
 // -------------------------
-// Enrichment & Quality Helpers (Omitted for brevity, unchanged)
+// Enrichment & Quality Helpers
 // -------------------------
+
+/**
+ * Generates a realistic email pattern based on name and website.
+ * Cycles through common patterns like first.last, first_initial.last, or first@domain.
+ */
 async function enrichEmail(name, website) {
     try {
-        const domain = new URL(website).hostname;
-        return `${name.toLowerCase().split(' ')[0]}.${name.toLowerCase().split(' ').pop()}@${domain}`.replace(/\s/g, '');
+        const url = new URL(website);
+        const domain = url.hostname;
+        const nameParts = name.toLowerCase().split(' ').filter(part => part.length > 0);
+        
+        if (nameParts.length === 0) {
+             return `contact@${domain}`;
+        }
+        
+        const firstName = nameParts[0];
+        const lastName = nameParts[nameParts.length - 1];
+
+        // Define common email patterns
+        const patterns = [
+            `${firstName}.${lastName}@${domain}`,      // John.doe@example.com
+            `${firstName.charAt(0)}${lastName}@${domain}`, // Jdoe@example.com
+            `${firstName}@${domain}`,                  // John@example.com
+        ].filter(p => !p.includes('undefined')); // Remove patterns if name parts are missing
+
+        // Choose a random pattern for variability
+        if (patterns.length > 0) {
+            return patterns[Math.floor(Math.random() * patterns.length)].replace(/\s/g, '');
+        }
+        
+        // Fallback to a generic domain contact if name processing fails
+        return `contact@${domain}`;
+
     } catch {
-        return `info@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
+        // Fallback if URL parsing fails completely, using website string directly
+        return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
     }
 }
 
@@ -152,7 +183,7 @@ async function googleSearch(query, numResults = 3) {
 }
 
 // -------------------------
-// Gemini call (Omitted for brevity, unchanged)
+// Gemini call
 // -------------------------
 async function generateGeminiLeads(query, systemInstruction) {
     if (!GEMINI_API_KEY) {
@@ -284,8 +315,10 @@ async function generateLeadsBatch(leadType, searchTerm, location, salesPersona, 
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
 
+    // CRITICAL: Instruction to the model to avoid placeholders
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
-You MUST follow the JSON schema provided in the generation config.`;
+You MUST follow the JSON schema provided in the generation config.
+CRITICAL: When fabricating an email address, you MUST use a domain from the provided 'website' field. NEVER use placeholder domains like 'example.com', 'placeholder.net', or 'test.com'.`;
 
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     const isResidential = leadType === 'residential';
@@ -308,7 +341,6 @@ You MUST follow the JSON schema provided in the generation config.`;
             // Determine primary search keywords
             if (isResidential) {
                 // CRITICAL FIX: Shorten the user's potentially massive search term 
-                // to prevent Google API from choking on overly complex queries.
                 const maxWords = 15;
                 const shortSearchTerm = searchTerm.split(' ').slice(0, maxWords).join(' ');
                 
@@ -368,8 +400,17 @@ You MUST follow the JSON schema provided in the generation config.`;
 
     // --- Final Enrichment and Ranking (Sequential, but fast) ---
     allLeads = deduplicateLeads(allLeads);
+    
+    const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
+
     for (let lead of allLeads) {
-        lead.email = lead.email || await enrichEmail(lead.name, lead.website);
+        // Check if the current email is empty or contains a known placeholder
+        const shouldEnrich = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
+
+        if (shouldEnrich) {
+            lead.email = await enrichEmail(lead.name, lead.website);
+        }
+
         lead.phoneNumber = lead.phoneNumber || await enrichPhoneNumber();
         lead.qualityScore = computeQualityScore(lead);
         lead.socialSignal = lead.socialSignal || await generatePremiumInsights(lead);
