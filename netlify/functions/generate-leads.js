@@ -1,6 +1,9 @@
 // Netlify Serverless Function to securely call the Gemini API
 // This function handles the API key and environment setup.
 
+// CRITICAL FIX 3B: Use dynamic import for fetch to avoid Node dependency issues
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+
 const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const MODEL_NAME = "gemini-2.5-flash-preview-05-20";
 
@@ -29,20 +32,35 @@ exports.handler = async (event, context) => {
 
     const { leadType, searchTerm, location, financialTerm } = params;
 
+    // CRITICAL FIX 2: Validate incoming parameters
+    if (!leadType || !searchTerm || !location) {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: "Missing required parameters (leadType, searchTerm, or location)." }),
+        };
+    }
+
     // --- Gemini API Configuration ---
 
     const systemPrompt = `You are a specialized, top-tier Sales Intelligence Analyst and Lead Generator. Your goal is to produce leads that are high-quality, validated, and distinctive from common database entries, adding next-level value for the consumer.
         Your task is to take the user's input (Lead Type, Search Term, Location, and Financial Term) and use Google Search to find prospects.
+        
         You must generate exactly 3 highly qualified leads based on the user's criteria. 
-        Crucially, the leads must be validated by finding a recent, specific "trigger event" or signal (e.g., funding round, leadership change, significant expansion).
-        For each lead, provide a name, brief description, a dummy website, a dummy email, a dummy phone number. Provide a QualityScore (High, Medium, or Low) based only on the **strength of the validation signal**.
+        Each lead MUST include:
+        1. A verifiable trigger event or signal sourced from search results (e.g., funding round, new leadership, significant expansion, major financial event).
+        2. A justification referencing that trigger.
+        3. A suggested outreach strategy tied directly to that signal.
+        If a lead cannot be validated by a real-world triggering event, replace it with a stronger one. 
+
+        For each lead, provide a name, brief description, **realistic or scraped contact information whenever possible. If unavailable, provide the closest inferred domain and role-based email (e.g., info@company.com).** Provide a QualityScore (High, Medium, or Low) based only on the **strength and recency of the validation signal**. 
+        
         The output MUST include: key insights justifying the lead quality, a clear suggested action, a brief draft pitch tailored to the validation signal, and a highly specific social signal/trigger event found via search.
         
         The response MUST be a JSON object containing a 'leads' array following the provided schema. Do not include any text outside the JSON block.
         The search query must combine all provided user criteria to ensure precision.`;
 
     const userQuery = `Generate 3 leads for a "${leadType}" prospect, matching the search term: "${searchTerm}" in the location: "${location}". 
-        If the lead type is 'residential', also consider the financial term: "${financialTerm}".`;
+        If the lead type is "residential", also consider the financial term: "${financialTerm}".`; // CRITICAL FIX 2: Changed '===' to 'is'
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -100,18 +118,36 @@ exports.handler = async (event, context) => {
 
         // 2. Process Response
         const result = await response.json();
-        const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
-        
+        let jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        // CRITICAL FIX 6: Defensive JSON Parsing
         if (!jsonString) {
-             console.error("Received an empty response from the AI.");
-             return { statusCode: 500, body: JSON.stringify({ error: "AI returned an empty response." }) };
+            console.error("Received an empty response from the AI.");
+            return { statusCode: 500, body: JSON.stringify({ error: "AI returned an empty response." }) };
+        }
+
+        // Clean up markdown wrappers (```json, ```) which Gemini sometimes adds
+        jsonString = jsonString.replace(/```json|```/g, '').trim();
+        
+        let parsedResult;
+        try {
+            parsedResult = JSON.parse(jsonString);
+        } catch (err) {
+            console.error("Bad JSON from AI:", jsonString);
+            return { statusCode: 500, body: JSON.stringify({ error: "Failed to parse JSON from AI.", details: err.message }) };
         }
         
-        // 3. Return the leads array
-        const parsedResult = JSON.parse(jsonString);
+        // CRITICAL FIX 5: Sort leads by value (High > Medium > Low)
+        const scoreMap = { High: 3, Medium: 2, Low: 1 };
+        const rankedLeads = parsedResult.leads.sort((a, b) => {
+            // Sorts in descending order of quality score
+            return scoreMap[b.qualityScore] - scoreMap[a.qualityScore];
+        });
+
+        // 3. Return the ranked leads array
         return {
             statusCode: 200,
-            body: JSON.stringify(parsedResult.leads), // Return the array of leads
+            body: JSON.stringify(rankedLeads), // Return the array of leads
         };
 
     } catch (error) {
