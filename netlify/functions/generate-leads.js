@@ -1,12 +1,10 @@
 /**
- * Ultimate Premium Lead Generator – Gemini + Google Custom Search (Option 2)
- *
- * - Uses LEAD_QUALIFIER_API_KEY for Gemini generative language
- * - Uses RYGUY_SEARCH_API_KEY + RYGUY_SEARCH_ENGINE_ID for Google Custom Search
- * - Produces verified, enriched, and prioritized leads
- * - Handles residential and commercial lead types
- * - Deduplicates and ranks leads
- * - Full CORS support for Netlify serverless deployment
+ * Ultimate Premium Lead Generator – Gemini + Google Custom Search (Background Function)
+ * * NOTE: This function is intended to be deployed as a Netlify Background Function,
+ * allowing up to 15 minutes of execution time to prevent 504 Gateway Timeouts
+ * caused by long-running LLM and search calls.
+ * * - Execution is fire-and-forget; results are logged and would typically be saved
+ * to a database (e.g., Firestore) in a production environment.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -53,12 +51,11 @@ const withBackoff = async (fn, maxRetries = 6, baseDelay = 2000) => {
 };
 
 // -------------------------
-// Enrichment & Quality
+// Enrichment & Quality (Mock Data)
 // -------------------------
 async function enrichEmail(name, website) {
     try {
         const domain = new URL(website).hostname;
-        // Simple attempt to create a first.last@domain
         return `${name.toLowerCase().split(' ')[0]}.${name.toLowerCase().split(' ').pop()}@${domain}`.replace(/\s/g, '');
     } catch {
         return `info@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
@@ -66,12 +63,10 @@ async function enrichEmail(name, website) {
 }
 
 async function enrichPhoneNumber() {
-    // Generate a mock US phone number
     return `+1-555-${Math.floor(1000000 + Math.random() * 9000000)}`;
 }
 
 function computeQualityScore(lead) {
-    // Logic for quality remains based on contact data found/generated
     if (lead.email && lead.phoneNumber && lead.email.includes('@')) return 'High';
     if (!lead.email && !lead.phoneNumber) return 'Low';
     return 'Medium';
@@ -113,8 +108,7 @@ function deduplicateLeads(leads) {
 // -------------------------
 // Google Custom Search
 // -------------------------
-async function googleSearch(query, numResults = 3) {
-    // Ensure both required keys are present for Google Custom Search
+async function googleSearch(query, numResults = 5) {
     if (!SEARCH_API_KEY || !SEARCH_ENGINE_ID) {
         console.warn("RYGUY_SEARCH_API_KEY or RYGUY_SEARCH_ENGINE_ID is missing. Skipping Google Custom Search.");
         return [];
@@ -122,11 +116,10 @@ async function googleSearch(query, numResults = 3) {
 
     const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
     
-    // Apply stricter retry limits to prevent Netlify function timeout
+    // Using default backoff. Netlify's 15-minute timeout is now safe.
     const response = await withBackoff(() => fetch(url), 3, 500); 
     const data = await response.json();
     
-    // Check for search errors, e.g., if API key is invalid
     if (data.error) {
         console.error("Google Custom Search API Error:", data.error);
         return [];
@@ -147,7 +140,6 @@ async function generateGeminiLeads(query, systemInstruction) {
         throw new Error("LEAD_QUALIFIER_API_KEY (GEMINI_API_KEY) is missing.");
     }
     
-    // Define the expected structure for the model to follow
     const responseSchema = {
         type: "ARRAY",
         description: "A list of high-quality, verified business leads.",
@@ -174,8 +166,8 @@ async function generateGeminiLeads(query, systemInstruction) {
         systemInstruction: { parts: [{ text: systemInstruction }] },
         generationConfig: { 
             temperature: 0.2, 
-            maxOutputTokens: 2048,
-            // CRITICAL: Enforce JSON output structure
+            // Keeping this at 1024 for a good balance of speed and output size.
+            maxOutputTokens: 1024,
             responseMimeType: "application/json",
             responseSchema: responseSchema
         }
@@ -194,20 +186,15 @@ async function generateGeminiLeads(query, systemInstruction) {
     let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
     
     try {
-        // Attempt 1: Standard parse 
         return JSON.parse(raw);
     } catch (e) {
-        // Fallback: Attempt to sanitize unescaped quotes if standard parse fails
         let cleanedText = raw;
         cleanedText = cleanedText.replace(/([^\\])"/g, (match, p1) => `${p1}\\"`);
         
         try {
-            // Attempt 2: Parse the aggressively cleaned string
             return JSON.parse(cleanedText);
         } catch (e2) {
-            console.error("Failed to parse Gemini output as JSON, even with structured output enforcement and aggressive cleaning. Original error:", e.message);
-            console.error("Second attempt error after cleaning:", e2.message);
-            console.error("Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
+            console.error("Failed to parse Gemini output as JSON.", e2.message);
             throw new Error("Failed to parse Gemini output as JSON.", { cause: e.message });
         }
     }
@@ -226,8 +213,6 @@ const PERSONA_KEYWORDS = {
         `"recent move" OR "relocation" OR "new job in area"`
     ],
     // Life Insurance Agent: Targets age/wealth-based life events.
-    // NOTE: Frontend should use simple, high-signal search terms (e.g., "affluent individuals") 
-    // for this persona, not terms that conflict with wealth enhancers (e.g., "homeowners").
     "life_insurance": [
         `"high net worth" OR "affluent"`,
         `"financial planning seminar" OR "estate planning attorney"`,
@@ -279,8 +264,6 @@ const COMMERCIAL_ENHANCERS = [
 // Lead Generator
 // -------------------------
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, totalBatches = 4) {
-    // NOTE: The frontend must pass the simple user-input keyword (e.g., "homeowners") 
-    // as the 'searchTerm', not a long OR string.
     console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Persona: ${salesPersona}. Total batches: ${totalBatches}`);
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -290,7 +273,6 @@ async function generateLeadsBatch(leadType, searchTerm, location, financialTerm,
 You MUST follow the JSON schema provided in the generation config.`;
 
     let allLeads = [];
-    
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     
     for (let i = 0; i < totalBatches; i++) {
@@ -298,46 +280,39 @@ You MUST follow the JSON schema provided in the generation config.`;
         let searchKeywords;
         let isResidential = leadType === 'residential';
         
-        // --- START PRIMARY QUERY CONSTRUCTION ---
+        // --- PRIMARY QUERY CONSTRUCTION ---
         if (isResidential) {
             const enhancer = personaKeywords[i % personaKeywords.length]; 
-            // Query: [User Input] in [Location] AND ([Persona Enhancer])
             searchKeywords = `${searchTerm} in ${location} AND (${enhancer})`;
         } else {
-            // B2B (commercial) logic: [User Input] in [Location] AND ([B2B Enhancer])
             const b2bEnhancer = COMMERCIAL_ENHANCERS[i % COMMERCIAL_ENHANCERS.length];
             searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer})`;
         }
         
         console.log(`[Batch ${i+1}/${totalBatches}] Searching (Primary) with keywords: "${searchKeywords}"`);
 
-        // 1. Get verified search results using Custom Search
-        // numResults increased to 10 for better Gemini context
-        let gSearchResults = await googleSearch(searchKeywords, 10); 
+        // Get 5 results for better context now that the timeout is solved
+        let gSearchResults = await googleSearch(searchKeywords, 5); 
         
         if (gSearchResults.length > 0) {
             console.log(`[Batch ${i+1}/${totalBatches}] Primary search returned ${gSearchResults.length} results.`);
         }
         
-        // --- START FALLBACK SEARCH MECHANISM ---
+        // --- FALLBACK SEARCH MECHANISM ---
         if (gSearchResults.length === 0) {
-            
             console.warn(`[Batch ${i+1}/${totalBatches}] No results for primary query: "${searchKeywords}". Trying simplified fallback...`);
 
             let fallbackSearchKeywords;
-            
             if (isResidential) {
-                 // Residential Fallback: Uses only the simplest persona enhancer
                 const fallbackQuery = personaKeywords[0]; 
                 fallbackSearchKeywords = `${fallbackQuery} in ${location}`;
             } else {
-                 // B2B Fallback: Removes the specific B2B enhancer
                  fallbackSearchKeywords = `${searchTerm} in ${location}`;
             }
             
             console.log(`[Batch ${i+1}/${totalBatches}] Fallback query: "${fallbackSearchKeywords}"`);
             
-            // Increased fallback results to 5
+            // Get 5 results for fallback search
             const fallbackResults = await googleSearch(fallbackSearchKeywords, 5); 
             gSearchResults.push(...fallbackResults);
 
@@ -348,10 +323,8 @@ You MUST follow the JSON schema provided in the generation config.`;
                  console.log(`[Batch ${i+1}/${totalBatches}] Fallback successful, found ${fallbackResults.length} results.`);
             }
         } 
-        // If gSearchResults.length is still 0 after all attempts, the loop continues to the next batch.
         
         // 2. Feed results to Gemini for formatting, enrichment, and qualification
-        
         const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${searchTerm}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
 
         const geminiLeads = await generateGeminiLeads(
@@ -363,7 +336,6 @@ You MUST follow the JSON schema provided in the generation config.`;
 
     allLeads = deduplicateLeads(allLeads);
     for (let lead of allLeads) {
-        // Enrich local/dummy fields (since we're relying on Custom Search for core data)
         lead.email = lead.email || await enrichEmail(lead.name, lead.website);
         lead.phoneNumber = lead.phoneNumber || await enrichPhoneNumber();
         lead.qualityScore = computeQualityScore(lead);
@@ -372,69 +344,44 @@ You MUST follow the JSON schema provided in the generation config.`;
     return rankLeads(allLeads);
 }
 
-// -------------------------
-// Netlify Handler
-// -------------------------
-exports.handler = async (event) => {
+// ------------------------------------------
+// Netlify Background Function Export
+// ------------------------------------------
+exports.background = async function(event, context) {
     
-    // Define a unified set of headers for all success and error responses
-    const CORS_HEADERS = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    };
+    console.log('[Handler] Background function execution started. Max time: 15 minutes.');
     
-    // 1. OPTIONS Preflight handler
-    if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: ''
-        };
-    }
-    
-    // 2. 405 Method Not Allowed handler
-    if (event.httpMethod !== 'POST') {
-        return { 
-            statusCode: 405, 
-            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ error: 'Method Not Allowed' })
-        };
-    }
-
     try {
-        // Updated to accept salesPersona
         const { leadType, searchTerm, location, financialTerm, totalLeads, salesPersona } = JSON.parse(event.body);
         console.log(`[Handler] Request received for: ${searchTerm} in ${location}. Persona: ${salesPersona}`);
         
-        // salesPersona is now required for B2C logic
-        if (!leadType || !searchTerm || !location || !salesPersona) return { 
-             statusCode: 400, 
-             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-             body: JSON.stringify({ error: "Missing required parameters (leadType, searchTerm, location, or salesPersona)." }) 
-        };
+        if (!leadType || !searchTerm || !location || !salesPersona) {
+             console.error("Missing required parameters in background job. Aborting.");
+             return { statusCode: 400 };
+        }
 
         const requiredLeads = totalLeads || 12;
-        // Since Gemini generates 3 leads per call, calculate the batches needed.
         const batchesToRun = Math.ceil(requiredLeads / 3);
 
         const leads = await generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, batchesToRun);
         
-        console.log(`[Handler] Successfully generated ${leads.length} leads.`);
+        console.log(`[Handler] Successfully generated ${leads.length} leads in background.`);
+        
+        // CRITICAL STEP: In a real environment, leads would be saved to a database 
+        // (e.g., Firestore, MongoDB) here for the client to retrieve later.
+        console.log("--- GENERATED LEADS (Background Job Complete) ---");
+        console.log(JSON.stringify(leads.slice(0, requiredLeads), null, 2));
+        console.log("-------------------------------------------------");
 
-        // 3. 200 Success handler
         return {
-            statusCode: 200,
-            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ leads: leads.slice(0, requiredLeads), count: leads.slice(0, requiredLeads).length })
+            statusCode: 200, 
+            body: JSON.stringify({ message: `Successfully generated ${leads.length} leads in the background.` })
         };
     } catch (err) {
-        console.error('Lead Generator Error:', err);
-        // 4. 500 Error handler
+        console.error('Lead Generator Background Error:', err);
         return { 
             statusCode: 500, 
-            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ error: err.message, details: err.cause || 'No cause provided' }) 
+            body: JSON.stringify({ error: err.message || 'Unknown internal error in background job.' }) 
         };
     }
 };
