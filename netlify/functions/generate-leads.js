@@ -163,36 +163,45 @@ async function generateGeminiLeads(query, systemInstruction) {
     // 1. Strip markdown code fences
     raw = raw.replace(/^```json\s*|^\s*```\s*|^\s*```\s*json\s*|\s*```\s*$/gmi, '').trim();
 
-    // CRITICAL FIX: Check if the output is not JSON (e.g., model provided an explanation)
+    // CRITICAL FIX 1: Check if the output is not JSON (e.g., model provided an explanation)
     if (!raw.startsWith('[')) {
         console.warn("Gemini output did not start with '['. Model failed to follow JSON instruction and likely provided an explanation instead. Returning empty list.");
         console.warn("Non-JSON output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
-        // Return an empty array so the lead generation process can continue safely.
         return [];
     }
 
-
     try {
-        // Attempt 1: Standard parse
+        // Attempt 1: Standard parse (Clean input)
         return JSON.parse(raw);
     } catch (e) {
-        // If parsing fails, attempt a conservative repair
+        // If parsing fails, attempt repair
         if (e instanceof SyntaxError) {
-             console.warn("SyntaxError in Gemini output. Attempting conservative JSON repair...");
+             console.warn("SyntaxError in Gemini output. Attempting conservative newline/tab repair...");
              
-             // Conservative Repair: Replace unescaped newline/carriage return/tab characters with spaces.
-             // These are the most common characters LLMs fail to escape within string values,
-             // leading to the "Unterminated string" error.
+             // Conservative Repair 2a (Newline/Tab removal)
              let repairedRaw = raw.replace(/[\r\n\t]/g, ' '); 
              
              try {
-                 // Attempt 2: Parse repaired string
+                 // Attempt 2: Parse repaired string (after newline/tab fix)
                  return JSON.parse(repairedRaw);
              } catch (repairedError) {
-                 // If the repaired string still fails, log the problematic string and re-throw.
-                 console.error("Gemini output failed even after repair. Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
-                 console.error("Full raw output size:", raw.length);
-                 throw new Error("Failed to parse Gemini output as JSON (even after repair). Check logs for details.", { cause: e.message });
+                 
+                 // Aggressive Repair 2b (Unescaped quote fix - most common second failure mode)
+                 console.warn("Newline/tab repair failed. Attempting aggressive unescaped quote repair...");
+                 
+                 // IMPORTANT: This heuristic attempts to find double quotes that are NOT preceded by a backslash (i.e., unescaped quotes)
+                 // and escape them. This requires a regex negative lookbehind (safe in modern Node/Netlify).
+                 let aggressiveRaw = repairedRaw.replace(/(?<!\\)"/g, '\\"');
+
+                 try {
+                      // Attempt 3: Parse aggressively repaired string (after quote fix)
+                      return JSON.parse(aggressiveRaw);
+                 } catch (aggressiveError) {
+                     // If the aggressively repaired string still fails, log the problematic string and re-throw.
+                     console.error("Gemini output failed even after aggressive quote repair. Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
+                     console.error("Full raw output size:", raw.length);
+                     throw new Error("Failed to parse Gemini output as JSON (even after aggressive repair). Check logs for details.", { cause: aggressiveError.message });
+                 }
              }
         }
         // Re-throw any non-SyntaxErrors
