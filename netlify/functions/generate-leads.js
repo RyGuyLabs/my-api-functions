@@ -224,6 +224,70 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
+// NEW: Targeted B2C Keyword Definitions
+// -------------------------
+
+/**
+ * Maps sales verticals to high-intent, verifiable search keywords for B2C leads.
+ * The system will cycle through these enhancers for batches to maximize diversity.
+ */
+const B2C_VERTICAL_KEYWORDS = {
+    // Keywords for Real Estate / Mortgage / Home Services (Homebuyers, Property Owners)
+    real_estate: [
+        `"just listed" OR "new mortgage application"`,
+        `"building permit" OR "home renovation project estimate"`,
+        `"pre-foreclosure" OR "distressed property listing"`,
+        `"recent property value assessment" OR "tax records change"`
+    ],
+    // Keywords for Financial / Insurance / Wealth Management (Seniors, High Net Worth)
+    insurance_finance: [
+        `"IRA rollover" OR "retirement planning seminar"`,
+        `"elder care services" OR "assisted living facility"`,
+        `"estate planning attorney" OR "trust fund establishment"`,
+        `"annuity comparison" OR "high-net-worth investment advisor"`
+    ],
+    // Keywords for Auto Sales / Automotive (New Car Buyers, Maintenance)
+    auto: [
+        `"lease ending" OR "trade-in value estimate"`,
+        `"car loan pre-approval" OR "new vehicle incentives"`,
+        `"expired car warranty" OR "major auto repair quote"`,
+        `"DMV records new registration" OR "vehicle inspection required"`
+    ],
+    // General / Local Services (High-intent consumers for general local B2C sales)
+    default: [
+        `"wedding planning" OR "event venue booking"`, // Life event spending
+        `"new job relocation" OR "moving company quotes"`, // Relocation/change of life
+        `"business license application" OR "small business startup help"`, // Entrepreneurial intent
+        `"recent college graduate" OR "first apartment furniture"` // Young adult milestones
+    ]
+};
+
+/**
+ * Determines the target vertical based on the user's primary search term.
+ * @param {string} searchTerm The user's input search term.
+ * @returns {string} The key for the appropriate keyword set ('real_estate', 'insurance_finance', 'auto', or 'default').
+ */
+function determineVertical(searchTerm) {
+    const term = searchTerm.toLowerCase();
+    
+    // Real Estate
+    if (term.includes('home') || term.includes('buyer') || term.includes('property') || term.includes('mortgage') || term.includes('realty') || term.includes('realtor') || term.includes('house')) {
+        return 'real_estate';
+    }
+    // Financial/Insurance
+    if (term.includes('insurance') || term.includes('net worth') || term.includes('senior') || term.includes('retire') || term.includes('finance') || term.includes('wealth')) {
+        return 'insurance_finance';
+    }
+    // Auto
+    if (term.includes('car') || term.includes('auto') || term.includes('vehicle') || term.includes('dealership') || term.includes('truck') || term.includes('automobile')) {
+        return 'auto';
+    }
+    
+    // General Services (catch-all for life-event triggers)
+    return 'default';
+}
+
+// -------------------------
 // Lead Generator
 // -------------------------
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, totalBatches = 4) {
@@ -244,16 +308,20 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
         const baseSearchQuery = `${searchTerm} in ${location}`;
         let searchKeywords;
         
-        // --- START FIX: Conditional Search Keywords based on leadType ---
+        // --- START ENHANCEMENT: Conditional Search Keywords based on leadType ---
         if (leadType === 'residential') {
-            // For B2C, focus on local/individual results and remove "company website".
-            // Adding a general term like "property owners" or "local home services" to guide search.
-            searchKeywords = `${baseSearchQuery} "property owners" or "local home services"`;
+            // Determine the specific vertical and select the appropriate keyword enhancers
+            const verticalKey = determineVertical(searchTerm);
+            const b2cEnhancers = B2C_VERTICAL_KEYWORDS[verticalKey];
+
+            // Cycle through the selected enhancers for diversity
+            const enhancer = b2cEnhancers[i % b2cEnhancers.length]; 
+            searchKeywords = `${baseSearchQuery} ${enhancer}`;
         } else {
-            // For B2B, keep the structure that finds business entities.
-            searchKeywords = `${baseSearchQuery} company website`;
+            // For B2B, maintain company focus but add a growth signal for higher qualification
+            searchKeywords = `${baseSearchQuery} company website OR "new funding" OR "business expansion"`;
         }
-        // --- END FIX ---
+        // --- END ENHANCEMENT ---
         
         console.log(`[Batch ${i+1}/${totalBatches}] Searching with keywords: "${searchKeywords}"`); // Added specific batch log
 
