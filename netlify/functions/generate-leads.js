@@ -169,12 +169,22 @@ async function generateGeminiLeads(query, systemInstruction) {
     // 1. Strip markdown code fences
     raw = raw.replace(/^```json\s*|^\s*```\s*|^\s*```\s*json\s*|\s*```\s*$/gmi, '').trim();
 
-    // CRITICAL FIX 1: Check if the output is not JSON (e.g., model provided an explanation)
-    if (!raw.startsWith('[')) {
-        console.warn("Gemini output did not start with '['. Model failed to follow JSON instruction and likely provided an explanation instead. Returning empty list.");
+    // CRITICAL FIX: Attempt to extract the JSON array structure if the output is wrapped in text
+    const firstBracket = raw.indexOf('[');
+    const lastBracket = raw.lastIndexOf(']');
+    
+    if (firstBracket === -1 || lastBracket === -1 || lastBracket < firstBracket) {
+        console.warn("Gemini output could not find valid '[' or ']'. Model failed to follow JSON instruction and likely provided an explanation instead. Returning empty list.");
         console.warn("Non-JSON output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
         return [];
     }
+    
+    // Extract the JSON array content only, handling conversational wrapper text
+    if (firstBracket > 0 || lastBracket < raw.length - 1) {
+        console.warn(`Attempting to trim conversational wrapper text from Gemini output. Trimming from index ${firstBracket} to ${lastBracket}.`);
+        raw = raw.substring(firstBracket, lastBracket + 1);
+    }
+    // End CRITICAL FIX
 
     try {
         // Attempt 1: Standard parse (Clean input)
