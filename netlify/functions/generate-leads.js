@@ -10,7 +10,7 @@
  * NOTE: This function only requires the 'node-fetch' package.
  */
 
-const fetch = require('node-fetch');
+const apiFetch = require('node-fetch'); // Renamed from 'fetch' to avoid potential environment conflicts
 // const Redis = require('ioredis'); <--- REMOVED
 
 // ====================
@@ -167,7 +167,7 @@ ${template}${leadType === 'residential' && financialTerm ? ` Financial filter: $
 
             try {
                 const response = await withBackoff(() =>
-                    fetch(`${API_BASE_URL}/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`, {
+                    apiFetch(`${API_BASE_URL}/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`, { // Updated to use apiFetch
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload),
