@@ -16,7 +16,10 @@ const fetch = require('node-fetch');
 // ====================
 // Gemini API Setup
 // ====================
-const GEMINI_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+// Using LEAD_QUALIFIER_API_KEY for the Gemini model's authentication, as specified for generative language.
+// RYGUY_SEARCH_API_KEY and RYGUY_SEARCH_ENGINE_ID are not required here 
+// because this function uses Gemini's native Google Search grounding feature.
+const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MODEL_NAME = 'gemini-2.5-flash-preview-05-20';
 
@@ -249,7 +252,7 @@ exports.handler = async (event) => {
         const rankedLeads = rankLeads(rawLeads);
 
         // 5. RETURN
-        const responseBody = JSON.stringify({ leads: rankedLeads, count: rankedLeads.length, cached: false });
+        const responseBody = JSON.stringify({ leads: rankedLeads, count: rankedLeads.length });
         
         return {
             statusCode: 200,
