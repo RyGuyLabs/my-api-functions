@@ -5,9 +5,9 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * * CRITICAL FIX: To resolve the persistent "No results for primary query" and 504 Gateway Timeout errors,
- * * the redundant "personaEnhancer" keyword has been removed from the primary search query for residential jobs.
- * * The user's detailed 'searchTerm' is sufficient for the persona, and adding another specific AND filter was causing search failure.
+ * * CRITICAL FIXES for 504 Gateway Timeout:
+ * * 1. Added a 10-second hard timeout to the Google Search fetch request to fail fast.
+ * * 2. Limited the user's 'searchTerm' to the first 15 words in the search query to reduce complexity and latency.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -20,17 +20,31 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 
 // -------------------------
+// Helper: Fetch with Timeout (CRITICAL for preventing 504)
+// -------------------------
+const fetchWithTimeout = (url, options, timeout = 10000) => {
+    return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Fetch request timed out')), timeout)
+        )
+    ]);
+};
+
+// -------------------------
 // Helper: Exponential Backoff with Full Jitter
 // -------------------------
-const withBackoff = async (fn, maxRetries = 6, baseDelay = 2000) => {
+const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            const response = await fn();
+            // Using fn which now wraps fetchWithTimeout
+            const response = await fn(); 
             if (response.ok) return response;
 
             let errorBody = {};
             try { errorBody = await response.json(); } catch {}
 
+            // Immediate failure for fatal errors (Client errors 4xx except 429)
             if (response.status >= 400 && response.status < 500 && response.status !== 429) {
                 console.error(`API Fatal Error (Status ${response.status}):`, errorBody);
                 throw new Error(`API Fatal Error: Status ${response.status}`, { cause: errorBody });
@@ -45,7 +59,7 @@ const withBackoff = async (fn, maxRetries = 6, baseDelay = 2000) => {
             if (attempt === maxRetries) throw err;
             const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
             
-            console.warn(`Attempt ${attempt} failed with network error. Retrying in ${Math.round(delay)}ms...`, err.message);
+            console.warn(`Attempt ${attempt} failed with network error or timeout. Retrying in ${Math.round(delay)}ms...`, err.message);
             await new Promise(r => setTimeout(r, delay));
         }
     }
@@ -53,7 +67,7 @@ const withBackoff = async (fn, maxRetries = 6, baseDelay = 2000) => {
 };
 
 // -------------------------
-// Enrichment & Quality Helpers
+// Enrichment & Quality Helpers (Omitted for brevity, unchanged)
 // -------------------------
 async function enrichEmail(name, website) {
     try {
@@ -121,7 +135,8 @@ async function googleSearch(query, numResults = 3) {
     // CRITICAL DEBUGGING LOG: Log the final query being sent.
     console.log(`[Google Search] Sending Query: ${query}`); 
     
-    const response = await withBackoff(() => fetch(url), 3, 500); 
+    // Use fetchWithTimeout inside withBackoff
+    const response = await withBackoff(() => fetchWithTimeout(url), 2, 500); // Reduce max retries for speed
     const data = await response.json();
     
     if (data.error) {
@@ -137,7 +152,7 @@ async function googleSearch(query, numResults = 3) {
 }
 
 // -------------------------
-// Gemini call
+// Gemini call (Omitted for brevity, unchanged)
 // -------------------------
 async function generateGeminiLeads(query, systemInstruction) {
     if (!GEMINI_API_KEY) {
@@ -202,7 +217,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// Keyword Definitions 
+// Keyword Definitions (Unchanged)
 // -------------------------
 const PERSONA_KEYWORDS = {
     "real_estate": [`"home buyer" OR "recently purchased home"`, `"new construction" OR "single-family home"`, `"building permit" OR "home renovation project estimate"`, `"pre-foreclosure" OR "distressed property listing"`, `"recent move" OR "relocation" OR "new job in area"`],
@@ -292,9 +307,13 @@ You MUST follow the JSON schema provided in the generation config.`;
             
             // Determine primary search keywords
             if (isResidential) {
-                // *** CRITICAL FIX APPLIED HERE: REMOVED REDUNDANT PERSONA ENHANCER ***
-                // Primary Query Structure: TERM + LOCATION + (SOCIAL OR ACTIVE_BUYER) + NEGATIVES
-                searchKeywords = `${searchTerm} in ${location} AND (${combinedIntent}) ${NEGATIVE_QUERY}`;
+                // CRITICAL FIX: Shorten the user's potentially massive search term 
+                // to prevent Google API from choking on overly complex queries.
+                const maxWords = 15;
+                const shortSearchTerm = searchTerm.split(' ').slice(0, maxWords).join(' ');
+                
+                // Primary Query Structure: SHORT_TERM + LOCATION + (SOCIAL OR ACTIVE_BUYER) + NEGATIVES
+                searchKeywords = `${shortSearchTerm} in ${location} AND (${combinedIntent}) ${NEGATIVE_QUERY}`;
             } else {
                 // For B2B, the commercial enhancer is still necessary for specificity
                 const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
