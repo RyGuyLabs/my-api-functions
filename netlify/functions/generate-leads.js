@@ -5,8 +5,7 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX APPLIED: Reconciled parameter names from 'searchTerm' to 'targetType' and 'activeSignal'
- * to match the client request and fixed the Google Search timeout logic for resilience.
+ * FIX APPLIED: Intensive debug logging added to exports.handler to identify missing client parameters.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -414,16 +413,28 @@ exports.handler = async (event) => {
         };
     }
 
+    let requestData = {};
     try {
-        // FIXED: Destructuring targetType and activeSignal
-        const { leadType, targetType, activeSignal, location, salesPersona } = JSON.parse(event.body);
+        // --- START DEBUG LOGGING ---
+        console.log(`[Handler DEBUG] Raw Event Body: ${event.body}`);
+        requestData = JSON.parse(event.body);
+        console.log('[Handler DEBUG] Parsed Body Data:', requestData);
+        // --- END DEBUG LOGGING ---
+
+        // Destructuring parameters from the parsed body
+        const { leadType, targetType, activeSignal, location, salesPersona } = requestData;
         
-        // FIXED: Checking for all 5 required parameters and returning the detailed error
-        if (!leadType || !targetType || !activeSignal || !location || !salesPersona) return { 
-             statusCode: 400, 
-             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-             body: JSON.stringify({ error: "Missing required parameters: leadType, targetType, activeSignal, location, or salesPersona." }) 
-        };
+        // Checking for all 5 required parameters and returning the detailed error
+        if (!leadType || !targetType || !activeSignal || !location || !salesPersona) {
+             const missingFields = ['leadType', 'targetType', 'activeSignal', 'location', 'salesPersona'].filter(field => !requestData[field]);
+             console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
+             
+             return { 
+                 statusCode: 400, 
+                 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+                 body: JSON.stringify({ error: `Missing required parameters: ${missingFields.join(', ')}` }) 
+             };
+        }
 
         // CRITICAL: Hard limit the synchronous job to 1 batch (3 leads)
         const batchesToRun = 1; 
@@ -431,7 +442,6 @@ exports.handler = async (event) => {
 
         console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${targetType} (Signal: ${activeSignal}) in ${location}.`);
 
-        // FIXED: Updated function call
         const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
         
         return {
@@ -440,6 +450,16 @@ exports.handler = async (event) => {
             body: JSON.stringify({ leads: leads.slice(0, requiredLeads), count: leads.slice(0, requiredLeads).length })
         };
     } catch (err) {
+        // If JSON parsing fails (e.g., event.body is empty or malformed)
+        if (err.name === 'SyntaxError') {
+             console.error('Lead Generator Handler Error: Failed to parse JSON body.', err.message);
+             return { 
+                statusCode: 400, 
+                headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+                body: JSON.stringify({ error: 'Invalid JSON request body provided.' }) 
+            };
+        }
+        
         console.error('Lead Generator Handler Error:', err);
         return { 
             statusCode: 500, 
@@ -467,10 +487,8 @@ exports.background = async (event) => {
     };
 
     try {
-        // FIXED: Destructuring targetType and activeSignal
         const { leadType, targetType, activeSignal, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
 
-        // FIXED: Checking for all 5 required parameters
         if (!leadType || !targetType || !activeSignal || !location || !salesPersona) {
              console.error("Background job missing required parameters:", event.body);
         }
@@ -484,7 +502,6 @@ exports.background = async (event) => {
                     const batchesToRun = Math.ceil(totalLeads / 3);
                     console.log(`[Background] Starting ${batchesToRun} concurrent batches for ${totalLeads} leads.`);
                     
-                    // FIXED: Updated function call
                     const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
                     
                     console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database. (Database saving placeholder here)`);
