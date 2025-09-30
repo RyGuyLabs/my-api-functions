@@ -4,12 +4,13 @@
 const fetch = (...args) =>
   import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
-const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
+// Renamed local constant to match the environment variable name for clarity
+const LEAD_QUALIFIER_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const MODEL_NAME = "gemini-2.5-flash-preview-05-20";
 
 exports.handler = async (event, context) => {
   // Check for API key presence
-  if (!GEMINI_API_KEY) {
+  if (!LEAD_QUALIFIER_API_KEY) {
     console.error("LEAD_QUALIFIER_API_KEY environment variable is not set.");
     return {
       statusCode: 500,
@@ -76,7 +77,8 @@ Return only a JSON object with a single property: "leads", which is an array of 
   const userQuery = `Generate 3 leads for a "${leadType}" prospect, matching the search term: "${searchTerm}" in the location: "${location}". 
 If the lead type is "residential", also consider the financial term: "${financialTerm}".`;
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
+  // Use the correct, renamed local constant for the API URL
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${LEAD_QUALIFIER_API_KEY}`;
 
   const payload = {
     contents: [{ parts: [{ text: userQuery }] }],
