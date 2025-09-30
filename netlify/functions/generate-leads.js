@@ -6,13 +6,12 @@
  * - Batch processing with controlled concurrency to generate large lists faster.
  * - Deduplication to ensure unique leads.
  * - Dynamic priority ranking based on enriched data.
- * - Robust exponential backoff with **FULL JITTER** for high reliability.
+ * - Robust exponential backoff with FULL JITTER for high reliability against 503 errors.
  *
  * NOTE: This function requires the 'node-fetch' and 'ioredis' packages to be installed
- * and available in the serverless environment dependencies for proper execution.
+ * and available in the serverless environment dependencies (as confirmed in package.json).
  */
 
-// IMPORTANT: These external modules must be available in the serverless environment
 const fetch = require('node-fetch');
 const Redis = require('ioredis');
 
@@ -83,9 +82,9 @@ function rankLeads(leads) {
 }
 
 // ====================
-// Exponential Backoff with Jitter (UPDATED: Increased delay and retries)
+// Exponential Backoff with Jitter
 // ====================
-const withBackoff = async (fn, maxRetries = 6, delay = 2000) => { // maxRetries set to 6, delay set to 2000ms
+const withBackoff = async (fn, maxRetries = 6, delay = 2000) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const response = await fn();
@@ -135,7 +134,7 @@ function getLeadTypeTemplate(leadType) {
 }
 
 // ====================
-// Generate Lead Batch with Concurrency (FIXED: Reduced CONCURRENCY)
+// Generate Lead Batch with Concurrency
 // ====================
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, batchCount) {
     // System instruction is simplified here since enrichment happens post-LLM call
@@ -149,7 +148,7 @@ async function generateLeadsBatch(leadType, searchTerm, location, financialTerm,
     // Queue creation for batches (each batch generates 3 leads)
     const queue = Array.from({ length: batchCount }, (_, i) => i);
     const leads = [];
-    const CONCURRENCY = 2; // REDUCED from 3 to 2 to ease load on a busy model
+    const CONCURRENCY = 2; // Reduced from 3 to 2 to ease load on a busy model
 
     const processQueue = async () => {
         while (queue.length > 0) {
