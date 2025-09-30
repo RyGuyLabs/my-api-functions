@@ -4,8 +4,10 @@
  * This file contains two exports:
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
- * * UPDATE: Incorporated PAIN_POINT_KEYWORDS and REVIEW_FOCUS_KEYWORDS for targeting high-intent leads 
- * * actively expressing dissatisfaction or seeking alternatives.
+ *
+ * * CRITICAL FIX: The primary search query was too restrictive (too many ANDs) resulting in zero results.
+ * * FIX: Combined Intent, Pain Point, and Review Focus keywords into one broad ACTIVE_BUYER_KEYWORDS 
+ * * array, separated by OR, to ensure the search is less restrictive while maintaining high quality.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -224,25 +226,21 @@ const SOCIAL_MEDIA_ENHANCERS = [
     `"looking for" AND ("service provider" OR "vendor")` 
 ];
 
-const INTENT_KEYWORDS = [
+// Combined list of all high-intent keywords to broaden the search
+const ACTIVE_BUYER_KEYWORDS = [
+    // Intent
     `"seeking recommendations for"`,
     `"looking for a quote for"`,
     `"need a referral for"`,
     `"who is the best" OR "top rated"`,
-    `"compare prices" OR "price list"`
-];
-
-// NEW: Focus on users expressing pain or seeking to replace a competitor/service
-const PAIN_POINT_KEYWORDS = [
+    `"compare prices" OR "price list"`,
+    // Pain Point
     `"unhappy with current provider"`,
     `"looking to replace my"`,
     `"worst experience with"`,
     `"switching from"`,
-    `"cancel subscription" OR "contract expired"`
-];
-
-// NEW: Focus on users actively asking for service reviews and alternatives
-const REVIEW_FOCUS_KEYWORDS = [
+    `"cancel subscription" OR "contract expired"`,
+    // Review Focus
     `"needs service provider review"`,
     `"who do you recommend for"`,
     `"best local" OR "top-rated"`,
@@ -285,21 +283,20 @@ You MUST follow the JSON schema provided in the generation config.`;
         const batchPromise = (async (batchIndex) => {
             let searchKeywords;
             
+            // Cycle through enhancers for variety
             const socialEnhancer = SOCIAL_MEDIA_ENHANCERS[batchIndex % SOCIAL_MEDIA_ENHANCERS.length];
-            const intentEnhancer = INTENT_KEYWORDS[batchIndex % INTENT_KEYWORDS.length]; 
-            const painPointEnhancer = PAIN_POINT_KEYWORDS[batchIndex % PAIN_POINT_KEYWORDS.length];
-            const reviewFocusEnhancer = REVIEW_FOCUS_KEYWORDS[batchIndex % REVIEW_FOCUS_KEYWORDS.length]; 
+            // CRITICAL FIX: Cycle through the broader active buyer list
+            const activeBuyerEnhancer = ACTIVE_BUYER_KEYWORDS[batchIndex % ACTIVE_BUYER_KEYWORDS.length]; 
             
             // Determine primary search keywords
             if (isResidential) {
                 const enhancer = personaKeywords[batchIndex % personaKeywords.length]; 
-                // CRITICAL: Combine all 5 layers: Persona, Social, Intent, Pain Point, and Negative Filters
-                searchKeywords = `${searchTerm} in ${location} AND (${enhancer}) AND (${socialEnhancer}) AND (${intentEnhancer}) AND (${painPointEnhancer}) ${NEGATIVE_QUERY}`;
+                // Primary Query: TERM + LOCATION + PERSONA + SOCIAL + ONE ACTIVE_BUYER (Intent/Pain/Review) + NEGATIVES
+                searchKeywords = `${searchTerm} in ${location} AND (${enhancer}) AND (${socialEnhancer}) AND (${activeBuyerEnhancer}) ${NEGATIVE_QUERY}`;
             } else {
                 const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
-                // CRITICAL: Combine all 5 layers: B2B, Social, Intent, Review Focus, and Negative Filters
-                // Using Review Focus for B2B as well, highly valuable for vendor selection.
-                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer}) AND (${socialEnhancer}) AND (${intentEnhancer}) AND (${reviewFocusEnhancer}) ${NEGATIVE_QUERY}`;
+                // Primary Query: TERM + LOCATION + B2B + SOCIAL + ONE ACTIVE_BUYER (Intent/Pain/Review) + NEGATIVES
+                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer}) AND (${socialEnhancer}) AND (${activeBuyerEnhancer}) ${NEGATIVE_QUERY}`;
             }
             
             // 1. Get verified search results (Primary)
@@ -310,12 +307,13 @@ You MUST follow the JSON schema provided in the generation config.`;
                 console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
                 let fallbackSearchKeywords;
                 if (isResidential) {
-                    // Fallback uses just the persona-specific keyword + location
+                    // Fallback uses just the best persona-specific keyword + location
                     const fallbackQuery = personaKeywords[0]; 
                     fallbackSearchKeywords = `${fallbackQuery} in ${location} ${NEGATIVE_QUERY}`;
                 } else {
-                    // Fallback uses just the searchTerm + location
-                    fallbackSearchKeywords = `${searchTerm} in ${location} ${NEGATIVE_QUERY}`;
+                    // Fallback uses just the best commercial keyword + location
+                    const fallbackQuery = COMMERCIAL_ENHANCERS[0];
+                    fallbackSearchKeywords = `${searchTerm} in ${location} AND (${fallbackQuery}) ${NEGATIVE_QUERY}`;
                 }
                 const fallbackResults = await googleSearch(fallbackSearchKeywords, 3); 
                 gSearchResults.push(...fallbackResults);
