@@ -79,6 +79,11 @@ exports.handler = async (event) => {
             tools: [{ "google_search": {} }],
             // Include the system instruction for formatting
             systemInstruction: { parts: [{ text: systemInstruction }] },
+            // ADDED: Configuration to improve generation speed and reduce timeout risk
+            generationConfig: {
+                temperature: 0.2, // Lower temperature for direct, less exploratory answers
+                maxOutputTokens: 2048, // Limit token count to ensure faster response
+            }
         };
 
         // 5. Call the Gemini API (Assumes global fetch is available, typical in Node 18+ environments)
