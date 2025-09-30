@@ -58,6 +58,7 @@ const withBackoff = async (fn, maxRetries = 6, baseDelay = 2000) => {
 async function enrichEmail(name, website) {
     try {
         const domain = new URL(website).hostname;
+        // Simple attempt to create a first.last@domain
         return `${name.toLowerCase().split(' ')[0]}.${name.toLowerCase().split(' ').pop()}@${domain}`.replace(/\s/g, '');
     } catch {
         return `info@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
@@ -65,10 +66,12 @@ async function enrichEmail(name, website) {
 }
 
 async function enrichPhoneNumber() {
+    // Generate a mock US phone number
     return `+1-555-${Math.floor(1000000 + Math.random() * 9000000)}`;
 }
 
 function computeQualityScore(lead) {
+    // Logic for quality remains based on contact data found/generated
     if (lead.email && lead.phoneNumber && lead.email.includes('@')) return 'High';
     if (!lead.email && !lead.phoneNumber) return 'Low';
     return 'Medium';
@@ -151,16 +154,16 @@ async function generateGeminiLeads(query, systemInstruction) {
         items: {
             type: "OBJECT",
             properties: {
-                name: { type: "STRING", description: "Official business name." },
-                description: { type: "STRING", description: "A concise summary of the business derived from search results." },
-                website: { type: "STRING", description: "The primary website URL." },
+                name: { type: "STRING", description: "Official business name/individual name." },
+                description: { type: "STRING", description: "A concise summary of the business/individual derived from search results." },
+                website: { type: "STRING", description: "The primary website/social profile URL." },
                 email: { type: "STRING", description: "A placeholder or suggested email address." },
                 phoneNumber: { type: "STRING", description: "A placeholder or suggested phone number." },
                 qualityScore: { type: "STRING", description: "Rating of the lead quality (High, Medium, or Low)." },
                 insights: { type: "STRING", description: "Premium insight derived from search results." },
                 suggestedAction: { type: "STRING", description: "The next best action to pursue this lead." },
                 draftPitch: { type: "STRING", description: "A one-sentence draft sales pitch." },
-                socialSignal: { type: "STRING", description: "Recent social or news signal about the company." },
+                socialSignal: { type: "STRING", description: "Recent social or news signal about the company/individual." },
             },
             propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal"]
         }
@@ -223,11 +226,14 @@ const PERSONA_KEYWORDS = {
         `"recent move" OR "relocation" OR "new job in area"`
     ],
     // Life Insurance Agent: Targets age/wealth-based life events.
+    // NOTE: Frontend should use simple, high-signal search terms (e.g., "affluent individuals") 
+    // for this persona, not terms that conflict with wealth enhancers (e.g., "homeowners").
     "life_insurance": [
         `"high net worth" OR "affluent"`,
-        `"age 35-65" OR "financial planning seminar"`,
-        `"estate planning attorney" OR "trust fund establishment"`,
-        `"IRA rollover" OR "annuity comparison"`
+        `"financial planning seminar" OR "estate planning attorney"`,
+        `"trust fund establishment" OR "recent inheritance"`,
+        `"IRA rollover" OR "annuity comparison"`,
+        `"age 50+" OR "retirement specialist"`
     ],
     // Financial Advisor / Wealth Management: Targets investors and business owners.
     "financial_advisor": [
@@ -252,10 +258,10 @@ const PERSONA_KEYWORDS = {
     ],
     // Default fallback for any unlisted B2C type.
     "default": [
-        `"wedding planning" OR "event venue booking"`,
-        `"new job relocation" OR "moving company quotes"`,
-        `"recent college graduate" OR "first apartment furniture"`,
-        `"business license application" OR "small business startup help"`
+        `"event venue booking"`,
+        `"moving company quotes"`,
+        `"recent college graduate"`,
+        `"small business startup help"`
     ]
 };
 
@@ -273,8 +279,8 @@ const COMMERCIAL_ENHANCERS = [
 // Lead Generator
 // -------------------------
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, totalBatches = 4) {
-    // NOTE: The frontend must now pass the simple user-input keyword (e.g., "homeowners") 
-    // as the 'searchTerm', not the long OR string.
+    // NOTE: The frontend must pass the simple user-input keyword (e.g., "homeowners") 
+    // as the 'searchTerm', not a long OR string.
     console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Persona: ${salesPersona}. Total batches: ${totalBatches}`);
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -290,32 +296,60 @@ You MUST follow the JSON schema provided in the generation config.`;
     for (let i = 0; i < totalBatches; i++) {
         
         let searchKeywords;
+        let isResidential = leadType === 'residential';
         
-        // --- START ENHANCEMENT: Conditional Search Keywords based on Lead Type ---
-        if (leadType === 'residential') {
+        // --- START PRIMARY QUERY CONSTRUCTION ---
+        if (isResidential) {
             const enhancer = personaKeywords[i % personaKeywords.length]; 
-            // FIX: Remove quotes around ${searchTerm} to treat it as a normal keyword,
-            // preventing the overly restrictive search query from the error log.
-            // Example: homeowners in Miami, Florida AND ("high net worth" OR "affluent")
+            // Query: [User Input] in [Location] AND ([Persona Enhancer])
             searchKeywords = `${searchTerm} in ${location} AND (${enhancer})`;
         } else {
-            // B2B (commercial) logic remains correct but is also modified to use unquoted searchTerm
+            // B2B (commercial) logic: [User Input] in [Location] AND ([B2B Enhancer])
             const b2bEnhancer = COMMERCIAL_ENHANCERS[i % COMMERCIAL_ENHANCERS.length];
-            // Example: software companies in Miami, Florida AND ("new funding" OR "business expansion")
             searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer})`;
         }
-        // --- END ENHANCEMENT ---
         
-        console.log(`[Batch ${i+1}/${totalBatches}] Searching with keywords: "${searchKeywords}"`);
+        console.log(`[Batch ${i+1}/${totalBatches}] Searching (Primary) with keywords: "${searchKeywords}"`);
 
         // 1. Get verified search results using Custom Search
-        const gSearchResults = await googleSearch(searchKeywords, 5); // Search for 5 results to give Gemini options
+        // numResults increased to 10 for better Gemini context
+        let gSearchResults = await googleSearch(searchKeywords, 10); 
         
-        if (gSearchResults.length === 0) {
-            console.warn(`Custom Search returned no results for batch ${i}. Skipping Gemini step.`);
-            continue;
+        if (gSearchResults.length > 0) {
+            console.log(`[Batch ${i+1}/${totalBatches}] Primary search returned ${gSearchResults.length} results.`);
         }
+        
+        // --- START FALLBACK SEARCH MECHANISM ---
+        if (gSearchResults.length === 0) {
+            
+            console.warn(`[Batch ${i+1}/${totalBatches}] No results for primary query: "${searchKeywords}". Trying simplified fallback...`);
 
+            let fallbackSearchKeywords;
+            
+            if (isResidential) {
+                 // Residential Fallback: Uses only the simplest persona enhancer
+                const fallbackQuery = personaKeywords[0]; 
+                fallbackSearchKeywords = `${fallbackQuery} in ${location}`;
+            } else {
+                 // B2B Fallback: Removes the specific B2B enhancer
+                 fallbackSearchKeywords = `${searchTerm} in ${location}`;
+            }
+            
+            console.log(`[Batch ${i+1}/${totalBatches}] Fallback query: "${fallbackSearchKeywords}"`);
+            
+            // Increased fallback results to 5
+            const fallbackResults = await googleSearch(fallbackSearchKeywords, 5); 
+            gSearchResults.push(...fallbackResults);
+
+            if (gSearchResults.length === 0) {
+                 console.warn(`[Batch ${i+1}/${totalBatches}] Fallback search also returned no results. Skipping Gemini step.`);
+                 continue;
+            } else {
+                 console.log(`[Batch ${i+1}/${totalBatches}] Fallback successful, found ${fallbackResults.length} results.`);
+            }
+        } 
+        // If gSearchResults.length is still 0 after all attempts, the loop continues to the next batch.
+        
         // 2. Feed results to Gemini for formatting, enrichment, and qualification
         
         const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${searchTerm}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
