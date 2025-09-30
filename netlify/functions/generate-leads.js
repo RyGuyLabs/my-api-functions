@@ -1,194 +1,163 @@
-// Netlify Serverless Function to securely call the Gemini API
-// Handles the API key, validates input, and ranks leads by quality.
+/**
+ * Conceptual logic for the Netlify serverless function 'generate-leads'.
+ *
+ * FIX: This logic removes the unsupported combination of 'tools' (for Google Search)
+ * and 'responseSchema' (for structured JSON). Instead, it uses a detailed
+ * system instruction to force the model to output a raw JSON string, which is then
+ * manually parsed before being returned to the client.
+ */
 
-const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+// NOTE: Ensure your Netlify environment variables are correctly loaded.
+const GEMINI_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const MODEL_NAME = 'gemini-2.5-flash-preview-05-20'; // Using the recommended flash model
 
-// Renamed local constant to match the environment variable name for clarity
-const LEAD_QUALIFIER_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
-const MODEL_NAME = "gemini-2.5-flash-preview-05-20";
+exports.handler = async (event) => {
+    // 1. Validate incoming client request
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, body: 'Method Not Allowed' };
+    }
 
-exports.handler = async (event, context) => {
-  // Check for API key presence
-  if (!LEAD_QUALIFIER_API_KEY) {
-    console.error("LEAD_QUALIFIER_API_KEY environment variable is not set.");
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Server configuration error: API key missing." }),
-    };
-  }
-
-  // Only allow POST requests
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
-  let params;
-  try {
-    params = JSON.parse(event.body);
-  } catch (error) {
-    return { statusCode: 400, body: JSON.stringify({ error: "Invalid JSON body provided." }) };
-  }
-
-  const { leadType, searchTerm, location, financialTerm } = params;
-
-  // Validate incoming parameters
-  if (!leadType || !searchTerm || !location) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({
-        error: "Missing required parameters (leadType, searchTerm, or location).",
-      }),
-    };
-  }
-
-  // --- Gemini API Configuration ---
-  const systemPrompt = `
-You are a specialized, top-tier Sales Intelligence Analyst and Lead Generator.
-Your goal is to produce leads that are high-quality, validated, and distinctive from common database entries, adding next-level value for the consumer.
-
-You must generate exactly 3 highly qualified leads based on the user's criteria. 
-Each lead must include:
-1. A verifiable trigger event or signal sourced from search results (e.g., funding round, new leadership, expansion, major financial event).
-2. A justification referencing that trigger.
-3. A suggested outreach strategy tied directly to that signal.
-
-If a lead cannot be validated by a real-world triggering event, replace it with a stronger one.
-
-For each lead, provide:
-- name
-- brief description
-- realistic or scraped contact information whenever possible (if unavailable, infer the closest domain and provide a role-based email like info@company.com)
-- website
-- email
-- phone number
-- QualityScore (High, Medium, Low) based only on the strength and recency of the validation signal
-- insights justifying the lead quality
-- suggestedAction
-- draftPitch tailored to the validation signal
-- socialSignal (the specific trigger event found)
-
-Your response must be valid JSON only.
-Do not include explanations, commentary, or markdown formatting.
-Do not wrap the output in code fences.
-Return only a JSON object with a single property: "leads", which is an array of exactly 3 lead objects.
-`;
-
-  const userQuery = `Generate 3 leads for a "${leadType}" prospect, matching the search term: "${searchTerm}" in the location: "${location}". 
-If the lead type is "residential", also consider the financial term: "${financialTerm}".`;
-
-  // Use the correct, renamed local constant for the API URL
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${LEAD_QUALIFIER_API_KEY}`;
-
-  const payload = {
-    contents: [{ parts: [{ text: userQuery }] }],
-    tools: [{ google_search: {} }],
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          leads: {
-            type: "ARRAY",
-            description: "A list of exactly three generated leads.",
-            items: {
-              type: "OBJECT",
-              properties: {
-                name: { type: "STRING" },
-                description: { type: "STRING" },
-                website: { type: "STRING" },
-                email: { type: "STRING" },
-                phoneNumber: { type: "STRING" },
-                qualityScore: { type: "STRING", enum: ["High", "Medium", "Low"] },
-                insights: { type: "STRING" },
-                suggestedAction: { type: "STRING" },
-                draftPitch: { type: "STRING" },
-                socialSignal: { type: "STRING" },
-              },
+    // Handle OPTIONS preflight request for CORS
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
             },
-          },
-        },
-      },
-    },
-  };
-
-  try {
-    // 1. Call Gemini API
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`Gemini API HTTP Error: ${response.status}`, errorBody);
-      return {
-        statusCode: response.status,
-        body: JSON.stringify({
-          error: "Failed to communicate with the Gemini API.",
-          details: errorBody,
-        }),
-      };
+            body: '',
+        };
     }
 
-    // 2. Process Response
-    const result = await response.json();
-    let jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!jsonString) {
-      console.error("Received an empty response from the AI.");
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "AI returned an empty response." }),
-      };
-    }
-
-    // Clean up markdown wrappers if present
-    jsonString = jsonString.replace(/```json|```/g, "").trim();
-
-    let parsedResult;
     try {
-      parsedResult = JSON.parse(jsonString);
-    } catch (err) {
-      console.error("Bad JSON from AI:", jsonString);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({
-          error: "Failed to parse JSON from AI.",
-          details: err.message,
-        }),
-      };
+        const { leadType, searchTerm, location, financialTerm } = JSON.parse(event.body);
+
+        // Validate required input fields
+        if (!leadType || !searchTerm || !location) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: "Missing required parameters: leadType, searchTerm, or location." })
+            };
+        }
+
+        // 2. Construct the prompt for the model
+        const userQuery = `Generate exactly 3 high-quality leads for a ${leadType} sales campaign.
+        Target profile: ${searchTerm}.
+        Target location: ${location}.
+        ${leadType === 'residential' ? `Financial filter: ${financialTerm}` : ''}
+        Provide the output as a single, valid JSON array that strictly adheres to the schema provided in the system instruction.`;
+
+        // 3. Define the System Instruction (the key fix for structured output + tool use)
+        const systemInstruction = `You are an expert Lead Generation analyst using Google Search for real-time data.
+        Your response MUST be a single, valid JSON array containing exactly 3 objects.
+        Do NOT include any surrounding text, comments, or markdown ticks (e.g., \`\`\`) in your final output.
+
+        The JSON structure MUST conform to this schema:
+        [
+          {
+            "name": "string (Company or Individual Name)",
+            "description": "string (1-2 sentence description of the lead)",
+            "website": "string (Full URL found via search, must include http/https)",
+            "email": "string (A plausible, inferred or found contact email)",
+            "phoneNumber": "string (A plausible, inferred or found phone number)",
+            "qualityScore": "string (High, Medium, or Low, based on fit to query)",
+            "insights": "string (Explain why this lead is valuable and current)",
+            "suggestedAction": "string (Immediate next step for a salesperson, e.g., 'Draft email based on X news.')",
+            "draftPitch": "string (A short, personalized 2-sentence draft pitch)",
+            "socialSignal": "string (Latest relevant public activity or news)"
+          }
+          // ... two more objects
+        ]
+        `;
+
+        // 4. Construct the API Payload
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            // Include the search tool for grounding
+            tools: [{ "google_search": {} }],
+            // Include the system instruction for formatting
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            // Model configuration (must be present)
+            config: {
+                // Ensure API key is set for the fetch call if not using the environment's default
+                // Though Netlify functions typically require the key to be passed via the URL or headers
+            }
+        };
+
+        // 5. Call the Gemini API (Assumes global fetch is available, typical in Node 18+ environments)
+        const response = await fetch(`${API_BASE_URL}/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            // Handle API error response
+            console.error("Gemini API Error:", result);
+            return {
+                statusCode: result.error?.code || 500,
+                body: JSON.stringify({ error: "Failed to communicate with the Gemini API.", details: JSON.stringify(result) }),
+            };
+        }
+
+        // 6. Extract and MANUALLY Parse the raw text output
+        const rawJsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!rawJsonText) {
+             return {
+                statusCode: 500,
+                body: JSON.stringify({ error: "Gemini response was empty or malformed." }),
+            };
+        }
+
+        // Clean up the JSON text just in case the model added leading/trailing spaces or new lines
+        const cleanJsonText = rawJsonText.trim();
+        let leadsArray;
+
+        // CRITICAL FIX: Add try...catch around JSON.parse for model output resilience
+        try {
+            leadsArray = JSON.parse(cleanJsonText);
+        } catch (parseError) {
+             console.error("JSON Parsing Error:", parseError.message, "Raw Text:", cleanJsonText);
+             return {
+                statusCode: 500,
+                body: JSON.stringify({ 
+                    error: "Failed to parse JSON response from the language model. The model did not return perfect JSON.", 
+                    details: parseError.message,
+                    rawOutput: cleanJsonText // Return the raw output to help debug the model's failure
+                }),
+            };
+        }
+        
+        // Optional: Validate the returned array structure
+        if (!Array.isArray(leadsArray) || leadsArray.length !== 3) {
+            console.error("AI did not return exactly 3 leads or structure is incorrect. Array Length:", leadsArray ? leadsArray.length : 0);
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ error: "AI did not return exactly 3 leads as expected, or the array structure is incorrect.", rawOutput: cleanJsonText })
+            };
+        }
+
+        // 7. Success: Return the parsed leads array to the client
+        return {
+            statusCode: 200,
+            headers: { 
+                'Content-Type': 'application/json',
+                // This header is required if you remove the proxy on the client side later
+                'Access-Control-Allow-Origin': '*' 
+            },
+            body: JSON.stringify({ leads: leadsArray }),
+        };
+
+    } catch (error) {
+        console.error("Serverless Function Error:", error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: `Internal Server Error: ${error.message}` }),
+        };
     }
-
-    // Defensive check: Ensure the 'leads' array exists
-    if (!parsedResult.leads || !Array.isArray(parsedResult.leads)) {
-      console.error("No 'leads' array found:", parsedResult);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "AI response missing 'leads' array." }),
-      };
-    }
-
-    // 3. Rank leads by value (High > Medium > Low)
-    const scoreMap = { High: 3, Medium: 2, Low: 1 };
-    const rankedLeads = parsedResult.leads.sort(
-      (a, b) => scoreMap[b.qualityScore] - scoreMap[a.qualityScore]
-    );
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify(rankedLeads),
-    };
-  } catch (error) {
-    console.error("Serverless function execution error:", error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: "Internal Server Error during AI processing.",
-        details: error.message,
-      }),
-    };
-  }
 };
