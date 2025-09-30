@@ -119,8 +119,7 @@ async function googleSearch(query, numResults = 3) {
 
     const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
     
-    // FIX: Apply stricter retry limits (max 3 retries, 500ms base delay) 
-    // to prevent Netlify function timeout (30 seconds) during backoff.
+    // Apply stricter retry limits to prevent Netlify function timeout
     const response = await withBackoff(() => fetch(url), 3, 500); 
     const data = await response.json();
     
@@ -173,13 +172,12 @@ async function generateGeminiLeads(query, systemInstruction) {
         generationConfig: { 
             temperature: 0.2, 
             maxOutputTokens: 2048,
-            // CRITICAL FIX: Enforce JSON output structure
+            // CRITICAL: Enforce JSON output structure
             responseMimeType: "application/json",
             responseSchema: responseSchema
         }
     };
     
-    // FIX: Apply stricter backoff limits (max 4 retries, 1000ms base delay) 
     console.log('[Gemini] Sending request to Gemini API...'); 
     const response = await withBackoff(() =>
         fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
@@ -190,31 +188,20 @@ async function generateGeminiLeads(query, systemInstruction) {
     );
     const result = await response.json();
     
-    // Since responseMimeType is set to application/json, the output should be clean JSON text.
     let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
-    
-    // With responseMimeType="application/json", we skip the complicated string manipulation (stripping markdown/conversational text)
-    // and go straight to parsing the output.
     
     try {
         // Attempt 1: Standard parse 
         return JSON.parse(raw);
     } catch (e) {
-        // CRITICAL FIX: The error is "Unterminated string in JSON", meaning an unescaped double quote 
-        // was generated inside a string value (e.g., in 'description').
-        // This attempts to sanitize the raw output by escaping any unescaped quotes.
-        
+        // Fallback: Attempt to sanitize unescaped quotes if standard parse fails
         let cleanedText = raw;
-        
-        // This regex aggressively escapes quotes that are preceded by something OTHER than a backslash, 
-        // preventing an unescaped quote within a string field from prematurely terminating the JSON structure.
         cleanedText = cleanedText.replace(/([^\\])"/g, (match, p1) => `${p1}\\"`);
         
         try {
             // Attempt 2: Parse the aggressively cleaned string
             return JSON.parse(cleanedText);
         } catch (e2) {
-            // If even the cleaned version fails, log both errors and throw the original.
             console.error("Failed to parse Gemini output as JSON, even with structured output enforcement and aggressive cleaning. Original error:", e.message);
             console.error("Second attempt error after cleaning:", e2.message);
             console.error("Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
@@ -224,17 +211,12 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// NEW: Targeted B2C Keyword Definitions (Persona-Based)
+// B2C Targeted Keyword Definitions (Persona-Based)
 // -------------------------
-
-/**
- * Maps sales personas to high-intent, verifiable search keywords for B2C leads.
- * The system will cycle through these keyword arrays for batches to maximize diversity.
- */
 const PERSONA_KEYWORDS = {
     // Real Estate Agent: Targets high-intent movers and property owners.
     "real_estate": [
-        `"homeowner" AND "recently purchased home"`,
+        `"home buyer" OR "recently purchased home"`,
         `"new construction" OR "single-family home"`,
         `"building permit" OR "home renovation project estimate"`,
         `"pre-foreclosure" OR "distressed property listing"`,
@@ -278,10 +260,20 @@ const PERSONA_KEYWORDS = {
 };
 
 // -------------------------
+// NEW: B2B Targeted Keyword Definitions (Growth Signals)
+// -------------------------
+const COMMERCIAL_ENHANCERS = [
+    `"new funding" OR "business expansion"`,
+    `"recent hiring" OR "job posting"`,
+    `"moved office" OR "new commercial building"`,
+    `"new product launch" OR "major contract win"`
+];
+
+// -------------------------
 // Lead Generator
 // -------------------------
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, totalBatches = 4) {
-    console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Persona: ${salesPersona}. Total batches: ${totalBatches}`); // ADDED LOG
+    console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Persona: ${salesPersona}. Total batches: ${totalBatches}`);
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
@@ -295,24 +287,26 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     
     // We run this in sequence (not concurrently) to ensure the search results for one batch
-    // are generated before the next batch search starts, which may help diversify results.
     for (let i = 0; i < totalBatches; i++) {
         
-        const baseSearchQuery = `${searchTerm} in ${location}`;
-        
-        // --- START ENHANCEMENT: Conditional Search Keywords based on salesPersona ---
         let searchKeywords;
+        
+        // --- START ENHANCEMENT: Conditional Search Keywords based on Lead Type ---
         if (leadType === 'residential') {
-            // Cycle through the persona-specific keyword array for diversity
+            // FIX: Ensure the user's primary search term is in quotes for precision
+            // and cycle through the persona-specific keyword array for diversity.
             const enhancer = personaKeywords[i % personaKeywords.length]; 
-            searchKeywords = `${baseSearchQuery} ${enhancer}`;
+            // Combined query: User's Term in Location AND one specific, high-intent enhancer
+            searchKeywords = `"${searchTerm}" in ${location} AND (${enhancer})`;
         } else {
-            // For B2B (commercial), maintain company focus but add a growth signal for higher qualification
-            searchKeywords = `${baseSearchQuery} company website OR "new funding" OR "business expansion"`;
+            // B2B (commercial): Cycle through high-intent commercial growth signals for diversity
+            const b2bEnhancer = COMMERCIAL_ENHANCERS[i % COMMERCIAL_ENHANCERS.length];
+            // Combined query: User's Term in Location AND one specific growth signal
+            searchKeywords = `"${searchTerm}" in ${location} AND (${b2bEnhancer})`;
         }
         // --- END ENHANCEMENT ---
         
-        console.log(`[Batch ${i+1}/${totalBatches}] Searching with keywords: "${searchKeywords}"`); // Added specific batch log
+        console.log(`[Batch ${i+1}/${totalBatches}] Searching with keywords: "${searchKeywords}"`);
 
         // 1. Get verified search results using Custom Search
         const gSearchResults = await googleSearch(searchKeywords, 5); // Search for 5 results to give Gemini options
@@ -324,7 +318,6 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
 
         // 2. Feed results to Gemini for formatting, enrichment, and qualification
         
-        // CRITICAL FIX: Embed the B2C/B2B context from 'template' directly into the user query.
         const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${searchTerm}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
 
         const geminiLeads = await generateGeminiLeads(
@@ -350,7 +343,7 @@ You MUST follow the JSON schema provided in the generation config.`; // Simplifi
 // -------------------------
 exports.handler = async (event) => {
     
-    // FIX 1: Define a unified set of headers for all success and error responses
+    // Define a unified set of headers for all success and error responses
     const CORS_HEADERS = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -366,7 +359,7 @@ exports.handler = async (event) => {
         };
     }
     
-    // 2. 405 Method Not Allowed handler (FIX: previously returned without headers)
+    // 2. 405 Method Not Allowed handler
     if (event.httpMethod !== 'POST') {
         return { 
             statusCode: 405, 
@@ -378,7 +371,7 @@ exports.handler = async (event) => {
     try {
         // Updated to accept salesPersona
         const { leadType, searchTerm, location, financialTerm, totalLeads, salesPersona } = JSON.parse(event.body);
-        console.log(`[Handler] Request received for: ${searchTerm} in ${location}. Persona: ${salesPersona}`); // ADDED LOG
+        console.log(`[Handler] Request received for: ${searchTerm} in ${location}. Persona: ${salesPersona}`);
         
         // salesPersona is now required for B2C logic
         if (!leadType || !searchTerm || !location || !salesPersona) return { 
@@ -393,7 +386,7 @@ exports.handler = async (event) => {
 
         const leads = await generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, batchesToRun);
         
-        console.log(`[Handler] Successfully generated ${leads.length} leads.`); // ADDED LOG
+        console.log(`[Handler] Successfully generated ${leads.length} leads.`);
 
         // 3. 200 Success handler
         return {
@@ -403,7 +396,7 @@ exports.handler = async (event) => {
         };
     } catch (err) {
         console.error('Lead Generator Error:', err);
-        // 4. 500 Error handler (FIX: using unified headers)
+        // 4. 500 Error handler
         return { 
             statusCode: 500, 
             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
