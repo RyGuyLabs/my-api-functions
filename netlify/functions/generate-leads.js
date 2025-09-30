@@ -4,8 +4,8 @@
  * This file contains two exports:
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
- * * FIX APPLIED: Enforced a max of 3 leads for exports.handler to avoid client timeouts.
- * Added the robust exports.background for large jobs.
+ * * UPDATE: Incorporated PAIN_POINT_KEYWORDS and REVIEW_FOCUS_KEYWORDS for targeting high-intent leads 
+ * * actively expressing dissatisfaction or seeking alternatives.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -51,9 +51,8 @@ const withBackoff = async (fn, maxRetries = 6, baseDelay = 2000) => {
 };
 
 // -------------------------
-// Enrichment & Quality Helpers (omitted for brevity, assume unchanged)
+// Enrichment & Quality Helpers
 // -------------------------
-
 async function enrichEmail(name, website) {
     try {
         const domain = new URL(website).hostname;
@@ -116,6 +115,9 @@ async function googleSearch(query, numResults = 3) {
     }
 
     const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
+    
+    // CRITICAL DEBUGGING LOG: Log the final query being sent.
+    console.log(`[Google Search] Sending Query: ${query}`); 
     
     const response = await withBackoff(() => fetch(url), 3, 500); 
     const data = await response.json();
@@ -198,7 +200,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// Keyword Definitions (omitted for brevity, assume unchanged)
+// Keyword Definitions 
 // -------------------------
 const PERSONA_KEYWORDS = {
     "real_estate": [`"home buyer" OR "recently purchased home"`, `"new construction" OR "single-family home"`, `"building permit" OR "home renovation project estimate"`, `"pre-foreclosure" OR "distressed property listing"`, `"recent move" OR "relocation" OR "new job in area"`],
@@ -214,6 +216,51 @@ const COMMERCIAL_ENHANCERS = [
     `"moved office" OR "new commercial building"`,
     `"new product launch" OR "major contract win"`
 ];
+
+const SOCIAL_MEDIA_ENHANCERS = [
+    `site:linkedin.com AND ("connection" OR "new role")`,
+    `site:twitter.com OR site:x.com AND ("seeking" OR "looking for service")`,
+    `site:facebook.com/groups OR site:reddit.com/r AND ("recommendation" OR "referral")`,
+    `"looking for" AND ("service provider" OR "vendor")` 
+];
+
+const INTENT_KEYWORDS = [
+    `"seeking recommendations for"`,
+    `"looking for a quote for"`,
+    `"need a referral for"`,
+    `"who is the best" OR "top rated"`,
+    `"compare prices" OR "price list"`
+];
+
+// NEW: Focus on users expressing pain or seeking to replace a competitor/service
+const PAIN_POINT_KEYWORDS = [
+    `"unhappy with current provider"`,
+    `"looking to replace my"`,
+    `"worst experience with"`,
+    `"switching from"`,
+    `"cancel subscription" OR "contract expired"`
+];
+
+// NEW: Focus on users actively asking for service reviews and alternatives
+const REVIEW_FOCUS_KEYWORDS = [
+    `"needs service provider review"`,
+    `"who do you recommend for"`,
+    `"best local" OR "top-rated"`,
+    `"reliable service" OR "trustworthy contractor"`,
+    `"alternatives to"`
+];
+
+const NEGATIVE_FILTERS = [
+    `-job`, 
+    `-careers`, 
+    `-"press release"`, 
+    `-"blog post"`, 
+    `-"how to"`, 
+    `-"ultimate guide"`
+];
+
+const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
+
 
 // -------------------------
 // Lead Generator Core (CONCURRENT EXECUTION)
@@ -238,13 +285,21 @@ You MUST follow the JSON schema provided in the generation config.`;
         const batchPromise = (async (batchIndex) => {
             let searchKeywords;
             
+            const socialEnhancer = SOCIAL_MEDIA_ENHANCERS[batchIndex % SOCIAL_MEDIA_ENHANCERS.length];
+            const intentEnhancer = INTENT_KEYWORDS[batchIndex % INTENT_KEYWORDS.length]; 
+            const painPointEnhancer = PAIN_POINT_KEYWORDS[batchIndex % PAIN_POINT_KEYWORDS.length];
+            const reviewFocusEnhancer = REVIEW_FOCUS_KEYWORDS[batchIndex % REVIEW_FOCUS_KEYWORDS.length]; 
+            
             // Determine primary search keywords
             if (isResidential) {
                 const enhancer = personaKeywords[batchIndex % personaKeywords.length]; 
-                searchKeywords = `${searchTerm} in ${location} AND (${enhancer})`;
+                // CRITICAL: Combine all 5 layers: Persona, Social, Intent, Pain Point, and Negative Filters
+                searchKeywords = `${searchTerm} in ${location} AND (${enhancer}) AND (${socialEnhancer}) AND (${intentEnhancer}) AND (${painPointEnhancer}) ${NEGATIVE_QUERY}`;
             } else {
                 const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
-                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer})`;
+                // CRITICAL: Combine all 5 layers: B2B, Social, Intent, Review Focus, and Negative Filters
+                // Using Review Focus for B2B as well, highly valuable for vendor selection.
+                searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer}) AND (${socialEnhancer}) AND (${intentEnhancer}) AND (${reviewFocusEnhancer}) ${NEGATIVE_QUERY}`;
             }
             
             // 1. Get verified search results (Primary)
@@ -252,12 +307,15 @@ You MUST follow the JSON schema provided in the generation config.`;
             
             // 2. Fallback search if primary fails
             if (gSearchResults.length === 0) {
+                console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
                 let fallbackSearchKeywords;
                 if (isResidential) {
+                    // Fallback uses just the persona-specific keyword + location
                     const fallbackQuery = personaKeywords[0]; 
-                    fallbackSearchKeywords = `${fallbackQuery} in ${location}`;
+                    fallbackSearchKeywords = `${fallbackQuery} in ${location} ${NEGATIVE_QUERY}`;
                 } else {
-                    fallbackSearchKeywords = `${searchTerm} in ${location}`;
+                    // Fallback uses just the searchTerm + location
+                    fallbackSearchKeywords = `${searchTerm} in ${location} ${NEGATIVE_QUERY}`;
                 }
                 const fallbackResults = await googleSearch(fallbackSearchKeywords, 3); 
                 gSearchResults.push(...fallbackResults);
@@ -301,7 +359,6 @@ You MUST follow the JSON schema provided in the generation config.`;
 
 // ------------------------------------------------
 // 1. Synchronous Handler (Quick Job: Max 3 Leads)
-// Endpoint: /.netlify/functions/ultimate-lead-generator
 // ------------------------------------------------
 exports.handler = async (event) => {
     
@@ -332,7 +389,7 @@ exports.handler = async (event) => {
              body: JSON.stringify({ error: "Missing required parameters." }) 
         };
 
-        // CRITICAL FIX: Hard limit the synchronous job to 1 batch (3 leads)
+        // CRITICAL: Hard limit the synchronous job to 1 batch (3 leads)
         const batchesToRun = 1; 
         const requiredLeads = 3;
 
@@ -357,7 +414,6 @@ exports.handler = async (event) => {
 
 // ------------------------------------------------
 // 2. Asynchronous Handler (Background Job: Unlimited Leads)
-// Endpoint: /.netlify/functions/ultimate-lead-generator-background
 // ------------------------------------------------
 exports.background = async (event) => {
     
@@ -367,9 +423,8 @@ exports.background = async (event) => {
         'Access-Control-Allow-Headers': 'Content-Type',
     };
     
-    // Immediate return for the client
     const immediateResponse = {
-        statusCode: 202, // 202 Accepted: The request has been accepted for processing, but the processing has not been completed.
+        statusCode: 202, // 202 Accepted
         headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
         body: JSON.stringify({ status: 'Job accepted', message: 'Lead generation is running in the background. Results will be saved server-side.' })
     };
@@ -378,14 +433,13 @@ exports.background = async (event) => {
         const { leadType, searchTerm, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
 
         if (!leadType || !searchTerm || !location || !salesPersona) {
-             // Log error, but still return 202 to the client (we can't fail the background job here)
              console.error("Background job missing required parameters:", event.body);
         }
 
-        // Return the 202 response *immediately* to prevent client timeout
         console.log(`[Background] Job accepted for ${totalLeads} leads. Returning 202 to client.`);
+        
+        // Execute the heavy logic asynchronously after returning the 202 response
         setTimeout(() => {
-            // Execution continues asynchronously after the immediate return
             (async () => {
                 try {
                     const batchesToRun = Math.ceil(totalLeads / 3);
@@ -394,20 +448,17 @@ exports.background = async (event) => {
                     const leads = await generateLeadsBatch(leadType, searchTerm, location, salesPersona, batchesToRun);
                     
                     console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database.`);
-                    // NOTE: In a real app, this is where you would call a Firestore/Database function to SAVE the leads.
                     
                 } catch (err) {
                     console.error('[Background] Async Lead Generation Failed:', err.message);
-                    // Handle failure (e.g., log to a monitoring service)
                 }
             })();
-        }, 0); // Execute the rest of the logic asynchronously
+        }, 0); 
 
         return immediateResponse;
 
     } catch (err) {
         console.error('Background Handler Initialization Error:', err);
-        // Even if the initial parsing fails, we must still return an acceptance status for the background function type.
         return immediateResponse; 
     }
 };
