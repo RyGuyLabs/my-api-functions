@@ -260,7 +260,7 @@ const PERSONA_KEYWORDS = {
 };
 
 // -------------------------
-// NEW: B2B Targeted Keyword Definitions (Growth Signals)
+// B2B Targeted Keyword Definitions (Growth Signals)
 // -------------------------
 const COMMERCIAL_ENHANCERS = [
     `"new funding" OR "business expansion"`,
@@ -273,36 +273,36 @@ const COMMERCIAL_ENHANCERS = [
 // Lead Generator
 // -------------------------
 async function generateLeadsBatch(leadType, searchTerm, location, financialTerm, salesPersona, totalBatches = 4) {
+    // NOTE: The frontend must now pass the simple user-input keyword (e.g., "homeowners") 
+    // as the 'searchTerm', not the long OR string.
     console.log(`[Batch] Starting lead generation batches for: ${searchTerm} in ${location}. Persona: ${salesPersona}. Total batches: ${totalBatches}`);
     const template = leadType === 'residential'
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
 
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
-You MUST follow the JSON schema provided in the generation config.`; // Simplified instruction as schema handles the structure
+You MUST follow the JSON schema provided in the generation config.`;
 
     let allLeads = [];
     
-    // Determine the specific keyword set based on the provided persona, falling back to 'default'
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     
-    // We run this in sequence (not concurrently) to ensure the search results for one batch
     for (let i = 0; i < totalBatches; i++) {
         
         let searchKeywords;
         
         // --- START ENHANCEMENT: Conditional Search Keywords based on Lead Type ---
         if (leadType === 'residential') {
-            // FIX: Ensure the user's primary search term is in quotes for precision
-            // and cycle through the persona-specific keyword array for diversity.
             const enhancer = personaKeywords[i % personaKeywords.length]; 
-            // Combined query: User's Term in Location AND one specific, high-intent enhancer
-            searchKeywords = `"${searchTerm}" in ${location} AND (${enhancer})`;
+            // FIX: Remove quotes around ${searchTerm} to treat it as a normal keyword,
+            // preventing the overly restrictive search query from the error log.
+            // Example: homeowners in Miami, Florida AND ("high net worth" OR "affluent")
+            searchKeywords = `${searchTerm} in ${location} AND (${enhancer})`;
         } else {
-            // B2B (commercial): Cycle through high-intent commercial growth signals for diversity
+            // B2B (commercial) logic remains correct but is also modified to use unquoted searchTerm
             const b2bEnhancer = COMMERCIAL_ENHANCERS[i % COMMERCIAL_ENHANCERS.length];
-            // Combined query: User's Term in Location AND one specific growth signal
-            searchKeywords = `"${searchTerm}" in ${location} AND (${b2bEnhancer})`;
+            // Example: software companies in Miami, Florida AND ("new funding" OR "business expansion")
+            searchKeywords = `${searchTerm} in ${location} AND (${b2bEnhancer})`;
         }
         // --- END ENHANCEMENT ---
         
