@@ -118,7 +118,10 @@ async function googleSearch(query, numResults = 3) {
     }
 
     const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
-    const response = await withBackoff(() => fetch(url));
+    
+    // FIX: Apply stricter retry limits (max 3 retries, 500ms base delay) 
+    // to prevent Netlify function timeout (30 seconds) during backoff.
+    const response = await withBackoff(() => fetch(url), 3, 500); 
     const data = await response.json();
     
     // Check for search errors, e.g., if API key is invalid
