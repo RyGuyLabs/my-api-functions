@@ -153,12 +153,14 @@ async function generateGeminiLeads(query, systemInstruction) {
         generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
     };
     
+    // FIX: Apply stricter backoff limits (max 4 retries, 1000ms base delay) 
+    // to prevent the cumulative wait time from exceeding the 30s function limit.
     const response = await withBackoff(() =>
         fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        })
+        }), 4, 1000 // Added maxRetries and baseDelay for Gemini call
     );
     const result = await response.json();
     let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
