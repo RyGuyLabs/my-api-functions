@@ -159,8 +159,36 @@ async function generateGeminiLeads(query, systemInstruction) {
     );
     const result = await response.json();
     let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+    
+    // 1. Strip markdown code fences
     raw = raw.replace(/^```json\s*|^\s*```\s*|^\s*```\s*json\s*|\s*```\s*$/gmi, '').trim();
-    return JSON.parse(raw);
+
+    try {
+        // Attempt 1: Standard parse
+        return JSON.parse(raw);
+    } catch (e) {
+        // If parsing fails, attempt a conservative repair
+        if (e instanceof SyntaxError) {
+             console.warn("SyntaxError in Gemini output. Attempting conservative JSON repair...");
+             
+             // Conservative Repair: Replace unescaped newline/carriage return/tab characters with spaces.
+             // These are the most common characters LLMs fail to escape within string values,
+             // leading to the "Unterminated string" error.
+             let repairedRaw = raw.replace(/[\r\n\t]/g, ' '); 
+             
+             try {
+                 // Attempt 2: Parse repaired string
+                 return JSON.parse(repairedRaw);
+             } catch (repairedError) {
+                 // If the repaired string still fails, log the problematic string and re-throw.
+                 console.error("Gemini output failed even after repair. Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
+                 console.error("Full raw output size:", raw.length);
+                 throw new Error("Failed to parse Gemini output as JSON (even after repair). Check logs for details.", { cause: e.message });
+             }
+        }
+        // Re-throw any non-SyntaxErrors
+        throw e;
+    }
 }
 
 // -------------------------
