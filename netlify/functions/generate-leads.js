@@ -5,7 +5,8 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX APPLIED: Intensive debug logging added to exports.handler to identify missing client parameters.
+ * FIX APPLIED: Mapped incoming 'searchTerm' to internal 'targetType' and added a default 
+ * for the missing 'activeSignal' parameter to resolve the 400 error.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -421,12 +422,19 @@ exports.handler = async (event) => {
         console.log('[Handler DEBUG] Parsed Body Data:', requestData);
         // --- END DEBUG LOGGING ---
 
-        // Destructuring parameters from the parsed body
-        const { leadType, targetType, activeSignal, location, salesPersona } = requestData;
+        // FIX 1: Use incoming 'searchTerm' and 'activeSignal' (if present)
+        const { leadType, searchTerm, activeSignal, location, salesPersona } = requestData;
         
-        // Checking for all 5 required parameters and returning the detailed error
-        if (!leadType || !targetType || !activeSignal || !location || !salesPersona) {
-             const missingFields = ['leadType', 'targetType', 'activeSignal', 'location', 'salesPersona'].filter(field => !requestData[field]);
+        // FIX 2: Default activeSignal if client is not sending it
+        const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
+
+        // Checking for required parameters (using searchTerm and resolvedActiveSignal)
+        if (!leadType || !searchTerm || !location || !salesPersona) {
+             const missingFields = ['leadType', 'searchTerm', 'location', 'salesPersona'].filter(field => !requestData[field]);
+             
+             // Check resolvedActiveSignal explicitly here, though it should be defaulted
+             if (!resolvedActiveSignal) missingFields.push('activeSignal'); 
+
              console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
              
              return { 
@@ -440,9 +448,10 @@ exports.handler = async (event) => {
         const batchesToRun = 1; 
         const requiredLeads = 3;
 
-        console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${targetType} (Signal: ${activeSignal}) in ${location}.`);
+        console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${searchTerm} (Signal: ${resolvedActiveSignal}) in ${location}.`);
 
-        const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
+        // FIX 3: Pass searchTerm (as targetType) and resolvedActiveSignal to generator
+        const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
         
         return {
             statusCode: 200,
@@ -487,9 +496,14 @@ exports.background = async (event) => {
     };
 
     try {
-        const { leadType, targetType, activeSignal, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
+        // Use incoming 'searchTerm' and 'activeSignal'
+        const { leadType, searchTerm, activeSignal, location, totalLeads = 12, salesPersona } = JSON.parse(event.body);
 
-        if (!leadType || !targetType || !activeSignal || !location || !salesPersona) {
+        // Default activeSignal if client is not sending it
+        const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
+
+        // Checking for required parameters (using searchTerm and resolvedActiveSignal)
+        if (!leadType || !searchTerm || !location || !salesPersona) {
              console.error("Background job missing required parameters:", event.body);
         }
 
@@ -502,7 +516,8 @@ exports.background = async (event) => {
                     const batchesToRun = Math.ceil(totalLeads / 3);
                     console.log(`[Background] Starting ${batchesToRun} concurrent batches for ${totalLeads} leads.`);
                     
-                    const leads = await generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, batchesToRun);
+                    // Pass searchTerm (as targetType) and resolvedActiveSignal to generator
+                    const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
                     
                     console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database. (Database saving placeholder here)`);
                     
