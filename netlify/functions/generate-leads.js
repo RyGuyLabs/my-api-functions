@@ -155,6 +155,7 @@ async function generateGeminiLeads(query, systemInstruction) {
     
     // FIX: Apply stricter backoff limits (max 4 retries, 1000ms base delay) 
     // to prevent the cumulative wait time from exceeding the 30s function limit.
+    console.log('[Gemini] Sending request to Gemini API...'); // Added log before the slow call
     const response = await withBackoff(() =>
         fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
             method: 'POST',
@@ -270,19 +271,40 @@ Output MUST be a JSON array of 3 objects with fields: name, description, website
 // Netlify Handler
 // -------------------------
 exports.handler = async (event) => {
+    
+    // FIX 1: Define a unified set of headers for all success and error responses
+    const CORS_HEADERS = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+    
+    // 1. OPTIONS Preflight handler
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' },
+            headers: CORS_HEADERS,
             body: ''
         };
     }
-    if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
+    
+    // 2. 405 Method Not Allowed handler (FIX: previously returned without headers)
+    if (event.httpMethod !== 'POST') {
+        return { 
+            statusCode: 405, 
+            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+            body: JSON.stringify({ error: 'Method Not Allowed' })
+        };
+    }
 
     try {
         const { leadType, searchTerm, location, financialTerm, totalLeads } = JSON.parse(event.body);
         console.log(`[Handler] Request received for: ${searchTerm} in ${location}`); // ADDED LOG
-        if (!leadType || !searchTerm || !location) return { statusCode: 400, body: JSON.stringify({ error: "Missing required parameters." }) };
+        if (!leadType || !searchTerm || !location) return { 
+             statusCode: 400, 
+             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+             body: JSON.stringify({ error: "Missing required parameters." }) 
+        };
 
         const requiredLeads = totalLeads || 12;
         // Since Gemini generates 3 leads per call, calculate the batches needed.
@@ -292,17 +314,18 @@ exports.handler = async (event) => {
         
         console.log(`[Handler] Successfully generated ${leads.length} leads.`); // ADDED LOG
 
+        // 3. 200 Success handler
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
             body: JSON.stringify({ leads: leads.slice(0, requiredLeads), count: leads.slice(0, requiredLeads).length })
         };
     } catch (err) {
         console.error('Lead Generator Error:', err);
+        // 4. 500 Error handler (FIX: using unified headers)
         return { 
             statusCode: 500, 
-            // FIX: Ensure CORS header is present on error response
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
             body: JSON.stringify({ error: err.message, details: err.cause || 'No cause provided' }) 
         };
     }
