@@ -200,9 +200,26 @@ async function generateGeminiLeads(query, systemInstruction) {
         // Attempt 1: Standard parse 
         return JSON.parse(raw);
     } catch (e) {
-        // Log the failure to parse the forced JSON output
-        console.error("Failed to parse Gemini output as JSON, even with structured output enforcement. Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
-        throw new Error("Failed to parse Gemini output as JSON.", { cause: e.message });
+        // CRITICAL FIX: The error is "Unterminated string in JSON", meaning an unescaped double quote 
+        // was generated inside a string value (e.g., in 'description').
+        // This attempts to sanitize the raw output by escaping any unescaped quotes.
+        
+        let cleanedText = raw;
+        
+        // This regex aggressively escapes quotes that are preceded by something OTHER than a backslash, 
+        // preventing an unescaped quote within a string field from prematurely terminating the JSON structure.
+        cleanedText = cleanedText.replace(/([^\\])"/g, (match, p1) => `${p1}\\"`);
+        
+        try {
+            // Attempt 2: Parse the aggressively cleaned string
+            return JSON.parse(cleanedText);
+        } catch (e2) {
+            // If even the cleaned version fails, log both errors and throw the original.
+            console.error("Failed to parse Gemini output as JSON, even with structured output enforcement and aggressive cleaning. Original error:", e.message);
+            console.error("Second attempt error after cleaning:", e2.message);
+            console.error("Raw output (first 200 chars):", raw.substring(0, 200) + (raw.length > 200 ? '...' : ''));
+            throw new Error("Failed to parse Gemini output as JSON.", { cause: e.message });
+        }
     }
 }
 
