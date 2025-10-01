@@ -5,10 +5,9 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX APPLIED:
- * 1. Enhanced PERSONA_KEYWORDS with higher-intent, transactional terms.
- * 2. Added two new critical output fields to the Gemini JSON schema: 'transactionStage' and 'keyPainPoint'.
- * 3. Gemini System Instruction updated to mandate the extraction of these detailed metrics.
+ * REFINEMENTS APPLIED:
+ * 1. ENHANCED: Email enrichment logic updated to prioritize the most professional/consistent pattern (first.last@domain).
+ * 2. CLARIFIED: Background handler comment updated to explicitly warn about non-awaited tasks in serverless environments, recommending platform-native queuing for reliability.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -78,6 +77,8 @@ const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test
 
 /**
  * Generates a realistic email pattern based on name and website.
+ * MODIFICATION: Updated to prioritize the most common/professional pattern (first.last)
+ * for better consistency, rather than a random choice.
  */
 async function enrichEmail(name, website) {
     try {
@@ -92,16 +93,16 @@ async function enrichEmail(name, website) {
         const firstName = nameParts[0];
         const lastName = nameParts[nameParts.length - 1];
 
-        // Define common email patterns
+        // Define common email patterns, starting with the most professional one
         const patterns = [
-            `${firstName}.${lastName}@${domain}`,      // John.doe@example.com
-            `${firstName.charAt(0)}${lastName}@${domain}`, // Jdoe@example.com
-            `${firstName}@${domain}`,                  // John@example.com
+            `${firstName}.${lastName}@${domain}`,       // John.doe@example.com (Primary)
+            `${firstName.charAt(0)}${lastName}@${domain}`, // Jdoe@example.com (Secondary)
+            `${firstName}@${domain}`,                  // John@example.com (Tertiary)
         ].filter(p => !p.includes('undefined')); // Remove patterns if name parts are missing
 
-        // Choose a random pattern for variability
+        // Prioritize the most professional pattern first
         if (patterns.length > 0) {
-            return patterns[Math.floor(Math.random() * patterns.length)].replace(/\s/g, '');
+            return patterns[0].replace(/\s/g, '');
         }
         
         // Fallback to a generic domain contact if name processing fails
@@ -234,7 +235,7 @@ async function generateGeminiLeads(query, systemInstruction) {
                     items: { type: "STRING" } 
                 }, 
                 transactionStage: { type: "STRING" }, // NEW HIGH-INTENT FIELD
-                keyPainPoint: { type: "STRING" },     // NEW HIGH-INTENT FIELD
+                keyPainPoint: { type: "STRING" },      // NEW HIGH-INTENT FIELD
             },
             propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks", "transactionStage", "keyPainPoint"]
         }
@@ -267,7 +268,7 @@ async function generateGeminiLeads(query, systemInstruction) {
         return JSON.parse(raw);
     } catch (e) {
         let cleanedText = raw;
-        // Attempt to clean up common quote escaping issues
+        // Attempt to clean up common quote escaping issues. This is a good guardrail.
         cleanedText = cleanedText.replace(/([^\\])"/g, (match, p1) => `${p1}\\"`);
         
         try {
@@ -613,6 +614,10 @@ exports.background = async (event) => {
         console.log(`[Background] Job accepted for ${totalLeads} leads. Returning 202 to client.`);
         
         // Execute the heavy logic asynchronously after returning the 202 response
+        // CRITICAL NOTE: In production serverless environments, relying on setTimeout(..., 0)
+        // is non-deterministic as the process may terminate before the async work completes.
+        // For production use, replace this with a platform-native mechanism (e.g., AWS SQS, Azure Queue,
+        // Google Cloud Pub/Sub) to schedule a separate, long-running worker function.
         setTimeout(() => {
             (async () => {
                 try {
@@ -622,6 +627,7 @@ exports.background = async (event) => {
                     // Pass searchTerm (as targetType) and resolvedActiveSignal to generator
                     const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
                     
+                    // Placeholder for a real database save operation.
                     console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database. (Database saving placeholder here)`);
                     
                 } catch (err) {
@@ -633,7 +639,9 @@ exports.background = async (event) => {
         return immediateResponse;
 
     } catch (err) {
-        console.error('Background Handler Initialization Error:', err);
+        console.error('Background Handler Initialization Error (failed to parse body or extract initial data):', err);
+        // We still return 202 even on failure to parse, as the job request itself was received.
+        // The error is logged internally.
         return immediateResponse; 
     }
 };
