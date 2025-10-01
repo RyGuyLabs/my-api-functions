@@ -8,6 +8,7 @@
  * REFINEMENTS APPLIED:
  * 1. ENHANCED: Email enrichment logic updated to prioritize the most professional/consistent pattern (first.last@domain).
  * 2. CLARIFIED: Background handler comment updated to explicitly warn about non-awaited tasks in serverless environments, recommending platform-native queuing for reliability.
+ * 3. **FIXED**: Google Search query logic in generateLeadsBatch updated. The first batch (used by the quick handler) now relies ONLY on the user's explicit 'activeSignal' for less restrictive, more reliable results. Subsequent batches use the complex high-intent persona enhancers.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -414,14 +415,18 @@ High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'ke
             const shortTargetType = simplifySearchTerm(targetType, isResidential);
 
             // Determine primary search keywords
-            if (isResidential) {
+            if (batchIndex === 0) {
+                // FIX: Batch 0 (used by the quick handler) relies ONLY on the user's explicit signal.
+                // This is less restrictive and more likely to return results.
+                searchKeywords = `(${shortTargetType}) in "${location}" AND "${activeSignal}" ${NEGATIVE_QUERY}`;
+            } else if (isResidential) {
                 
-                // NEW RESIDENTIAL QUERY: Simplified core target + location + (User's active signal OR high-intent persona signal)
-                searchKeywords = `(${shortTargetType}) in "${location}" AND ("${activeSignal}" OR ${personaEnhancer}) ${NEGATIVE_QUERY}`;
+                // NEW RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
+                searchKeywords = `(${shortTargetType}) in "${location}" AND (${personaEnhancer}) ${NEGATIVE_QUERY}`;
             } else {
                 
-                // NEW B2B QUERY: Simplified core target + location + (User's active signal OR high-intent B2B signal)
-                searchKeywords = `(${shortTargetType}) in "${location}" AND ("${activeSignal}" OR ${b2bEnhancer}) ${NEGATIVE_QUERY}`;
+                // NEW B2B QUERY (Batch > 0): Simplified core target + location + high-intent B2B signal
+                searchKeywords = `(${shortTargetType}) in "${location}" AND (${b2bEnhancer}) ${NEGATIVE_QUERY}`;
             }
             
             // 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
@@ -432,10 +437,11 @@ High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'ke
                 console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
                 let fallbackSearchKeywords;
                 
-                // Fallback: Drop the activeSignal and rely only on the core persona/target in the location
+                // Fallback: Drop the activeSignal/Persona Enhancer and rely only on the core target in the location
                 if (isResidential) {
                     fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
                 } else {
+                    // Commercial fallback uses the first (often most general) commercial enhancer to ensure some B2B context
                     fallbackSearchKeywords = `${shortTargetType} in ${location} AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
                 }
                 
