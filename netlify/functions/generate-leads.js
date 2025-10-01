@@ -10,7 +10,8 @@
  * 2. ENHANCED: Added website validation (HEAD request) before attempting email enrichment for more robust data.
  * 3. ENHANCED: Implemented **Persona Match Scoring** to give higher priority to leads whose content strongly aligns with the 'salesPersona'.
  * 4. ENHANCED: **Geographical Granularity** added by instructing Gemini to infer 'geoDetail' (neighborhood/zip) from snippets.
- * 5. FIXED: Google Search query logic in generateLeadsBatch remains fixed to ensure the quick handler reliably returns results.
+ * 5. NEW CRITICAL UPDATE: Dedicated a search batch to **External Intent Grounding** (social/competitive signals) to find "HOT" leads actively comparing services.
+ * 6. NEW CRITICAL UPDATE: Updated Gemini System Instruction to force inference of competitive shopping data into the 'socialSignal' field.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -202,6 +203,8 @@ async function generatePremiumInsights(lead) {
 		`Recent funding or partnership signals for ${lead.name}`,
 		`High engagement on social media for ${lead.name}`
 	];
+	// CRITICAL: Since we are now using a dedicated search batch for socialSignal, 
+	// this fallback is used ONLY if Gemini failed to extract a socialSignal from the search snippets.
 	return events[Math.floor(Math.random() * events.length)];
 }
 
@@ -212,10 +215,10 @@ function rankLeads(leads) {
 			if (l.qualityScore === 'High') score += 3;
 			if (l.qualityScore === 'Medium') score += 2;
 			if (l.qualityScore === 'Low') score += 1;
-			// Add weight for the new specialized fields
+			// Add weight for the new specialized fields (High Intent Focus)
 			if (l.transactionStage && l.keyPainPoint) score += 2;
 			else if (l.transactionStage || l.keyPainPoint) score += 1;
-			if (l.socialSignal) score += 1;
+			if (l.socialSignal) score += 1; // Points for inferred social/competitive context
 
 			// NEW: Add Persona Match Score (Max 5 points)
 			score += l.personaMatchScore || 0;	
@@ -451,13 +454,13 @@ async function generateLeadsBatch(leadType, targetType, activeSignal, location, 
 		? "Focus on individual homeowners, financial capacity, recent property activities."
 		: "Focus on businesses, size, industry relevance, recent developments.";
 
-	// UPDATED SYSTEM INSTRUCTION for STRICT VERIFICATION, HIGH-INTENT, AND GEO-GRANULARITY
+	// UPDATED SYSTEM INSTRUCTION: Explicitly instructing Gemini to find competitive/social signals
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
 Email: When fabricating an email address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
-High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation.
+High-Intent Metrics: You MUST infer and populate both 'transactionStage' (e.g., "Active Bidding", "Comparing Quotes") and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation. You MUST also use the search results to infer and summarize any **competitive shopping signals, recent social media discussions, or current events** in the 'socialSignal' field.
 Geographical Detail: Based on the search snippet and the known location, you MUST infer and populate the 'geoDetail' field with the specific neighborhood, street name, or zip code mentioned for that lead. If none is found, return the general location provided.`;
 
 	const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
@@ -480,15 +483,21 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 
 			// Determine primary search keywords
 			if (batchIndex === 0) {
-				// FIX: Batch 0 (used by the quick handler) relies ONLY on the user's explicit signal.
+				// Batch 0 (used by the quick handler) relies ONLY on the user's explicit signal.
 				searchKeywords = `(${shortTargetType}) in "${location}" AND "${activeSignal}" ${NEGATIVE_QUERY}`;
+			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
+                // NEW: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
+                // Search specifically on social/forum sites for real-time discussion and shopping intent.
+				const socialTerms = `"shopping around" OR "comparing quotes" OR "need new provider"`;
+                searchKeywords = `site:twitter.com OR site:reddit.com OR site:forums.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
+                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal).`);
 			} else if (isResidential) {
 				
-				// NEW RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
+				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${personaEnhancer}) ${NEGATIVE_QUERY}`;
 			} else {
 				
-				// NEW B2B QUERY (Batch > 0): Simplified core target + location + high-intent B2B signal
+				// B2B QUERY (Batch > 0): Simplified core target + location + high-intent B2B signal
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${b2bEnhancer}) ${NEGATIVE_QUERY}`;
 			}
 			
@@ -500,7 +509,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
 				let fallbackSearchKeywords;
 				
-				// Fallback: Drop the activeSignal/Persona Enhancer and rely only on the core target in the location
+				// Fallback: Drop the most complex enhancer/signal
 				if (isResidential) {
 					fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
 				} else {
@@ -574,7 +583,11 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 		lead.personaMatchScore = calculatePersonaMatchScore(lead, salesPersona);
 		
 		lead.qualityScore = computeQualityScore(lead);
-		lead.socialSignal = lead.socialSignal || await generatePremiumInsights(lead);
+		
+		// If Gemini failed to extract a social signal, use the placeholder function as a final fallback
+		if (!lead.socialSignal) {
+			lead.socialSignal = await generatePremiumInsights(lead);
+		}
 		
 		// Ensure socialMediaLinks is always an array
 		if (!Array.isArray(lead.socialMediaLinks)) {
@@ -626,12 +639,12 @@ exports.handler = async (event) => {
 		// Checking for required parameters (using searchTerm and resolvedActiveSignal)
 		if (!leadType || !searchTerm || !location || !salesPersona) {
 			 const missingFields = ['leadType', 'searchTerm', 'location', 'salesPersona'].filter(field => !requestData[field]);
-			 
+			 
 			 // Check resolvedActiveSignal explicitly here, though it should be defaulted
 			 if (!resolvedActiveSignal) missingFields.push('activeSignal');	
 
 			 console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
-			 
+			 
 			 return {	
 				 statusCode: 400,	
 				 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -639,7 +652,8 @@ exports.handler = async (event) => {
 			 };
 		}
 
-		// CRITICAL: Hard limit the synchronous job to 1 batch (3 leads)
+		// CRITICAL: Hard limit the synchronous job to 1 batch (3 leads).
+		// Note: The quick job will only run Batch 0, which relies on the user's explicit signal.
 		const batchesToRun = 1;	
 		const requiredLeads = 3;
 
@@ -720,6 +734,7 @@ exports.background = async (event) => {
 		}
 		
 		// Set a higher number of batches for the "unlimited" background job (e.g., 8 batches)
+		// This now ensures that one of the batches is dedicated to the social/competitive search.
 		const batchesToRun = 8; 
 
 		console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
@@ -734,7 +749,7 @@ exports.background = async (event) => {
 		// or storage bucket for later retrieval by the client.
 
 		// Return the 202 Accepted status after the entire long process is complete 
-        // (to signify the process ran in the background context before completion/exit).
+        // (to signify the process ran in the background context before completion/exit).
 		return immediateResponse;
 
 	} catch (err) {
@@ -749,8 +764,8 @@ exports.background = async (event) => {
 				body: JSON.stringify({ error: 'Invalid JSON request body for background job.' })	
 			};
 		}
-        
-        // Final fallback error response (should ideally only happen during setup)
+        
+        // Final fallback error response (should ideally only happen during setup)
 		return {	
 			statusCode: 500,	
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
