@@ -1,23 +1,24 @@
 /**
- * Ultimate Premium Lead Generator – Gemini + Google Custom Search
- *
- * This file contains two exports:
- * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
- * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
- *
- * REFINEMENTS APPLIED:
- * 1. ENHANCED: Email enrichment logic updated to include more common, professional patterns.
- * 2. ENHANCED: Added website validation (HEAD request) before attempting email enrichment for more robust data.
- * 3. ENHANCED: Implemented **Persona Match Scoring** to give higher priority to leads whose content strongly aligns with the 'salesPersona'.
- * 4. ENHANCED: **Geographical Granularity** added by instructing Gemini to infer 'geoDetail' (neighborhood/zip) from snippets.
- * 5. NEW CRITICAL UPDATE: Dedicated a search batch to **External Intent Grounding** (social/competitive signals) to find "HOT" leads actively comparing services.
- * 6. NEW CRITICAL UPDATE: Updated Gemini System Instruction to force inference of competitive shopping data into the 'socialSignal' field.
- * 7. **ADJUSTED: Refactored final lead processing to run all website checks and enrichment concurrently.**
- * 8. **ADJUSTED: Added robust JSON extraction to handle Gemini's markdown formatting.**
- */
+ * Ultimate Premium Lead Generator – Gemini + Google Custom Search
+ *
+ * This file contains two exports:
+ * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
+ * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
+ *
+ * REFINEMENTS APPLIED:
+ * 1. ENHANCED: Email enrichment logic updated to include more common, professional patterns.
+ * 2. ENHANCED: Added website validation (HEAD request) before attempting email enrichment for more robust data.
+ * 3. ENHANCED: Implemented **Persona Match Scoring** to give higher priority to leads whose content strongly aligns with the 'salesPersona'.
+ * 4. ENHANCED: **Geographical Granularity** added by instructing Gemini to infer 'geoDetail' (neighborhood/zip) from snippets.
+ * 5. NEW CRITICAL UPDATE: Dedicated a search batch to **External Intent Grounding** (social/competitive signals) to find "HOT" leads actively comparing services.
+ * 6. NEW CRITICAL UPDATE: Updated Gemini System Instruction to force inference of competitive shopping data into the 'socialSignal' field.
+ * 7. ADJUSTED: Refactored final lead processing to run all website checks and enrichment concurrently.
+ * 8. ADJUSTED: Added robust JSON extraction to handle Gemini's markdown formatting.
+ * 9. **NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.**
+ */
 
-const nodeFetch = require('node-fetch'); 
-const fetch = nodeFetch.default || nodeFetch; 
+const nodeFetch = require('node-fetch'); 
+const fetch = nodeFetch.default || nodeFetch; 
 
 const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
@@ -43,7 +44,7 @@ const fetchWithTimeout = (url, options, timeout = 10000) => {
 const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
-			const response = await fn(); 
+			const response = await fn(); 
 			if (response.ok) return response;
 
 			let errorBody = {};
@@ -82,19 +83,19 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
 
 /**
- * Checks if a website is responsive using a head request (fastest check).
- * @param {string} url 
- * @returns {boolean} True if the website responds without major errors.
- */
+ * Checks if a website is responsive using a head request (fastest check).
+ * @param {string} url 
+ * @returns {boolean} True if the website responds without major errors.
+ */
 async function checkWebsiteStatus(url) {
 	// Basic validation to prevent invalid URL usage
-	if (!url || !url.startsWith('http')) return false; 
+	if (!url || !url.startsWith('http')) return false; 
 	try {
 		// Use HEAD request for speed, timeout short for validation (5 seconds)
 		// Set maxRetries to 1 (meaning no retries) for a fast validation check
-		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
+		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
 		// We consider 2xx (Success) and 3xx (Redirection) as valid. 4xx/5xx are invalid.
-		return response.ok || (response.status >= 300 && response.status < 400); 
+		return response.ok || (response.status >= 300 && response.status < 400); 
 	} catch (e) {
 		console.warn(`Website check failed for ${url}: ${e.message}`);
 		return false;
@@ -103,9 +104,9 @@ async function checkWebsiteStatus(url) {
 
 
 /**
- * Generates a realistic email pattern based on name and website.
- * ENHANCEMENT: Added more common patterns for better coverage.
- */
+ * Generates a realistic email pattern based on name and website.
+ * ENHANCEMENT: Added more common patterns for better coverage.
+ */
 async function enrichEmail(name, website) {
 	try {
 		const url = new URL(website);
@@ -143,8 +144,8 @@ async function enrichEmail(name, website) {
 }
 
 /**
- * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
- */
+ * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
+ */
 async function enrichPhoneNumber(currentNumber) {
 	// If a number was found and is not a known placeholder, keep it.
 	if (currentNumber && currentNumber.length > 5 && !currentNumber.includes('555')) {
@@ -155,8 +156,8 @@ async function enrichPhoneNumber(currentNumber) {
 }
 
 /**
- * Calculates a match score between the lead's description/insights and the sales persona.
- */
+ * Calculates a match score between the lead's description/insights and the sales persona.
+ */
 function calculatePersonaMatchScore(lead, salesPersona) {
 	// Lead Type must be added to the lead object during the batch process before calling this.
 	if (!lead.description && !lead.insights) return 0;
@@ -205,7 +206,7 @@ async function generatePremiumInsights(lead) {
 		`Recent funding or partnership signals for ${lead.name}`,
 		`High engagement on social media for ${lead.name}`
 	];
-	// CRITICAL: Since we are now using a dedicated search batch for socialSignal, 
+	// CRITICAL: Since we are now using a dedicated search batch for socialSignal, 
 	// this fallback is used ONLY if Gemini failed to extract a socialSignal from the search snippets.
 	return events[Math.floor(Math.random() * events.length)];
 }
@@ -241,9 +242,9 @@ function deduplicateLeads(leads) {
 }
 
 /**
- * NEW: Concurrent processing of a single lead, including non-blocking network checks.
- * This function is designed to be run in parallel with other leads.
- */
+ * NEW: Concurrent processing of a single lead, including non-blocking network checks.
+ * This function is designed to be run in parallel with other leads.
+ */
 async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	// Assign leadType and salesPersona for use in the NEW scoring functions
 	lead.leadType = leadType;	
@@ -472,8 +473,8 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 
 /**
- * Aggressively simplifies a complex, descriptive target term into core search keywords.
- */
+ * Aggressively simplifies a complex, descriptive target term into core search keywords.
+ */
 function simplifySearchTerm(targetType, isResidential) {
 	let coreTerms = [];
 	const normalized = targetType.toLowerCase();
@@ -510,7 +511,7 @@ function simplifySearchTerm(targetType, isResidential) {
 // -------------------------
 // Lead Generator Core (CONCURRENT EXECUTION)
 // -------------------------
-async function generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, totalBatches = 4) {
+async function generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, socialFocus, totalBatches = 4) {
 	
 	const template = leadType === 'residential'
 		? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -520,7 +521,7 @@ async function generateLeadsBatch(leadType, targetType, activeSignal, location, 
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
-Email: When fabricating an email address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
+Email: When fabricating an address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
 High-Intent Metrics: You MUST infer and populate both 'transactionStage' (e.g., "Active Bidding", "Comparing Quotes") and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation. You MUST also use the search results to infer and summarize any **competitive shopping signals, recent social media discussions, or current events** in the 'socialSignal' field.
 Geographical Detail: Based on the search snippet and the known location, you MUST infer and populate the 'geoDetail' field with the specific neighborhood, street name, or zip code mentioned for that lead. If none is found, return the general location provided.`;
@@ -547,12 +548,15 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			if (batchIndex === 0) {
 				// Batch 0 (used by the quick handler) relies ONLY on the user's explicit signal.
 				searchKeywords = `(${shortTargetType}) in "${location}" AND "${activeSignal}" ${NEGATIVE_QUERY}`;
-			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
-                // NEW: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                // Search specifically on social/forum sites for real-time discussion and shopping intent.
-				const socialTerms = `"shopping around" OR "comparing quotes" OR "need new provider"`;
-                searchKeywords = `site:twitter.com OR site:reddit.com OR site:forums.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
-                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal).`);
+			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
+                // NEW: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
+                // Use the user's socialFocus input, or fallback to the generic terms.
+				const defaultSocialTerms = `"shopping around" OR "comparing quotes" OR "need new provider"`;
+                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
+ 				
+                // Search specifically on social/forum sites for real-time discussion and shopping intent.
+                searchKeywords = `site:twitter.com OR site:reddit.com OR site:forums.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
+                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal).`);
 			} else if (isResidential) {
 				
 				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
@@ -654,8 +658,8 @@ exports.handler = async (event) => {
 		console.log('[Handler DEBUG] Parsed Body Data:', requestData);
 		// --- END DEBUG LOGGING ---
 
-		// Use incoming 'searchTerm' and 'activeSignal' (if present)
-		const { leadType, searchTerm, activeSignal, location, salesPersona } = requestData;
+		// NEW: Destructure socialFocus
+		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus } = requestData;
 		
 		// Default activeSignal if client is not sending it
 		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
@@ -683,8 +687,8 @@ exports.handler = async (event) => {
 
 		console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${searchTerm} (Signal: ${resolvedActiveSignal}) in ${location}.`);
 
-		// Pass searchTerm (as targetType) and resolvedActiveSignal to generator
-		const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
+		// NEW: Pass socialFocus to generator
+		const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, batchesToRun);
 		
 		return {
 			statusCode: 200,
@@ -743,7 +747,8 @@ exports.background = async (event) => {
 
 	try {
 		const requestData = JSON.parse(event.body);
-		const { leadType, searchTerm, activeSignal, location, salesPersona } = requestData;
+		// NEW: Destructure socialFocus
+		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus } = requestData;
 
 		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
 
@@ -759,13 +764,13 @@ exports.background = async (event) => {
 		
 		// Set a higher number of batches for the "unlimited" background job (e.g., 8 batches)
 		// This now ensures that one of the batches is dedicated to the social/competitive search.
-		const batchesToRun = 8; 
+		const batchesToRun = 8; 
 
 		console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
 
 		// --- Execution of the Long Task ---
-		// The actual leads processing runs here, taking advantage of the longer execution time limit.
-		const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
+		// NEW: Pass socialFocus to generator
+		const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, batchesToRun);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
 		
