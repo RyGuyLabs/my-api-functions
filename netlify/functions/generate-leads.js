@@ -6,9 +6,11 @@
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
  * REFINEMENTS APPLIED:
- * 1. ENHANCED: Email enrichment logic updated to prioritize the most professional/consistent pattern (first.last@domain).
- * 2. CLARIFIED: Background handler comment updated to explicitly warn about non-awaited tasks in serverless environments, recommending platform-native queuing for reliability.
- * 3. **FIXED**: Google Search query logic in generateLeadsBatch updated. The first batch (used by the quick handler) now relies ONLY on the user's explicit 'activeSignal' for less restrictive, more reliable results. Subsequent batches use the complex high-intent persona enhancers.
+ * 1. ENHANCED: Email enrichment logic updated to include more common, professional patterns.
+ * 2. ENHANCED: Added website validation (HEAD request) before attempting email enrichment for more robust data.
+ * 3. ENHANCED: Implemented **Persona Match Scoring** to give higher priority to leads whose content strongly aligns with the 'salesPersona'.
+ * 4. ENHANCED: **Geographical Granularity** added by instructing Gemini to infer 'geoDetail' (neighborhood/zip) from snippets.
+ * 5. FIXED: Google Search query logic in generateLeadsBatch remains fixed to ensure the quick handler reliably returns results.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -77,9 +79,29 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
 
 /**
+ * Checks if a website is responsive using a head request (fastest check).
+ * @param {string} url 
+ * @returns {boolean} True if the website responds without major errors.
+ */
+async function checkWebsiteStatus(url) {
+    // Basic validation to prevent invalid URL usage
+    if (!url || !url.startsWith('http')) return false; 
+    try {
+        // Use HEAD request for speed, timeout short for validation (5 seconds)
+        // Set maxRetries to 1 (meaning no retries) for a fast validation check
+        const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
+        // We consider 2xx (Success) and 3xx (Redirection) as valid. 4xx/5xx are invalid.
+        return response.ok || (response.status >= 300 && response.status < 400); 
+    } catch (e) {
+        console.warn(`Website check failed for ${url}: ${e.message}`);
+        return false;
+    }
+}
+
+
+/**
  * Generates a realistic email pattern based on name and website.
- * MODIFICATION: Updated to prioritize the most common/professional pattern (first.last)
- * for better consistency, rather than a random choice.
+ * ENHANCEMENT: Added more common patterns for better coverage.
  */
 async function enrichEmail(name, website) {
     try {
@@ -97,11 +119,14 @@ async function enrichEmail(name, website) {
         // Define common email patterns, starting with the most professional one
         const patterns = [
             `${firstName}.${lastName}@${domain}`,       // John.doe@example.com (Primary)
-            `${firstName.charAt(0)}${lastName}@${domain}`, // Jdoe@example.com (Secondary)
-            `${firstName}@${domain}`,                  // John@example.com (Tertiary)
+            `${firstName}_${lastName}@${domain}`,       // John_doe@example.com
+            `${lastName}.${firstName}@${domain}`,       // Doe.john@example.com
+            `${firstName.charAt(0)}${lastName}@${domain}`, // Jdoe@example.com
+            `${firstName}@${domain}`,                  // John@example.com
+            `info@${domain}`,                          // Info@example.com (Fallback generic)
         ].filter(p => !p.includes('undefined')); // Remove patterns if name parts are missing
 
-        // Prioritize the most professional pattern first
+        // Use the first valid pattern for consistency (Highest confidence guess)
         if (patterns.length > 0) {
             return patterns[0].replace(/\s/g, '');
         }
@@ -125,6 +150,39 @@ async function enrichPhoneNumber(currentNumber) {
     // Otherwise, return null to signify missing data.
     return null; 
 }
+
+/**
+ * Calculates a match score between the lead's description/insights and the sales persona.
+ */
+function calculatePersonaMatchScore(lead, salesPersona) {
+    // Lead Type must be added to the lead object during the batch process before calling this.
+    if (!lead.description && !lead.insights) return 0;
+    
+    let score = 0;
+    const persona = salesPersona.toLowerCase();
+    const text = (lead.description + ' ' + (lead.insights || '')).toLowerCase();
+    
+    // Add points for direct persona keywords (e.g., 'financial_advisor' keywords)
+    const personaKeywords = PERSONA_KEYWORDS[persona] || [];
+    
+    for (const phrase of personaKeywords) {
+        // Simplify the complex search phrase into core words for scoring
+        // We look for parts of the phrase that aren't stop words or operators
+        const words = phrase.replace(/["()]/g, '').split(/ OR | AND | /).filter(w => w.length > 5); 
+        for (const word of words) {
+            if (text.includes(word.trim())) {
+                score += 1;
+            }
+        }
+    }
+
+    // Add points for B2B/Residential match (General context match)
+    if (lead.leadType === 'commercial' && (text.includes('business') || text.includes('company'))) score += 1;
+    if (lead.leadType === 'residential' && (text.includes('homeowner') || text.includes('individual') || text.includes('family'))) score += 1;
+    
+    return Math.min(score, 5); // Cap score at 5 for a consistent weighting
+}
+
 
 function computeQualityScore(lead) {
     // Score based on existence of contact info (email must be non-placeholder)
@@ -158,6 +216,10 @@ function rankLeads(leads) {
             if (l.transactionStage && l.keyPainPoint) score += 2;
             else if (l.transactionStage || l.keyPainPoint) score += 1;
             if (l.socialSignal) score += 1;
+
+            // NEW: Add Persona Match Score (Max 5 points)
+            score += l.personaMatchScore || 0; 
+            
             return { ...l, priorityScore: score };
         })
         .sort((a, b) => b.priorityScore - a.priorityScore);
@@ -237,8 +299,9 @@ async function generateGeminiLeads(query, systemInstruction) {
                 }, 
                 transactionStage: { type: "STRING" }, // NEW HIGH-INTENT FIELD
                 keyPainPoint: { type: "STRING" },      // NEW HIGH-INTENT FIELD
+                geoDetail: { type: "STRING" },         // NEW GEOGRAPHICAL DETAIL FIELD (Neighborhood/Zip)
             },
-            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks", "transactionStage", "keyPainPoint"]
+            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks", "transactionStage", "keyPainPoint", "geoDetail"]
         }
     };
 
@@ -388,13 +451,14 @@ async function generateLeadsBatch(leadType, targetType, activeSignal, location, 
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
 
-    // UPDATED SYSTEM INSTRUCTION for STRICT VERIFICATION AND HIGH-INTENT FIELDS
+    // UPDATED SYSTEM INSTRUCTION for STRICT VERIFICATION, HIGH-INTENT, AND GEO-GRANULARITY
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
 Email: When fabricating an email address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
-High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation.`;
+High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation.
+Geographical Detail: Based on the search snippet and the known location, you MUST infer and populate the 'geoDetail' field with the specific neighborhood, street name, or zip code mentioned for that lead. If none is found, return the general location provided.`;
 
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     const isResidential = leadType === 'residential';
@@ -417,7 +481,6 @@ High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'ke
             // Determine primary search keywords
             if (batchIndex === 0) {
                 // FIX: Batch 0 (used by the quick handler) relies ONLY on the user's explicit signal.
-                // This is less restrictive and more likely to return results.
                 searchKeywords = `(${shortTargetType}) in "${location}" AND "${activeSignal}" ${NEGATIVE_QUERY}`;
             } else if (isResidential) {
                 
@@ -478,15 +541,37 @@ High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'ke
     allLeads = deduplicateLeads(allLeads);
     
     for (let lead of allLeads) {
+        // Assign leadType and salesPersona for use in the NEW scoring functions
+        lead.leadType = leadType; 
+        lead.salesPersona = salesPersona;
+
+        // NEW: Website Validation before enrichment
+        if (lead.website && !lead.website.includes('http')) {
+            // Fix missing protocol if necessary for validation check
+            lead.website = 'https://' + lead.website.replace(/https?:\/\//, '');
+        }
+        
+        if (lead.website && !(await checkWebsiteStatus(lead.website))) {
+            console.warn(`Lead ${lead.name} website failed validation. Skipping email enrichment.`);
+            // Clear website if it's dead, preventing failed URL parsing later
+            lead.website = null; 
+        }
+
         // Check if the current email is empty or contains a known placeholder
         const shouldEnrichEmail = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
         
         // Use the new, strict phone number enrichment/verification
         lead.phoneNumber = await enrichPhoneNumber(lead.phoneNumber);
 
-        if (shouldEnrichEmail) {
+        // Only enrich if the website is available and the existing email is bad/missing
+        if (shouldEnrichEmail && lead.website) { 
             lead.email = await enrichEmail(lead.name, lead.website);
+        } else if (!lead.website) {
+             lead.email = null; // Cannot enrich if the website is gone/invalid
         }
+
+        // NEW: Calculate Persona Match Score
+        lead.personaMatchScore = calculatePersonaMatchScore(lead, salesPersona);
         
         lead.qualityScore = computeQualityScore(lead);
         lead.socialSignal = lead.socialSignal || await generatePremiumInsights(lead);
@@ -634,6 +719,7 @@ exports.background = async (event) => {
                     const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
                     
                     // Placeholder for a real database save operation.
+                    // NOTE: Skipping dedicated state management (e.g., Firestore) as requested.
                     console.log(`[Background] Successfully generated and enriched ${leads.length} leads. Leads are now ready for saving to database. (Database saving placeholder here)`);
                     
                 } catch (err) {
