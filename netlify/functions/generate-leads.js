@@ -15,8 +15,9 @@
  * 7. ADJUSTED: Refactored final lead processing to run all website checks and enrichment concurrently.
  * 8. ADJUSTED: Added robust JSON extraction to handle Gemini's markdown formatting.
  * 9. **NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.**
- * 10. **FIX: Modified Batch 0 search logic (quick job) to prioritize B2B/Persona enhancers over generic 'activeSignal' to improve success rate in local searches.**
- * 11. **NEW B2C FEATURE: Added 'contactName' field. Gemini is now instructed to infer a name for residential leads, and the social search and email enrichment prioritize this name for higher quality contact info.**
+ * 10. **FIXED: Modified Batch 0 search logic (quick job) to use the general 'activeSignal' for Residential (B2C) queries, resolving timeout issues caused by overly specific high-net-worth signals being used for young families.**
+ * 11. **FIXED: Modified 'simplifySearchTerm' for residential leads to retain broad 'OR' phrases (like "new parents") instead of oversimplifying to a single, less-relevant term (like "homeowner").**
+ * 12. **NEW B2C FEATURE: Added 'contactName' field. Gemini is now instructed to infer a name for residential leads, and the social search and email enrichment prioritize this name for higher quality contact info.**
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -431,7 +432,7 @@ const PERSONA_KEYWORDS = {
 		`"recent move" OR "new job in area" AND "needs services"` // High Intent: New location, new vendors needed
 	],
 	"life_insurance": [
-		`"inheritance received" OR "trust fund established" OR "annuity maturing"`, // High Intent: Major liquidity event
+		`"inheritance received" OR "trust fund established" OR "annuity maturing"`, // High Intent: Major liquidity event (HNI/Retirement)
 		`"retirement plan rollovers" OR "seeking estate lawyer"`, // High Intent: Active financial management
 		`"trust fund establishment" OR "recent major asset purchase"`, // High Intent: High net worth activity
 		`"IRA rollover" OR "annuity comparison" AND "urgent decision"`, // High Intent: Time-sensitive decision
@@ -483,13 +484,14 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 /**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
+ * FIX: Enhanced B2C logic to retain 'OR' groupings for broader, more relevant searches (e.g., "new parents" OR "young families").
  */
 function simplifySearchTerm(targetType, isResidential) {
-	let coreTerms = [];
 	const normalized = targetType.toLowerCase();
-
+	
 	// Key Commercial Terms (use AND to narrow results)
 	if (!isResidential) {
+		let coreTerms = [];
 		// High signal terms for commercial
 		if (normalized.includes('brokerage')) coreTerms.push('brokerage');
 		if (normalized.includes('small business')) coreTerms.push('"small business"');
@@ -502,7 +504,19 @@ function simplifySearchTerm(targetType, isResidential) {
 	
 	// Key Residential/Financial Terms (use OR to broaden results)
 	if (isResidential) {
-		// High signal terms for residential
+		// FIX: If the user provided a broad OR search, use a simplified version of that OR search
+		if (targetType.includes(' OR ')) {
+			// Extract 1-2 key terms from the OR chain, e.g., 'new parents OR recent marriages' -> '"new parents" OR "young families"'
+			const parts = targetType.split(' OR ').map(p => p.trim());
+			
+			// Use the first two terms as exact phrases
+			const simplifiedTerms = parts.slice(0, 2).map(term => `"${term}"`); 
+			
+			return simplifiedTerms.join(' OR ');
+		}
+		
+		// Fallback to specific high-signal terms if a simple string was provided
+		let coreTerms = [];
 		if (normalized.includes('high net worth')) coreTerms.push('"high net worth"');
 		if (normalized.includes('affluent')) coreTerms.push('affluent');
 		if (normalized.includes('age 50+')) coreTerms.push('"age 50+"');
@@ -558,17 +572,22 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 
 			// Determine primary search keywords
 			if (batchIndex === 0) {
-				// Batch 0 (used by the quick handler) prioritizes the most targeted
-				// persona keyword or B2B enhancer for maximum intent relevance.
-                const enhancer = isResidential 
-                    ? personaKeywords[0] // Use the best residential persona keyword
-                    : COMMERCIAL_ENHANCERS[0]; // Use the best B2B enhancer (e.g., "new funding")
-                    
+				let enhancer;
+				
+				if (isResidential) {
+					// CRITICAL FIX: For B2C/Residential leads, use the user's general activeSignal for Batch 0 
+					// to avoid using an overly specific persona keyword (like HNI/retirement) that leads to 0 results.
+					enhancer = activeSignal; 
+					console.log(`[Batch 1] Running PRIMARY Intent Query (B2C Fix: using activeSignal).`);
+				} else {
+					// B2B leads still use the strong B2B enhancer
+					enhancer = COMMERCIAL_ENHANCERS[0]; 
+					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Focus).`);
+				}
+					
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
-				console.log(`[Batch 1] Running PRIMARY Intent Query (Persona/B2B focus, replacing generic signal).`);
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
-                // NEW: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                // Targets LinkedIn, Facebook, and Twitter/X specifically for contact info.
+                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
                 const defaultSocialTerms = isResidential 
 					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
 					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
