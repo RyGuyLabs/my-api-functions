@@ -16,6 +16,7 @@
  * 8. ADJUSTED: Added robust JSON extraction to handle Gemini's markdown formatting.
  * 9. **NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.**
  * 10. **FIX: Modified Batch 0 search logic (quick job) to prioritize B2B/Persona enhancers over generic 'activeSignal' to improve success rate in local searches.**
+ * 11. **NEW B2C FEATURE: Added 'contactName' field. Gemini is now instructed to infer a name for residential leads, and the social search and email enrichment prioritize this name for higher quality contact info.**
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -95,7 +96,7 @@ async function checkWebsiteStatus(url) {
 		// Use HEAD request for speed, timeout short for validation (5 seconds)
 		// Set maxRetries to 1 (meaning no retries) for a fast validation check
 		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
-		// We consider 2xx (Success) and 3xx (Redirection) as valid. 4xx/5xx are invalid.
+		// We consider 2xx (Success) and 3xx (Redirection) as valid. 4xx/5xx are valid.
 		return response.ok || (response.status >= 300 && response.status < 400); 
 	} catch (e) {
 		console.warn(`Website check failed for ${url}: ${e.message}`);
@@ -106,16 +107,21 @@ async function checkWebsiteStatus(url) {
 
 /**
  * Generates a realistic email pattern based on name and website.
- * ENHANCEMENT: Added more common patterns for better coverage.
+ * ENHANCEMENT: Now uses 'contactName' for B2C leads for better accuracy.
  */
-async function enrichEmail(name, website) {
+async function enrichEmail(lead, website) {
 	try {
 		const url = new URL(website);
 		const domain = url.hostname;
-		const nameParts = name.toLowerCase().split(' ').filter(part => part.length > 0);
 		
-		if (nameParts.length === 0) {
-			 return `contact@${domain}`;
+		// CRITICAL B2C CHANGE: Use contactName if available and it's a residential lead
+		const nameToUse = lead.leadType === 'residential' && lead.contactName ? lead.contactName : lead.name;
+		
+		const nameParts = nameToUse.toLowerCase().split(' ').filter(part => part.length > 0);
+		
+		if (nameParts.length < 2) {
+			 // If we don't have enough parts for first.last, use generic fallback
+			 return `info@${domain}`;
 		}
 		
 		const firstName = nameParts[0];
@@ -125,7 +131,6 @@ async function enrichEmail(name, website) {
 		const patterns = [
 			`${firstName}.${lastName}@${domain}`, 	 	// John.doe@example.com (Primary)
 			`${firstName}_${lastName}@${domain}`, 	 	// John_doe@example.com
-			`${lastName}.${firstName}@${domain}`, 	 	// Doe.john@example.com
 			`${firstName.charAt(0)}${lastName}@${domain}`, // Jdoe@example.com
 			`${firstName}@${domain}`, 	 	 	 	// John@example.com
 			`info@${domain}`, 	 	 	 	 	// Info@example.com (Fallback generic)
@@ -138,7 +143,8 @@ async function enrichEmail(name, website) {
 		
 		// Fallback to a generic domain contact if name processing fails
 		return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
-	} catch {
+	} catch (e) {
+		console.error("Email enrichment error:", e.message);
 		// Fallback if URL parsing fails completely, using website string directly
 		return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
 	}
@@ -277,7 +283,8 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 
 	// Only enrich if the website is available and the existing email is bad/missing
 	if (shouldEnrichEmail && lead.website) {	
-		lead.email = await enrichEmail(lead.name, lead.website);
+		// CRITICAL UPDATE: Pass the entire lead object to enrichEmail for B2C logic
+		lead.email = await enrichEmail(lead, lead.website);
 	} else if (!lead.website) {
 		 lead.email = null; // Cannot enrich if the website is gone/invalid
 	}
@@ -353,6 +360,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 				website: { type: "STRING" },
 				email: { type: "STRING" },
 				phoneNumber: { type: "STRING" },
+				contactName: { type: "STRING" }, // NEW FIELD
 				qualityScore: { type: "STRING" },
 				insights: { type: "STRING" },
 				suggestedAction: { type: "STRING" },
@@ -366,7 +374,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 				keyPainPoint: { type: "STRING" },	 	// NEW HIGH-INTENT FIELD
 				geoDetail: { type: "STRING" },	 	// NEW GEOGRAPHICAL DETAIL FIELD (Neighborhood/Zip)
 			},
-			propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks", "transactionStage", "keyPainPoint", "geoDetail"]
+			propertyOrdering: ["name", "contactName", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks", "transactionStage", "keyPainPoint", "geoDetail"]
 		}
 	};
 
@@ -518,10 +526,13 @@ async function generateLeadsBatch(leadType, targetType, activeSignal, location, 
 		? "Focus on individual homeowners, financial capacity, recent property activities."
 		: "Focus on businesses, size, industry relevance, recent developments.";
 
-	// UPDATED SYSTEM INSTRUCTION: Explicitly instructing Gemini to find competitive/social signals
+	// UPDATED SYSTEM INSTRUCTION: Explicitly instructing Gemini to find competitive/social signals AND infer contactName
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
+
+**B2C CONTACT ENHANCEMENT**: If the 'leadType' is 'residential' and the search snippets imply an individual, you MUST infer a realistic, full first and last name and populate the **'contactName'** field. If a business is implied, leave it blank.
+
 Email: When fabricating an address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
 High-Intent Metrics: You MUST infer and populate both 'transactionStage' (e.g., "Active Bidding", "Comparing Quotes") and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation. You MUST also use the search results to infer and summarize any **competitive shopping signals, recent social media discussions, or current events** in the 'socialSignal' field.
@@ -547,9 +558,8 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 
 			// Determine primary search keywords
 			if (batchIndex === 0) {
-				// FIX: Batch 0 (used by the quick handler) prioritizes the most targeted
-				// persona keyword or B2B enhancer for maximum intent relevance, instead 
-				// of the generic 'activeSignal' phrase that failed in the logs.
+				// Batch 0 (used by the quick handler) prioritizes the most targeted
+				// persona keyword or B2B enhancer for maximum intent relevance.
                 const enhancer = isResidential 
                     ? personaKeywords[0] // Use the best residential persona keyword
                     : COMMERCIAL_ENHANCERS[0]; // Use the best B2B enhancer (e.g., "new funding")
@@ -558,13 +568,16 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				console.log(`[Batch 1] Running PRIMARY Intent Query (Persona/B2B focus, replacing generic signal).`);
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
                 // NEW: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                // Use the user's socialFocus input, or fallback to the generic terms.
-                const defaultSocialTerms = `"shopping around" OR "comparing quotes" OR "need new provider"`;
+                // Targets LinkedIn, Facebook, and Twitter/X specifically for contact info.
+                const defaultSocialTerms = isResidential 
+					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
+					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
+                
                 const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
  				
                 // Search specifically on social/forum sites for real-time discussion and shopping intent.
-                searchKeywords = `site:twitter.com OR site:reddit.com OR site:forums.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
-                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal).`);
+                searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
+                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
 			} else if (isResidential) {
 				
 				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
