@@ -15,6 +15,7 @@
  * 7. ADJUSTED: Refactored final lead processing to run all website checks and enrichment concurrently.
  * 8. ADJUSTED: Added robust JSON extraction to handle Gemini's markdown formatting.
  * 9. **NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.**
+ * 10. **FIX: Modified Batch 0 search logic (quick job) to prioritize B2B/Persona enhancers over generic 'activeSignal' to improve success rate in local searches.**
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -546,12 +547,19 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 
 			// Determine primary search keywords
 			if (batchIndex === 0) {
-				// Batch 0 (used by the quick handler) relies ONLY on the user's explicit signal.
-				searchKeywords = `(${shortTargetType}) in "${location}" AND "${activeSignal}" ${NEGATIVE_QUERY}`;
+				// FIX: Batch 0 (used by the quick handler) prioritizes the most targeted
+				// persona keyword or B2B enhancer for maximum intent relevance, instead 
+				// of the generic 'activeSignal' phrase that failed in the logs.
+                const enhancer = isResidential 
+                    ? personaKeywords[0] // Use the best residential persona keyword
+                    : COMMERCIAL_ENHANCERS[0]; // Use the best B2B enhancer (e.g., "new funding")
+                    
+				searchKeywords = `(${shortTargetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
+				console.log(`[Batch 1] Running PRIMARY Intent Query (Persona/B2B focus, replacing generic signal).`);
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
                 // NEW: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
                 // Use the user's socialFocus input, or fallback to the generic terms.
-				const defaultSocialTerms = `"shopping around" OR "comparing quotes" OR "need new provider"`;
+                const defaultSocialTerms = `"shopping around" OR "comparing quotes" OR "need new provider"`;
                 const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
  				
                 // Search specifically on social/forum sites for real-time discussion and shopping intent.
@@ -572,23 +580,17 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			
 			// 2. Fallback search if primary fails (Simplified Logic)
 			if (gSearchResults.length === 0) {
-				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
-				let fallbackSearchKeywords;
+				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback...`);
 				
-				// Fallback: Drop the most complex enhancer/signal
-				if (isResidential) {
-					fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
-				} else {
-					// Commercial fallback uses the first (often most general) commercial enhancer to ensure some B2B context
-					fallbackSearchKeywords = `${shortTargetType} in ${location} AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
-				}
+				// Fallback: Drop ALL signals and just search the core term and location.
+				let fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
 				
 				// Fallback also uses the Fail-Fast approach
 				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
 				gSearchResults.push(...fallbackResults);
 
 				if (gSearchResults.length === 0) {
-					 console.warn(`[Batch ${batchIndex+1}] No results after fallback. Skipping batch.`);
+					 console.warn(`[Batch ${batchIndex+1}] No results after broadest fallback. Skipping batch.`);
 					 return [];
 				}
 			}	
@@ -681,7 +683,7 @@ exports.handler = async (event) => {
 		}
 
 		// CRITICAL: Hard limit the synchronous job to 1 batch (3 leads).
-		// Note: The quick job will only run Batch 0, which relies on the user's explicit signal.
+		// Note: The quick job will only run Batch 0.
 		const batchesToRun = 1;	
 		const requiredLeads = 3;
 
