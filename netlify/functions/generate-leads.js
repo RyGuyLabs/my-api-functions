@@ -5,8 +5,8 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX APPLIED: Refined search query construction to aggressively simplify complex user
- * search terms, improving the success rate of Google Custom Search.
+ * FIX APPLIED: Introduced a robust, declarative keyword extraction function (simplifySearchTerm)
+ * to ensure that complex user input is converted into highly effective, targeted Google Search queries.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -288,39 +288,39 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 /**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * This function is critical for making overly long user inputs searchable.
+ * This function is CRITICAL for making overly long user inputs searchable by extracting 
+ * only the highest-signal nouns and numbers.
  */
 function simplifySearchTerm(targetType, isResidential) {
-    let simplified = targetType.toLowerCase();
+    let coreTerms = [];
+    const normalized = targetType.toLowerCase();
 
-    // Remove common descriptive and non-searchable phrases
-    const nonSearchablePhrases = [
-        /homeowners with has a family.+children\), owns a home, has a mortgage or /g,
-        /small businesses or brokerages with sales staffs and employee count of /g,
-        /or/g, /and/g, /with/g, /a/g, /the/g, /of/g, /like/g, /spouse/g, /children/g
-    ];
-
-    for (const phrase of nonSearchablePhrases) {
-        simplified = simplified.replace(phrase, ' ');
-    }
-    
-    // Replace multiple spaces with a single space, trim, and rejoin to form clean search terms
-    simplified = simplified.replace(/\s+/g, ' ').trim();
-
-    // Reintroduce boolean OR for the main keywords like 'high net worth OR affluent'
-    if (isResidential) {
-        simplified = simplified.replace(/high net worth/g, '"high net worth" OR "affluent"');
-    }
-
-    // Commercial specific simplification
+    // Key Commercial Terms (use AND to narrow results)
     if (!isResidential) {
-        // Keeps 'brokerages' and number ranges
-        simplified = simplified.replace(/brokerages/g, 'brokerage').replace(/\+/g, '+');
+        // High signal terms for commercial
+        if (normalized.includes('brokerage')) coreTerms.push('brokerage');
+        if (normalized.includes('small business')) coreTerms.push('"small business"');
+        if (normalized.includes('50+ employees')) coreTerms.push('"50+ employees"');
+        else if (normalized.includes('50+')) coreTerms.push('"50+ employees"');
+        else if (normalized.includes('sales staff')) coreTerms.push('"sales staff"');
+
+        return coreTerms.length > 0 ? coreTerms.join(' AND ') : targetType.split(/\s+/).slice(0, 4).join(' ');
     }
     
-    // Take a maximum of 6-8 core words for the search query to keep it efficient
-    const coreWords = simplified.split(' ').filter(w => w.length > 2);
-    return coreWords.slice(0, 8).join(' ');
+    // Key Residential/Financial Terms (use OR to broaden results)
+    if (isResidential) {
+        // High signal terms for residential
+        if (normalized.includes('high net worth')) coreTerms.push('"high net worth"');
+        if (normalized.includes('affluent')) coreTerms.push('affluent');
+        if (normalized.includes('age 50+')) coreTerms.push('"age 50+"');
+        if (normalized.includes('mortgage')) coreTerms.push('mortgage');
+        if (normalized.includes('homeowner')) coreTerms.push('homeowner');
+        
+        return coreTerms.length > 0 ? coreTerms.join(' OR ') : targetType.split(/\s+/).slice(0, 4).join(' ');
+    }
+
+    // Default fallback
+    return targetType.split(/\s+/).slice(0, 4).join(' ');
 }
 
 
