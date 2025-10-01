@@ -6,8 +6,9 @@
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
  * FIX APPLIED:
- * 1. The custom phone number enrichment function has been disabled. Phone numbers must now come from search snippets or be left blank.
- * 2. Gemini System Instruction updated to explicitly mandate data verification and strict adherence to leaving fields blank if no source is found.
+ * 1. Enhanced PERSONA_KEYWORDS with higher-intent, transactional terms.
+ * 2. Added two new critical output fields to the Gemini JSON schema: 'transactionStage' and 'keyPainPoint'.
+ * 3. Gemini System Instruction updated to mandate the extraction of these detailed metrics.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -112,8 +113,7 @@ async function enrichEmail(name, website) {
 }
 
 /**
- * CRITICAL UPDATE: Phone number generation is now DISABLED.
- * The number must be extracted by Gemini from the search snippets or remain null.
+ * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
  */
 async function enrichPhoneNumber(currentNumber) {
     // If a number was found and is not a known placeholder, keep it.
@@ -152,6 +152,9 @@ function rankLeads(leads) {
             if (l.qualityScore === 'High') score += 3;
             if (l.qualityScore === 'Medium') score += 2;
             if (l.qualityScore === 'Low') score += 1;
+            // Add weight for the new specialized fields
+            if (l.transactionStage && l.keyPainPoint) score += 2;
+            else if (l.transactionStage || l.keyPainPoint) score += 1;
             if (l.socialSignal) score += 1;
             return { ...l, priorityScore: score };
         })
@@ -230,8 +233,10 @@ async function generateGeminiLeads(query, systemInstruction) {
                     type: "ARRAY", 
                     items: { type: "STRING" } 
                 }, 
+                transactionStage: { type: "STRING" }, // NEW HIGH-INTENT FIELD
+                keyPainPoint: { type: "STRING" },     // NEW HIGH-INTENT FIELD
             },
-            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks"]
+            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks", "transactionStage", "keyPainPoint"]
         }
     };
 
@@ -275,21 +280,53 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// Keyword Definitions (Restored)
+// Keyword Definitions (UPDATED for High Intent)
 // -------------------------
 const PERSONA_KEYWORDS = {
-    "real_estate": [`"home buyer" OR "recently purchased home"`, `"new construction" OR "single-family home"`, `"building permit" OR "home renovation project estimate"`, `"pre-foreclosure" OR "distressed property listing"`, `"recent move" OR "relocation" OR "new job in area"`],
-    "life_insurance": [`"high net worth" OR "affluent"`, `"financial planning seminar" OR "estate planning attorney"`, `"trust fund establishment" OR "recent inheritance"`, `"IRA rollover" OR "annuity comparison"`, `"age 50+" OR "retirement specialist"`],
-    "financial_advisor": [`"business owner" OR "recent funding"`, `"property investor" OR "real estate portfolio management"`, `"401k rollover" OR "retirement planning specialist"`, `"S-Corp filing" OR "new business incorporation"`],
-    "local_services": [`"home improvement" OR "major repair needed"`, `"renovation quote" OR "remodeling project bid"`, `"new construction start date" OR "large landscaping project"`, `"local homeowner review" OR "service provider recommendations"`],
-    "mortgage": [`"mortgage application pre-approved" OR "refinancing quote"`, `"recent purchase contract signed" OR "new home loan needed"`, `"first-time home buyer seminar" OR "closing date soon"`, `"VA loan eligibility" OR "FHA loan requirements"`],
-    "default": [`"event venue booking"`, `"moving company quotes"`, `"recent college graduate"`, `"small business startup help"`]
+    "real_estate": [
+        `"closing soon" OR "pre-approval granted" OR "final walk-through"`, // High Intent: Transactional closure
+        `"new construction" OR "single-family home" AND "immediate move"`, // High Intent: Time-sensitive need
+        `"building permit" OR "major home renovation project" AND "budget finalized"`, // High Intent: Budget and scope set
+        `"distressed property listing" AND "cash offer"`, // High Intent: Quick sale/purchase
+        `"recent move" OR "new job in area" AND "needs services"` // High Intent: New location, new vendors needed
+    ],
+    "life_insurance": [
+        `"inheritance received" OR "trust fund established" OR "annuity maturing"`, // High Intent: Major liquidity event
+        `"retirement plan rollovers" OR "seeking estate lawyer"`, // High Intent: Active financial management
+        `"trust fund establishment" OR "recent major asset purchase"`, // High Intent: High net worth activity
+        `"IRA rollover" OR "annuity comparison" AND "urgent decision"`, // High Intent: Time-sensitive decision
+        `"age 50+" OR "retirement specialist" AND "portfolio review"` // High Intent: Actively reviewing retirement
+    ],
+    "financial_advisor": [
+        `"recent funding" OR "major business expansion" AND "need advisor"`, // High Intent: Need for financial guidance
+        `"property investor" OR "real estate portfolio management" AND "tax strategy"`, // High Intent: Specific service need
+        `"401k rollover" OR "retirement planning specialist" AND "immediate consultation"`, // High Intent: Active seeking of advice
+        `"S-Corp filing" OR "new business incorporation" AND "accounting needed"` // High Intent: New business setup
+    ],
+    "local_services": [
+        `"home improvement" OR "major repair needed" AND "quote accepted"`, // High Intent: Ready to proceed
+        `"renovation quote" OR "remodeling project bid" AND "start date imminent"`, // High Intent: Confirmed project
+        `"new construction start date" OR "large landscaping project" AND "hiring now"`, // High Intent: Active hiring
+        `"local homeowner review" OR "service provider recommendations" AND "booked service"` // High Intent: High social signal/recommendation
+    ],
+    "mortgage": [
+        `"mortgage application pre-approved" OR "refinancing quote" AND "comparing rates"`, // High Intent: Shopping phase
+        `"recent purchase contract signed" OR "new home loan needed" AND "30 days to close"`, // High Intent: Critical timeline
+        `"first-time home buyer seminar" OR "closing date soon" AND "documents finalized"`, // High Intent: Advanced planning
+        `"VA loan eligibility" OR "FHA loan requirements" AND "submission ready"` // High Intent: Specific product search
+    ],
+    "default": [
+        `"urgent event venue booking" OR "last-minute service needed"`, 
+        `"moving company quotes" AND "move date confirmed"`, 
+        `"recent college graduate" AND "seeking investment advice"`, 
+        `"small business startup help" AND "funding secured"`
+    ]
 };
 const COMMERCIAL_ENHANCERS = [
-    `"new funding" OR "business expansion"`,
-    `"recent hiring" OR "job posting"`,
-    `"moved office" OR "new commercial building"`,
-    `"new product launch" OR "major contract win"`
+    `"new funding" OR "business expansion" AND "need new vendor"`, // High Intent: Budget available
+    `"recent hiring" OR "job posting" AND "sales staff needed"`, // High Intent: Sales/Growth focus
+    `"moved office" OR "new commercial building" AND "telecom setup needed"`, // High Intent: Infrastructure need
+    `"new product launch" OR "major contract win" AND "immediate capacity need"` // High Intent: Scalability/capacity issue
 ];
 
 const NEGATIVE_FILTERS = [
@@ -349,13 +386,13 @@ async function generateLeadsBatch(leadType, targetType, activeSignal, location, 
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
 
-    // UPDATED SYSTEM INSTRUCTION for STRICT VERIFICATION
+    // UPDATED SYSTEM INSTRUCTION for STRICT VERIFICATION AND HIGH-INTENT FIELDS
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
-CRITICAL: All information (name, description, website, social links) MUST pertain to the lead being referenced in the search results.
-Email: When fabricating an email address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains like 'example.com', 'placeholder.net', or 'test.com'.
+CRITICAL: All information MUST pertain to the lead referenced in the search results.
+Email: When fabricating an email address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
-Social Links: You MUST include at least one realistic social media link (LinkedIn, Facebook, etc.) derived from the search snippets for both B2B and B2C leads.`;
+High-Intent Metrics: You MUST infer and populate both 'transactionStage' and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation.`;
 
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     const isResidential = leadType === 'residential';
@@ -372,17 +409,17 @@ Social Links: You MUST include at least one realistic social media link (LinkedI
             const personaEnhancer = personaKeywords[batchIndex % personaKeywords.length]; 
             const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
 
-            // CRITICAL FIX: Simplify the user's target input before combining it with signals
+            // Simplify the user's target input before combining it with signals
             const shortTargetType = simplifySearchTerm(targetType, isResidential);
 
             // Determine primary search keywords
             if (isResidential) {
                 
-                // NEW RESIDENTIAL QUERY: Simplified core target + location + (User's active signal OR hardcoded persona signal)
+                // NEW RESIDENTIAL QUERY: Simplified core target + location + (User's active signal OR high-intent persona signal)
                 searchKeywords = `(${shortTargetType}) in "${location}" AND ("${activeSignal}" OR ${personaEnhancer}) ${NEGATIVE_QUERY}`;
             } else {
                 
-                // NEW B2B QUERY: Simplified core target + location + (User's active signal OR hardcoded B2B signal)
+                // NEW B2B QUERY: Simplified core target + location + (User's active signal OR high-intent B2B signal)
                 searchKeywords = `(${shortTargetType}) in "${location}" AND ("${activeSignal}" OR ${b2bEnhancer}) ${NEGATIVE_QUERY}`;
             }
             
