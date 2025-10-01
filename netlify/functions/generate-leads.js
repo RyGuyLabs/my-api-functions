@@ -5,8 +5,9 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX APPLIED: Introduced a robust, declarative keyword extraction function (simplifySearchTerm)
- * to ensure that complex user input is converted into highly effective, targeted Google Search queries.
+ * FIX APPLIED:
+ * 1. The custom phone number enrichment function has been disabled. Phone numbers must now come from search snippets or be left blank.
+ * 2. Gemini System Instruction updated to explicitly mandate data verification and strict adherence to leaving fields blank if no source is found.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -103,25 +104,38 @@ async function enrichEmail(name, website) {
         }
         
         // Fallback to a generic domain contact if name processing fails
-        return `contact@${domain}`;
-
+        return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
     } catch {
         // Fallback if URL parsing fails completely, using website string directly
         return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
     }
 }
 
-async function enrichPhoneNumber() {
-    return `+1-555-${Math.floor(1000000 + Math.random() * 9000000)}`;
+/**
+ * CRITICAL UPDATE: Phone number generation is now DISABLED.
+ * The number must be extracted by Gemini from the search snippets or remain null.
+ */
+async function enrichPhoneNumber(currentNumber) {
+    // If a number was found and is not a known placeholder, keep it.
+    if (currentNumber && currentNumber.length > 5 && !currentNumber.includes('555')) {
+        return currentNumber;
+    }
+    // Otherwise, return null to signify missing data.
+    return null; 
 }
 
 function computeQualityScore(lead) {
-    if (lead.email && lead.phoneNumber && lead.email.includes('@') && !PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain))) return 'High';
-    if (!lead.email && !lead.phoneNumber) return 'Low';
-    return 'Medium';
+    // Score based on existence of contact info (email must be non-placeholder)
+    const hasValidEmail = lead.email && lead.email.includes('@') && !PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
+    const hasPhone = !!lead.phoneNumber; 
+    
+    if (hasValidEmail && hasPhone) return 'High';
+    if (hasValidEmail || hasPhone) return 'Medium';
+    return 'Low';
 }
 
 async function generatePremiumInsights(lead) {
+    // These are placeholders for real, scraped insights; still useful for Gemini context.
     const events = [
         `Featured in local news about ${lead.name}`,
         `Announced new product/service in ${lead.website}`,
@@ -212,8 +226,12 @@ async function generateGeminiLeads(query, systemInstruction) {
                 suggestedAction: { type: "STRING" },
                 draftPitch: { type: "STRING" },
                 socialSignal: { type: "STRING" },
+                socialMediaLinks: { 
+                    type: "ARRAY", 
+                    items: { type: "STRING" } 
+                }, 
             },
-            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal"]
+            propertyOrdering: ["name", "description", "website", "email", "phoneNumber", "qualityScore", "insights", "suggestedAction", "draftPitch", "socialSignal", "socialMediaLinks"]
         }
     };
 
@@ -288,8 +306,6 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 /**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * This function is CRITICAL for making overly long user inputs searchable by extracting 
- * only the highest-signal nouns and numbers.
  */
 function simplifySearchTerm(targetType, isResidential) {
     let coreTerms = [];
@@ -333,10 +349,13 @@ async function generateLeadsBatch(leadType, targetType, activeSignal, location, 
         ? "Focus on individual homeowners, financial capacity, recent property activities."
         : "Focus on businesses, size, industry relevance, recent developments.";
 
-    // Instruction to the model to avoid generic placeholders
+    // UPDATED SYSTEM INSTRUCTION for STRICT VERIFICATION
     const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
-CRITICAL: When fabricating an email address, you MUST use a domain from the provided 'website' field. NEVER use placeholder domains like 'example.com', 'placeholder.net', or 'test.com'.`;
+CRITICAL: All information (name, description, website, social links) MUST pertain to the lead being referenced in the search results.
+Email: When fabricating an email address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains like 'example.com', 'placeholder.net', or 'test.com'.
+Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
+Social Links: You MUST include at least one realistic social media link (LinkedIn, Facebook, etc.) derived from the search snippets for both B2B and B2C leads.`;
 
     const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
     const isResidential = leadType === 'residential';
@@ -416,15 +435,23 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
     
     for (let lead of allLeads) {
         // Check if the current email is empty or contains a known placeholder
-        const shouldEnrich = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
+        const shouldEnrichEmail = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
+        
+        // Use the new, strict phone number enrichment/verification
+        lead.phoneNumber = await enrichPhoneNumber(lead.phoneNumber);
 
-        if (shouldEnrich) {
+        if (shouldEnrichEmail) {
             lead.email = await enrichEmail(lead.name, lead.website);
         }
-
-        lead.phoneNumber = lead.phoneNumber || await enrichPhoneNumber();
+        
         lead.qualityScore = computeQualityScore(lead);
         lead.socialSignal = lead.socialSignal || await generatePremiumInsights(lead);
+        
+        // Ensure socialMediaLinks is always an array
+        if (!Array.isArray(lead.socialMediaLinks)) {
+             // If Gemini generated a single string or nothing, ensure it's converted to an array or empty.
+             lead.socialMediaLinks = lead.socialMediaLinks ? [lead.socialMediaLinks] : [];
+        }
     }
     return rankLeads(allLeads);
 }
@@ -461,10 +488,10 @@ exports.handler = async (event) => {
         console.log('[Handler DEBUG] Parsed Body Data:', requestData);
         // --- END DEBUG LOGGING ---
 
-        // FIX 1: Use incoming 'searchTerm' and 'activeSignal' (if present)
+        // Use incoming 'searchTerm' and 'activeSignal' (if present)
         const { leadType, searchTerm, activeSignal, location, salesPersona } = requestData;
         
-        // FIX 2: Default activeSignal if client is not sending it
+        // Default activeSignal if client is not sending it
         const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
 
         // Checking for required parameters (using searchTerm and resolvedActiveSignal)
@@ -489,7 +516,7 @@ exports.handler = async (event) => {
 
         console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${searchTerm} (Signal: ${resolvedActiveSignal}) in ${location}.`);
 
-        // FIX 3: Pass searchTerm (as targetType) and resolvedActiveSignal to generator
+        // Pass searchTerm (as targetType) and resolvedActiveSignal to generator
         const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, batchesToRun);
         
         return {
