@@ -5,8 +5,8 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX APPLIED: Mapped incoming 'searchTerm' to internal 'targetType' and added a default 
- * for the missing 'activeSignal' parameter to resolve the 400 error.
+ * FIX APPLIED: Refined search query construction to aggressively simplify complex user
+ * search terms, improving the success rate of Google Custom Search.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -286,6 +286,44 @@ const NEGATIVE_FILTERS = [
 const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 
+/**
+ * Aggressively simplifies a complex, descriptive target term into core search keywords.
+ * This function is critical for making overly long user inputs searchable.
+ */
+function simplifySearchTerm(targetType, isResidential) {
+    let simplified = targetType.toLowerCase();
+
+    // Remove common descriptive and non-searchable phrases
+    const nonSearchablePhrases = [
+        /homeowners with has a family.+children\), owns a home, has a mortgage or /g,
+        /small businesses or brokerages with sales staffs and employee count of /g,
+        /or/g, /and/g, /with/g, /a/g, /the/g, /of/g, /like/g, /spouse/g, /children/g
+    ];
+
+    for (const phrase of nonSearchablePhrases) {
+        simplified = simplified.replace(phrase, ' ');
+    }
+    
+    // Replace multiple spaces with a single space, trim, and rejoin to form clean search terms
+    simplified = simplified.replace(/\s+/g, ' ').trim();
+
+    // Reintroduce boolean OR for the main keywords like 'high net worth OR affluent'
+    if (isResidential) {
+        simplified = simplified.replace(/high net worth/g, '"high net worth" OR "affluent"');
+    }
+
+    // Commercial specific simplification
+    if (!isResidential) {
+        // Keeps 'brokerages' and number ranges
+        simplified = simplified.replace(/brokerages/g, 'brokerage').replace(/\+/g, '+');
+    }
+    
+    // Take a maximum of 6-8 core words for the search query to keep it efficient
+    const coreWords = simplified.split(' ').filter(w => w.length > 2);
+    return coreWords.slice(0, 8).join(' ');
+}
+
+
 // -------------------------
 // Lead Generator Core (CONCURRENT EXECUTION)
 // -------------------------
@@ -315,17 +353,18 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
             const personaEnhancer = personaKeywords[batchIndex % personaKeywords.length]; 
             const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
 
+            // CRITICAL FIX: Simplify the user's target input before combining it with signals
+            const shortTargetType = simplifySearchTerm(targetType, isResidential);
+
             // Determine primary search keywords
             if (isResidential) {
-                // Shorten the user's potentially massive targetType term 
-                const maxWords = 15;
-                const shortTargetType = targetType.split(' ').slice(0, maxWords).join(' ');
                 
-                // NEW RESIDENTIAL QUERY: User's target + location + (User's active signal OR hardcoded persona signal)
-                searchKeywords = `"${shortTargetType}" in "${location}" AND ("${activeSignal}" OR ${personaEnhancer}) ${NEGATIVE_QUERY}`;
+                // NEW RESIDENTIAL QUERY: Simplified core target + location + (User's active signal OR hardcoded persona signal)
+                searchKeywords = `(${shortTargetType}) in "${location}" AND ("${activeSignal}" OR ${personaEnhancer}) ${NEGATIVE_QUERY}`;
             } else {
-                // NEW B2B QUERY: User's target + location + (User's active signal OR hardcoded B2B signal)
-                searchKeywords = `"${targetType}" in "${location}" AND ("${activeSignal}" OR ${b2bEnhancer}) ${NEGATIVE_QUERY}`;
+                
+                // NEW B2B QUERY: Simplified core target + location + (User's active signal OR hardcoded B2B signal)
+                searchKeywords = `(${shortTargetType}) in "${location}" AND ("${activeSignal}" OR ${b2bEnhancer}) ${NEGATIVE_QUERY}`;
             }
             
             // 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
@@ -335,12 +374,12 @@ CRITICAL: When fabricating an email address, you MUST use a domain from the prov
             if (gSearchResults.length === 0) {
                 console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying simplified fallback...`);
                 let fallbackSearchKeywords;
+                
+                // Fallback: Drop the activeSignal and rely only on the core persona/target in the location
                 if (isResidential) {
-                    // Fallback to the most basic persona keyword
-                    fallbackSearchKeywords = `${personaKeywords[0]} in ${location} ${NEGATIVE_QUERY}`;
+                    fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
                 } else {
-                    // Fallback to the user's target type combined with the most basic commercial enhancer
-                    fallbackSearchKeywords = `${targetType} in ${location} AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
+                    fallbackSearchKeywords = `${shortTargetType} in ${location} AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
                 }
                 
                 // Fallback also uses the Fail-Fast approach
