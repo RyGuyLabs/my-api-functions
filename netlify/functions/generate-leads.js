@@ -5,11 +5,10 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX: CRITICAL UPDATE to 'simplifySearchTerm' for B2C OR chains.
- * The function now aggressively simplifies complex OR search terms (e.g., 'homeowners with families OR "new parents"...')
- * into 1-2 highly generic, high-intent phrases (e.g., '"new family" OR "new home"').
- * This prevents the search from timing out in low-density geographical areas (like Sebastian, FL)
- * by dramatically reducing the complexity of the query sent to Google.
+ * FIX: CRITICAL UPDATE to FALLBACK LOGIC within generateLeadsBatch.
+ * The function now uses a truly broad, low-intent search term (e.g., '"homeowner family" in [Location]') 
+ * as the final fallback. This ensures results are returned quickly in low-data-density areas, 
+ * preventing the entire Netlify function from timing out after the initial focused searches fail.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -621,8 +620,13 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			if (gSearchResults.length === 0) {
 				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback...`);
 				
+				// --- CRITICAL FIX: Use a truly broad, non-intent based term for the final fallback ---
+				const broaderFallbackTerm = isResidential 
+					? `"homeowner family" in "${location}"` // Residential fallback (most generic description of the target)
+					: `${shortTargetType} in "${location}"`; // B2B fallback remains the same (business name is the term)
+
 				// Fallback: Drop ALL signals and just search the core term and location.
-				let fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
+				let fallbackSearchKeywords = `${broaderFallbackTerm} ${NEGATIVE_QUERY}`;
 				
 				// Fallback also uses the Fail-Fast approach
 				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
