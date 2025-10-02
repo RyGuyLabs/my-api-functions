@@ -6,12 +6,8 @@
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
  * CRITICAL FIXES APPLIED:
- * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
- * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
- * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
- * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
- * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
- * 3. NEW CRITICAL UPDATE: Implemented **Dynamic Negative Keyword Filtering** to exclude competitor companies based on the 'salesPersona'.
+ * 1. DYNAMIC NEGATIVE KEYWORDS: Implemented filtering to exclude competitor companies based on the 'salesPersona'.
+ * 2. NEW CRITICAL UPDATE: **Enhanced Batch 2 Search** to focus on directories (Yellow Pages) and high-activity social platforms (Quora, Facebook, Instagram, LinkedIn, Reddit, Twitter) to prioritize urgent, local, and contact-rich leads.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -79,7 +75,7 @@ async function searchGoogle(query) {
 }
 
 /**
- * NEW: Generates a string of negative keywords to exclude competitor results
+ * Generates a string of negative keywords to exclude competitor results
  * based on the user's sales persona/industry.
  * @param {string} persona - The sales persona (e.g., "Real Estate Agent")
  * @returns {string} - A space-separated string of negative keywords (e.g., "-agency -broker -realty")
@@ -127,7 +123,7 @@ async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, s
         4. If a verifiable contact (email, phone, social handle) is not in the snippet, set it to NULL. **DO NOT** use placeholders like 'N/A' or 'Requires Research' for contact fields.
         5. The 'description' must be a one-sentence summary of the business/person's intent found in the snippet.
         6. The 'insights' must detail *why* this is a good lead for the sales persona.
-        7. The 'socialSignal' must state if the lead shows active intent (e.g., asking for quotes, comparing competitors) based on the snippet text.
+        7. The 'socialSignal' must state if the lead shows active intent (e.g., asking for quotes, comparing competitors, or **having an active local directory listing**) based on the snippet text.
         8. The 'qualityScore' must be 'High', 'Medium', or 'Low' based on the clarity of intent in the snippet.
         9. The 'draftPitch' should be a concise, personalized opening line for the contact.
     `;
@@ -160,7 +156,7 @@ async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, s
                     "insights": { "type": "STRING", "description": "Why this is a good lead (for the sales persona)." },
                     "qualityScore": { "type": "STRING", "enum": ["High", "Medium", "Low"], "description": "The inferred lead quality score." },
                     "suggestedAction": { "type": "STRING", "description": "The immediate next step (e.g., 'Check Reddit thread', 'Verify LLC details')." },
-                    "socialSignal": { "type": "STRING", "description": "A signal of competitive shopping or active intent." },
+                    "socialSignal": { "type": "STRING", "description": "A signal of competitive shopping, active intent, or high local relevance." },
                     "draftPitch": { "type": "STRING", "description": "A concise, personalized opening pitch." }
                 },
                 required: ["name", "website", "email", "phoneNumber", "socialMediaHandle", "description", "insights", "qualityScore", "suggestedAction", "socialSignal", "draftPitch"]
@@ -198,7 +194,7 @@ async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, s
 async function generateLeadsBatch(leadType, searchTerm, financialTerm, activeSignal, location, salesPersona, socialFocus, batchesToRun = 3) {
     let leadData = [];
 
-    // --- NEW: Generate Dynamic Negative Keywords ---
+    // --- Generate Dynamic Negative Keywords (still critical for competitor filtering) ---
     const negativeKeywords = generateNegativeKeywords(salesPersona);
 
     // --- BATCH 1: General Web & Location Focus (B2B Commercial Intent) ---
@@ -210,9 +206,9 @@ async function generateLeadsBatch(leadType, searchTerm, financialTerm, activeSig
     const generalSnippets = await withBackoff(() => searchGoogle(generalQuery));
 
     
-    // --- BATCH 2: Social Media Frequency Focus (HOT Leads) ---
-    // Scoped to social platforms to find active discussions/competitive intent.
-    const socialPlatforms = "site:linkedin.com OR site:reddit.com OR site:twitter.com";
+    // --- BATCH 2: Active Intent & Directory Focus (HOT, Local Leads) ---
+    // Scoped to social platforms and directories to find active discussions/competitive intent and high-contact listings.
+    const socialPlatforms = "site:linkedin.com OR site:reddit.com OR site:twitter.com OR site:yellowpages.com OR site:quora.com OR site:facebook.com OR site:instagram.com";
     const socialQueryTerm = socialFocus || financialTerm || searchTerm;
     
     // Use negative keywords here too to prevent finding competitor social profiles
