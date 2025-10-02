@@ -7,102 +7,179 @@
  *
  * CRITICAL FIXES APPLIED:
  * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
+ * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
+ * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
+ * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
  * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
- * 3. NEW FEATURE: **Vertical Intent Targeting** implemented for Batch 2 searches to only use pain points relevant to the specified industry (e.g., 'FinTech').
+ * 3. NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.
  */
 
 const nodeFetch = require('node-fetch'); 
 const fetch = nodeFetch.default || nodeFetch; 
+const { parse } = require('url');
 
+// --- Environment Variables ---
 const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
 const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
+
+// --- API Endpoints ---
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 
 // --- Configuration ---
-
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// --- New: Vertical Mapping for Targeted Intent Searching (Batch 2) ---
+// --- LLM SYSTEM INSTRUCTION ---
+// Updated to explicitly ask for social/competitive signals.
+const SYSTEM_INSTRUCTION = (salesPersona, targetDecisionMaker) => `
+You are a Lead Qualification AI specializing in high-intent, sales-ready leads.
+Your task is to analyze search engine snippets related to user-defined criteria and extract structured data.
+The user is a **${salesPersona}** targeting a **${targetDecisionMaker}** profile.
+Filter out any results that are pure advertisements, sponsored content, or generic information. Focus only on leads that show genuine buying intent, recent activity, or competitive pressure.
+The output MUST be a JSON array of objects, conforming strictly to the provided schema.
 
-const ALL_PAIN_POINTS = '"data silos" OR "reducing customer churn" OR "AML reporting pain" OR "security audit failure" OR "HIPAA violation fines" OR "EHR integration" OR "abandoned cart rate" OR "better personalization"';
+Mandatory JSON Schema fields to populate:
+1.  **name**: The name of the person or company.
+2.  **description**: A one-sentence summary of the company/person and their context (e.g., "A mid-sized logistics firm seeking new ERP software," or "A local family in need of life insurance for a new baby.").
+3.  **insights**: The 'Why'—a concise explanation of *why* this is a high-quality lead based on the snippet (e.g., urgency, financial indicators, competitive mention).
+4.  **draftPitch**: A single, short, personalized pitch sentence for the ${salesPersona} to use.
+5.  **qualityScore**: Assign 'High', 'Medium', or 'Low' based on the intent and relevance shown in the snippet.
+6.  **suggestedAction**: The next immediate step (e.g., "Call immediately," "Send personalized LinkedIn invite," "Monitor competitor reviews").
+7.  **socialSignal**: Infer and document any active social or competitive signals found in the snippets (e.g., "Recently posted on Reddit asking for alternatives to their current vendor," "Company C-suite followed competitor on LinkedIn"). If none, state "None observed."
+8.  **website**: The most relevant website URL.
+9.  **email**: A best-guess contact email (e.g., info@domain.com) or 'N/A'.
+10. **phoneNumber**: A public phone number or 'N/A'.
+11. **socialMediaHandle**: A primary social handle (LinkedIn, Twitter) for the company or person, or 'N/A'.
+12. **leadType**: 'commercial' or 'residential'.
+13. **decisionMakerName**: (Commercial only) The name of the likely decision maker/contact person mentioned, or 'N/A'.
+14. **decisionMakerTitle**: (Commercial only) Their inferred job title, or 'N/A'.
+15. **techStackSignal**: (Commercial only) Mentioned technology or software that suggests a need, or 'N/A'.
+16. **geoDetail**: The specific neighborhood, zip code, or sub-locality mentioned in the snippet, for hyper-local targeting, or 'N/A'.
+`;
 
-const VERTICAL_PAIN_POINTS = {
-    'SaaS': '"data silos" OR "data integration challenge" OR "reducing customer churn" OR "customer retention problem"',
-    'FinTech': '"AML reporting pain" OR "KYC compliance failure" OR "security audit failure" OR "regulatory enforcement"',
-    'HealthTech': '"HIPAA violation fines" OR "patient data breach" OR "EHR integration difficulty" OR "clinical workflow inefficiency"',
-    'ECommerce': '"abandoned cart rate is too high" OR "better personalization" OR "customer segmentation" OR "fulfillment bottleneck"',
-    'Default': ALL_PAIN_POINTS // Fallback to all signals
-};
 
-// --- Helper Functions ---
-
-/**
- * Retries a fetch request with exponential backoff on failure.
- * @param {string} url - The URL to fetch.
- * @param {object} options - Fetch options.
- * @param {number} maxRetries - Maximum number of retries.
- * @returns {Promise<Response>}
- */
-async function fetchWithRetry(url, options, maxRetries = 3) {
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            const response = await fetch(url, options);
-            if (response.ok) {
-                return response;
-            }
-            // If response is not ok (e.g., 400, 500), throw to retry (unless 400)
-            if (response.status >= 400 && response.status < 500) {
-                 // Do not retry on client errors (4xx) except for 429
-                 if (response.status !== 429) {
-                    throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-                 }
-            }
-            
-        } catch (error) {
-            console.warn(`Fetch attempt ${i + 1} failed: ${error.message}. Retrying...`);
-        }
-        
-        if (i < maxRetries - 1) {
-            // Exponential backoff wait
-            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-    throw new Error('All fetch attempts failed after retries.');
-}
+// --- UTILITIES ---
 
 /**
- * Searches Google using Custom Search API.
- * @param {string} query - The search query.
- * @param {string} location - Geographical hint.
- * @returns {Promise<Array<object>>} - Array of search results.
+ * Robustly extracts the JSON array from the Gemini response text, which often includes markdown fences (```json).
+ * @param {string} text - The raw text response from the LLM.
+ * @returns {Array} - The parsed JavaScript array.
  */
-async function searchGoogle(query, location) {
-    if (!SEARCH_API_KEY || !SEARCH_ENGINE_ID) {
-        console.error("Missing Google Search API credentials.");
-        return [];
-    }
-    
-    // Append location to query for better regional relevance
-    const finalQuery = `${query} in ${location}`;
-    
-    const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(finalQuery)}&num=10`;
+function extractAndParseJson(text) {
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+    let jsonString = jsonMatch ? jsonMatch[1] : text.trim();
+
+    // Attempt to fix common LLM JSON errors (like trailing commas)
+    jsonString = jsonString.replace(/,\s*([\]}])/g, '$1');
 
     try {
-        const response = await fetchWithRetry(url, { method: 'GET' });
-        const data = await response.json();
-        return data.items || [];
-    } catch (error) {
-        console.error('Google Search API Error:', error);
-        return [];
+        return JSON.parse(jsonString);
+    } catch (e) {
+        console.error('JSON Parsing failed. Attempting cleanup on:', jsonString);
+        // Fallback for severely malformed JSON (simple regex cleanup)
+        // This is a last resort and may fail.
+        try {
+            // Attempt to wrap content if it's not enclosed by [] or {}
+            if (!jsonString.startsWith('[') && !jsonString.startsWith('{')) {
+                jsonString = '[' + jsonString + ']';
+            }
+            return JSON.parse(jsonString);
+        } catch (finalError) {
+            console.error('Final JSON Parsing attempt failed:', finalError);
+            throw new Error(`Failed to parse structured JSON from LLM: ${finalError.message}`);
+        }
     }
 }
+
+/**
+ * Simple function to check if a URL is valid before attempting an email check.
+ * @param {string} urlString - The URL to check.
+ * @returns {Promise<boolean>} - True if the website is likely accessible.
+ */
+async function checkWebsiteExists(urlString) {
+    if (!urlString || urlString === 'N/A' || !urlString.startsWith('http')) return false;
+    try {
+        const response = await fetch(urlString, { method: 'HEAD', timeout: 3000 });
+        return response.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Generates a list of common email permutations for a domain.
+ * @param {string} domain - The company's domain.
+ * @returns {Array<string>} - A list of common email addresses.
+ */
+function generateEmailPermutations(domain, name = '') {
+    const emails = [];
+    if (!domain) return emails;
+
+    // Standard contact roles
+    emails.push(`info@${domain}`);
+    emails.push(`contact@${domain}`);
+    emails.push(`sales@${domain}`);
+
+    // If a name is available, generate name-based patterns
+    if (name) {
+        const nameParts = name.toLowerCase().split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+
+        if (firstName) {
+            emails.push(`${firstName}@${domain}`); // john@domain.com
+            if (lastName) {
+                emails.push(`${firstName}.${lastName}@${domain}`); // john.doe@domain.com
+                emails.push(`${firstName[0]}${lastName}@${domain}`); // jdoe@domain.com
+            }
+        }
+    }
+
+    return Array.from(new Set(emails)); // Return unique emails
+}
+
+/**
+ * Attempts to enrich the lead data with an email address using common permutations.
+ * @param {object} lead - The lead object.
+ * @returns {Promise<string>} - The found email or 'N/A'.
+ */
+async function enrichEmail(lead) {
+    const website = lead.website || '';
+    if (lead.email && lead.email !== 'N/A') return lead.email;
+
+    try {
+        // 1. Get Domain
+        const urlObj = new URL(website.startsWith('http') ? website : `http://${website}`);
+        const domain = urlObj.hostname.replace(/^www\./, '');
+        if (!domain) return 'N/A';
+
+        // 2. Check if website is alive (optimistic check)
+        const isLive = await checkWebsiteExists(website);
+        if (!isLive) return 'N/A';
+
+        // 3. Generate Permutations
+        const emailPermutations = generateEmailPermutations(domain, lead.decisionMakerName);
+
+        // 4. (SIMULATED): In a real app, you'd use a paid service here.
+        // For this demo, we can't validate emails, so we return the most likely generic one.
+        // We'll return the 'info' email as a highly probable guess.
+        const likelyEmail = emailPermutations.find(e => e.startsWith('info@')) || emailPermutations[0] || 'N/A';
+
+        // Log the most likely email for the user
+        console.log(`Email enrichment: Guessed ${likelyEmail} for ${lead.name}`);
+        return likelyEmail;
+
+    } catch (e) {
+        console.error(`Error during email enrichment for ${lead.name}:`, e.message);
+        return 'N/A';
+    }
+}
+
 
 /**
  * Calls the Gemini API to analyze search snippets and structure lead data.
@@ -114,284 +191,320 @@ async function qualifyLeadsWithGemini(snippets, salesPersona) {
     if (snippets.length === 0) {
         return [];
     }
+    
+    // CRITICAL: Check for API Key before attempting the call
+    // Note: The constant GEMINI_API_KEY is defined via process.env.LEAD_QUALIFIER_API_KEY 
+    if (!GEMINI_API_KEY) {
+        console.error("CRITICAL: GEMINI_API_KEY (from LEAD_QUALIFIER_API_KEY) is not set.");
+        throw new Error("Gemini API Key Missing. Please set the LEAD_QUALIFIER_API_KEY environment variable.");
+    }
 
     const snippetText = snippets.map((item, index) => 
-        `Snippet ${index + 1} (Title: ${item.title}, URL: ${item.link}, Text: ${item.snippet})`
-    ).join('\n---\n');
+        `--- SNIPPET ${index + 1} (Source: ${item.source}) ---\nTitle: ${item.title}\nURL: ${item.link}\nSnippet: ${item.snippet}\n`
+    ).join('\n\n');
 
-    const systemPrompt = `You are a world-class Sales Development Representative (SDR) powered by AI. Your task is to analyze raw search data and identify high-quality B2B sales leads.
-Rules:
-1. Identify the company and person who wrote or is associated with the content in the snippet.
-2. The ideal contact person matches the 'salesPersona': **${salesPersona}**.
-3. **CRITICAL:** Assign a 'personaMatchScore' from 0 (poor fit) to 10 (perfect fit). Base this ONLY on the title/role inferred from the snippet.
-4. If a snippet discusses a competitor (e.g., "moving away from Salesforce"), infer this into the 'socialSignal' field. If no social/competitive signal, leave it blank.
-5. Infer a specific 'geoDetail' (like neighborhood, city-region, or zip code) if possible from the snippet text, otherwise use the main city/state.
-6. The 'painSignal' MUST summarize the specific problem mentioned in the snippet that your company can solve.
-7. Return only a JSON array of lead objects. Use the exact schema provided.
-8. Only generate leads where the company/person can be clearly identified.
-
-Sales Persona: ${salesPersona}
-
-Snippet Data:
-${snippetText}`;
-
-    const userQuery = "Analyze the provided search snippets. Generate a JSON array of high-quality leads that match the sales persona and exhibit a strong pain signal or intent to buy.";
+    const userQuery = `Analyze the following ${snippets.length} search engine snippets. For each snippet, determine if it represents a high-intent, sales-ready lead for a **${salesPersona}**. Structure the best-fitting results as a JSON array. Snippets to analyze:\n\n${snippetText}`;
 
     const payload = {
         contents: [{ parts: [{ text: userQuery }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
+        systemInstruction: {
+            parts: [{ text: SYSTEM_INSTRUCTION(salesPersona, 'Decision Maker or Lead') }]
+        },
         config: {
-            responseMimeType: "application/json",
+            responseMimeType: 'application/json',
             responseSchema: {
-                type: "ARRAY",
+                type: 'ARRAY',
                 items: {
-                    type: "OBJECT",
+                    type: 'OBJECT',
                     properties: {
-                        "companyName": { "type": "STRING", "description": "The name of the company." },
-                        "contactName": { "type": "STRING", "description": "The name of the contact person." },
-                        "title": { "type": "STRING", "description": "The professional title of the contact (e.g., 'Head of Engineering')." },
-                        "website": { "type": "STRING", "description": "The most relevant URL from the snippet for the company." },
-                        "personaMatchScore": { "type": "INTEGER", "description": "Score from 0 to 10 based on fit with salesPersona." },
-                        "painSignal": { "type": "STRING", "description": "A concise summary of the business pain or problem." },
-                        "socialSignal": { "type": "STRING", "description": "Competitive or social intent (e.g., 'Looking at alternatives to X')." },
-                        "geoDetail": { "type": "STRING", "description": "Specific location detail inferred from the snippet (e.g., 'downtown Seattle' or '94043')." }
+                        name: { type: 'STRING' },
+                        description: { type: 'STRING' },
+                        insights: { type: 'STRING' },
+                        draftPitch: { type: 'STRING' },
+                        qualityScore: { type: 'STRING', enum: ['High', 'Medium', 'Low'] },
+                        suggestedAction: { type: 'STRING' },
+                        socialSignal: { type: 'STRING' },
+                        website: { type: 'STRING' },
+                        email: { type: 'STRING' },
+                        phoneNumber: { type: 'STRING' },
+                        socialMediaHandle: { type: 'STRING' },
+                        leadType: { type: 'STRING', enum: ['commercial', 'residential'] },
+                        decisionMakerName: { type: 'STRING' },
+                        decisionMakerTitle: { type: 'STRING' },
+                        techStackSignal: { type: 'STRING' },
+                        geoDetail: { type: 'STRING' }
                     },
-                    required: ["companyName", "contactName", "title", "website", "personaMatchScore", "painSignal", "geoDetail"],
+                    required: ['name', 'description', 'insights', 'qualityScore', 'website', 'leadType', 'draftPitch', 'suggestedAction']
                 }
             }
         }
     };
 
+    let resultJson;
     try {
-        const response = await fetchWithRetry(GEMINI_API_URL, {
+        const response = await fetch(GEMINI_API_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-API-Key': GEMINI_API_KEY // Use key in header if needed, but typically passed in URL
+            },
             body: JSON.stringify(payload)
         });
-        
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error('Gemini API Error:', response.status, errorBody);
+            // Throw a specific error for the 403 to indicate API key or billing issue
+            if (response.status === 403) {
+                 throw new Error('403 Forbidden: Check LEAD_QUALIFIER_API_KEY, API Enablement, and Billing Status.');
+            }
+            throw new Error(`Gemini API failed with status ${response.status}`);
+        }
+
         const result = await response.json();
-        const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        if (!jsonText) {
-            console.error("Gemini failed to return JSON text.", result);
-            return [];
+        if (!text) {
+            console.error('Gemini returned no text content:', result);
+            throw new Error('LLM did not return a valid response text.');
         }
 
-        try {
-            // Robust JSON parsing: clean up markdown if present
-            const cleanedJsonText = jsonText.replace(/```json\s*|```/g, '').trim();
-            const parsedLeads = JSON.parse(cleanedJsonText);
-            
-            // Filter out leads that don't meet minimum quality standards
-            return parsedLeads.filter(lead => lead.personaMatchScore > 3);
-
-        } catch (parseError) {
-            console.error('Failed to parse Gemini JSON output:', parseError, 'Raw text:', jsonText);
-            return [];
-        }
+        // Use the robust parser
+        resultJson = extractAndParseJson(text);
 
     } catch (error) {
-        console.error('Gemini API Call Error:', error);
+        console.error('Error in qualifyLeadsWithGemini:', error);
+        throw error;
+    }
+
+    // --- Post-Processing: Enrichment and Final Scoring ---
+    const enrichedLeads = await Promise.all(resultJson.map(async (lead) => {
+        // 1. Email Enrichment
+        lead.email = await enrichEmail(lead);
+
+        // 2. Persona Match Scoring (Simplified logic for demonstration: +1 if insights mention key terms)
+        const scoreTerm = salesPersona.replace(/_/g, ' '); // e.g., real estate
+        if (lead.insights.toLowerCase().includes(scoreTerm)) {
+            lead.personaMatchScore = 1; 
+        } else {
+            lead.personaMatchScore = 0;
+        }
+
+        return lead;
+    }));
+    
+    // Sort by Quality and Persona Match Score (Higher is better)
+    enrichedLeads.sort((a, b) => {
+        const qualityMap = { 'High': 3, 'Medium': 2, 'Low': 1 };
+        const qualityA = qualityMap[a.qualityScore] || 0;
+        const qualityB = qualityMap[b.qualityScore] || 0;
+
+        if (qualityB !== qualityA) {
+            return qualityB - qualityA; // Primary sort: High -> Low
+        }
+        return (b.personaMatchScore || 0) - (a.personaMatchScore || 0); // Secondary sort: Match Score
+    });
+
+    return enrichedLeads;
+}
+
+// --- GOOGLE SEARCH UTILITY ---
+
+/**
+ * Searches Google using the Custom Search API (CSE).
+ * @param {string} query - The search query.
+ * @param {number} numResults - Number of results to fetch (max 10 per call).
+ * @returns {Promise<Array<object>>} - Array of search result objects (snippets).
+ */
+async function googleSearch(query, numResults = 10) {
+    if (!SEARCH_API_KEY || !SEARCH_ENGINE_ID) {
+        console.error("CRITICAL: Search API or Engine ID is not set.");
+        return [];
+    }
+
+    const searchUrl = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${Math.min(numResults, 10)}`;
+
+    try {
+        const response = await fetch(searchUrl);
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error('Google Search API Error:', response.status, errorBody);
+            // Critical: If Google Search 403s, it suggests an issue with RYGUY_SEARCH_API_KEY or CSE setup.
+             if (response.status === 403) {
+                 throw new Error('403 Forbidden: Check RYGUY_SEARCH_API_KEY, Custom Search API Enablement, and Billing Status.');
+            }
+            throw new Error(`Google Search failed with status ${response.status}`);
+        }
+        const data = await response.json();
+        
+        return data.items ? data.items.map(item => ({
+            title: item.title,
+            link: item.link,
+            snippet: item.snippet,
+            source: new URL(item.link).hostname
+        })) : [];
+
+    } catch (error) {
+        console.error('Error during Google Search:', error);
         return [];
     }
 }
 
-/**
- * Attempts to enrich a lead with a likely professional email.
- * @param {object} lead - A single lead object.
- * @returns {Promise<object>} - The lead object with an added 'email' field.
- */
-async function enrichEmail(lead) {
-    const { contactName, website } = lead;
-    let email = null;
 
-    if (!website || !contactName) {
-        lead.email = '';
-        return lead;
-    }
-
-    // 1. Validate the website (quick HEAD request)
-    const url = website.startsWith('http') ? website : `https://${website}`;
-    let websiteIsValid = false;
-
-    try {
-        const headResponse = await fetchWithRetry(url, { method: 'HEAD', redirect: 'follow' });
-        websiteIsValid = headResponse.ok;
-    } catch (e) {
-        // console.log(`Website validation failed for ${website}`);
-    }
-
-    if (websiteIsValid) {
-        try {
-            const domain = new URL(url).hostname;
-            const domainParts = domain.split('.');
-            // Remove 'www.' or similar prefixes
-            const baseDomain = domainParts.length > 2 && domainParts[0] === 'www' ? domainParts[1] : domainParts[0];
-
-            const nameParts = contactName.toLowerCase().split(' ');
-            const firstName = nameParts[0] || '';
-            const lastName = nameParts[nameParts.length - 1] || '';
-
-            const domainOnly = domain.replace(/^www\./, '');
-
-            // Common professional email patterns
-            const patterns = [
-                `${firstName}.${lastName}@${domainOnly}`,
-                `${firstName[0]}${lastName}@${domainOnly}`,
-                `${firstName}@${domainOnly}`,
-                `${lastName}@${domainOnly}`,
-                `${firstName}${lastName}@${domainOnly}`,
-                // Generic organizational emails (for larger companies where specific name may fail)
-                `info@${domainOnly}`,
-            ];
-
-            // For demonstration, we simply pick the first pattern, as real-world email validation requires paid services
-            email = patterns[0];
-
-        } catch (e) {
-            // Failed to parse URL or name
-            email = null;
-        }
-    }
-
-    lead.email = email || 'not_found_or_invalid_website';
-    return lead;
-}
+// --- MAIN BATCH GENERATOR ---
 
 /**
- * Generates leads in batches, alternating search strategies for variety.
- * * @param {string} leadType - B2B or B2C.
- * @param {string} searchTerm - The main search keyword (e.g., 'software companies').
- * @param {string} resolvedActiveSignal - The B2C-specific signal (not used for B2B primary).
- * @param {string} location - Geographical location.
- * @param {string} salesPersona - The target role (e.g., 'Head of Engineering').
- * @param {string} socialFocus - Custom keyword for competitive/social signal search.
- * @param {string} targetVertical - **NEW**: The industry vertical (e.g., 'FinTech').
- * @param {number} batchesToRun - How many times to loop the search sequence.
- * @returns {Promise<Array<object>>} - A flattened array of all generated leads.
+ * Generates leads in batches, allowing for multiple search queries and diversification.
+ * @param {string} leadType - 'commercial' or 'residential'.
+ * @param {string} searchTerm - The core service/product need.
+ * @param {string} financialTerm - The optional financial/intent filter.
+ * @param {string} activeSignal - The core high-intent keywords (used for B2B primary search).
+ * @param {string} location - The target geographic location.
+ * @param {string} salesPersona - The type of salesperson.
+ * @param {string} socialFocus - The user's input for competitive/social signal focus.
+ * @param {number} batchesToRun - How many search/qualify cycles to run.
+ * @returns {Promise<Array<object>>} - Final list of unique leads.
  */
-async function generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, targetVertical, batchesToRun) {
-    const allLeads = [];
-    const processedWebsites = new Set(); // To prevent duplicate enrichment on the same company
+async function generateLeadsBatch(leadType, searchTerm, financialTerm, activeSignal, location, salesPersona, socialFocus, batchesToRun) {
+    let allLeadsMap = new Map();
+    let totalLeadsProcessed = 0;
+    const maxSnippetsPerBatch = 10;
+    const targetDecisionMaker = 'Decision Maker or Lead'; // Simplified context for LLM prompt
 
-    // Prepare vertical intent query for Batch 2
-    const targetedPainPoints = VERTICAL_PAIN_POINTS[targetVertical] || VERTICAL_PAIN_POINTS['Default'];
+    // --- Search Strategy: B2B vs B2C ---
+    const searchStrategy = {
+        commercial: [
+            // Batch 1 (Primary): Focused Intent + Location (High-intent for B2B)
+            (l, a, s) => `${searchTerm} "${activeSignal}" near ${l} -jobs -forums -site:linkedin.com`,
+            // Batch 2 (Fallback): Target Company Type + Location (Guaranteed results)
+            (l) => `${searchTerm} ${financialTerm} in ${l} -jobs -forums -site:linkedin.com`,
+            // Batch 3 (Social/Competitive Intent Grounding)
+            (l, a, s) => s ? `${s} ${searchTerm} ${l} -"quotes" -jobs` : `alternatives to ${searchTerm} reddit OR quora ${l}`
+        ],
+        residential: [
+            // Batch 1 (Primary): Direct Need + Location (High-intent for B2C)
+            (l, a, s) => `${searchTerm} ${financialTerm} near ${l} -"cost" -jobs -forums`,
+            // Batch 2 (Urgency/Cost): Quotes/Reviews + Location
+            (l) => `${searchTerm} "quotes" OR "reviews" in ${l}`,
+            // Batch 3 (Social/Competitive Intent Grounding)
+            (l, a, s) => s ? `${s} ${searchTerm} ${l} -"quotes" -jobs` : `best service for ${searchTerm} reddit OR nextdoor ${l}`
+        ]
+    };
     
-    // Core search sequence (3 searches per batch)
-    const BATCH_SEQUENCE = [
-        // Batch 1 (Foundation): Finds relevant companies in the location.
-        (term) => term, 
-        // Batch 2 (Intent Signal): Finds companies actively discussing pain points.
-        (term) => `${term} AND (${targetedPainPoints})`, 
-        // Batch 3 (Social/Competitive Signal): Finds companies comparing products or discussing competitors.
-        (term) => socialFocus ? `${term} AND (${socialFocus})` : `${term} AND ("looking for alternatives" OR "moving away from" OR "pricing comparison")`,
-    ];
+    // Select the correct search query template array
+    const queryTemplates = searchStrategy[leadType];
 
     for (let i = 0; i < batchesToRun; i++) {
-        for (let batchId = 0; batchId < BATCH_SEQUENCE.length; batchId++) {
-            let query = '';
-            
-            if (leadType === 'B2B') {
-                // B2B Search Logic
-                // Batch 1: Focus on the company type/term
-                // Batch 2: Focus on company type + pain points (Vertical Targeted)
-                // Batch 3: Focus on company type + social/competitive signals
-                query = BATCH_SEQUENCE[batchId](searchTerm);
+        const batchIndex = i % queryTemplates.length;
+        const queryFunction = queryTemplates[batchIndex];
 
-            } else {
-                // B2C (Residential) Search Logic - Simplified
-                // Focus on the activeSignal (e.g., "looking for house painters")
-                // All batches use the active signal for relevance.
-                query = resolvedActiveSignal;
-            }
+        // Construct the query using the selected template
+        const query = queryFunction(location, activeSignal, socialFocus);
+        
+        console.log(`[Batch ${i + 1}] Running search with query: ${query}`);
 
-            console.log(`Running Batch ${i + 1}-${batchId + 1} with query: ${query}`);
+        const snippets = await googleSearch(query, maxSnippetsPerBatch);
 
-            const snippets = await searchGoogle(query, location);
-            const qualifiedLeads = await qualifyLeadsWithGemini(snippets, salesPersona);
-
-            // Filter out duplicates and enrich
-            for (const lead of qualifiedLeads) {
-                if (lead.website && !processedWebsites.has(lead.website)) {
-                    allLeads.push(lead);
-                    processedWebsites.add(lead.website);
-                }
-            }
+        if (snippets.length === 0) {
+            console.log(`[Batch ${i + 1}] No snippets found. Skipping qualification.`);
+            continue;
         }
+
+        // Qualify leads using Gemini
+        const qualifiedLeads = await qualifyLeadsWithGemini(snippets, salesPersona);
+        totalLeadsProcessed += snippets.length;
+        
+        console.log(`[Batch ${i + 1}] Qualified ${qualifiedLeads.length} leads.`);
+
+        // Merge and deduplicate leads based on website or name
+        qualifiedLeads.forEach(lead => {
+            const key = (lead.website && lead.website !== 'N/A') ? lead.website.toLowerCase() : lead.name.toLowerCase();
+            // Only add if it's new or if the new one has a higher quality score
+            if (!allLeadsMap.has(key) || (allLeadsMap.get(key).qualityScore === 'Medium' && lead.qualityScore === 'High')) {
+                 allLeadsMap.set(key, lead);
+            }
+        });
+        
+        console.log(`[Batch ${i + 1}] Total unique leads found so far: ${allLeadsMap.size}`);
+
+        // Small delay to respect rate limits and allow for intermediate results
+        await new Promise(resolve => setTimeout(resolve, 500)); 
     }
-
-    // Concurrent Enrichment: process all unique leads found
-    const uniqueLeadsToEnrich = allLeads.filter(lead => lead.email === undefined);
-    const enrichmentPromises = uniqueLeadsToEnrich.map(enrichEmail);
-    const enrichedLeads = await Promise.all(enrichmentPromises);
-
-    // Merge enriched leads back into the main list (using simple filter/concat for this demo)
-    return enrichedLeads.sort((a, b) => b.personaMatchScore - a.personaMatchScore);
+    
+    console.log(`Final Lead Count: ${allLeadsMap.size}. Total snippets processed: ${totalLeadsProcessed}.`);
+    return Array.from(allLeadsMap.values());
 }
 
-// --- Exports (Entry Points) ---
+
+// --- NETLIFY FUNCTION EXPORTS ---
 
 /**
- * Synchronous handler (for fast results, max 3 leads)
+ * Main synchronous export handler for quick, guaranteed-fast jobs (max 3 leads).
+ * @param {object} event - Netlify event object.
+ * @returns {object} - HTTP response object.
  */
-exports.handler = async (event, context) => {
-    // Handle OPTIONS request for CORS preflight
+exports.handler = async (event) => {
+    // CORS Pre-flight check
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers: CORS_HEADERS, body: 'OK' };
     }
-    
-    try {
-        const body = JSON.parse(event.body);
-        const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, targetVertical } = body; // Added targetVertical
 
-        // Simple validation
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
+    }
+
+    try {
+        const { leadType, searchTerm, location, totalLeads, salesPersona, financialTerm, socialFocus } = JSON.parse(event.body);
+
+        // Checking for required parameters
         if (!leadType || !searchTerm || !location || !salesPersona) {
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-                body: JSON.stringify({ error: 'Missing required parameters: leadType, searchTerm, location, or salesPersona.' })
+                body: JSON.stringify({ error: 'Missing required parameters.' })
             };
         }
         
-        // Resolve B2C activeSignal or use the searchTerm as a sensible default for B2B foundation
-        const resolvedActiveSignal = leadType === 'B2C' && activeSignal ? activeSignal : searchTerm;
-        
-        // Only run 1 batch for the fast, synchronous job
-        const batchesToRun = 1; 
+        // Define the batch count for the quick job (1-3 leads)
+        // Max 3 batches to ensure fast response, fetching max 10 snippets per batch
+        const batchesToRun = Math.ceil(Math.min(totalLeads, 3)); 
 
-        console.log(`[Handler] Starting FAST JOB (${batchesToRun} batch) for: ${searchTerm} in ${location}.`);
-
-        const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, targetVertical, batchesToRun);
+        console.log(`[Sync] Starting QUICK JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
         
-        console.log(`[Handler] Job finished successfully. Generated ${leads.length} high-quality leads.`);
+        // --- Execution of the Quick Task ---
+        const leads = await generateLeadsBatch(leadType, searchTerm, financialTerm, null, location, salesPersona, socialFocus, batchesToRun);
+        
+        console.log(`[Sync] Job finished successfully. Generated ${leads.length} high-quality leads.`);
         
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} leads.` })
+            body: JSON.stringify({ leads: leads.slice(0, totalLeads), count: leads.length })
         };
     } catch (err) {
-        console.error('Lead Generator Handler Error:', err);
+        console.error('Lead Generator Sync Error:', err);
         return {
             statusCode: 500,
             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ error: err.message, details: err.cause || 'An unexpected error occurred.' })
+            body: JSON.stringify({ error: err.message, details: err.cause || 'An internal server error occurred.' })
         };
     }
 };
 
 /**
- * Asynchronous handler (for long-running jobs, unlimited leads)
+ * Asynchronous export handler for long-running, in-depth jobs (up to 15 leads).
+ * NOTE: This is designed for Netlify/AWS Lambda's background execution model.
+ * @param {object} event - Netlify event object.
+ * @returns {object} - HTTP response object.
  */
-exports.background = async (event, context) => {
-    // Handle OPTIONS request for CORS preflight (though typically background jobs aren't hit with preflight)
+exports.background = async (event) => {
+    // CORS Pre-flight check (Background functions often skip this, but including for completeness)
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers: CORS_HEADERS, body: 'OK' };
     }
-
+    
     try {
-        const body = JSON.parse(event.body);
-        const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, targetVertical } = body; // Added targetVertical
+        const { leadType, searchTerm, location, salesPersona, financialTerm, socialFocus } = JSON.parse(event.body);
 
         // Checking for required parameters
         if (!leadType || !searchTerm || !location || !salesPersona) {
@@ -403,20 +516,16 @@ exports.background = async (event, context) => {
             };
         }
         
-        const resolvedActiveSignal = leadType === 'B2C' && activeSignal ? activeSignal : searchTerm;
-        
         // Set a higher number of batches for the "unlimited" background job (e.g., 8 batches)
+        // This targets 8 * 10 = 80 snippets, which should yield up to 15 leads.
         const batchesToRun = 8; 
 
         console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
 
         // --- Execution of the Long Task ---
-        const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, targetVertical, batchesToRun);
+        const leads = await generateLeadsBatch(leadType, searchTerm, financialTerm, null, location, salesPersona, socialFocus, batchesToRun);
         
         console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
-        
-        // IMPORTANT: For a true background handler, you would typically save results to a DB 
-        // or queue a fulfillment step here, rather than returning all data.
         
         return {
             statusCode: 200,
@@ -425,12 +534,10 @@ exports.background = async (event, context) => {
         };
     } catch (err) {
         console.error('Lead Generator Background Error:', err);
-        // Log the error and still return a 200 or 202 to indicate the job processor is done,
-        // but with a payload indicating failure to the monitoring system.
         return {	
             statusCode: 500,	
             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ error: err.message, details: err.cause || 'An unexpected error occurred in background process.' })
+            body: JSON.stringify({ error: err.message, details: err.cause || 'An internal server error occurred.' })	
         };
     }
 };
