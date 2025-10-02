@@ -5,11 +5,19 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * FIX: CRITICAL UPDATE to FALLBACK LOGIC within generateLeadsBatch.
- * The function now uses a 3-Tier Fallback Strategy:
- * 1. Targeted Intent Query (Primary)
- * 2. Broad Homeowner/Business Query (Level 2 Fallback)
- * 3. Ultra-Generic Persona Service Query (Level 3 Fallback) - This final level ensures a search hit in low-density areas.
+ * REFINEMENTS APPLIED:
+ * 1. ENHANCED: Email enrichment logic updated to include more common, professional patterns.
+ * 2. ENHANCED: Added website validation (HEAD request) before attempting email enrichment for more robust data.
+ * 3. ENHANCED: Implemented **Persona Match Scoring** to give higher priority to leads whose content strongly aligns with the 'salesPersona'.
+ * 4. ENHANCED: **Geographical Granularity** added by instructing Gemini to infer 'geoDetail' (neighborhood/zip) from snippets.
+ * 5. NEW CRITICAL UPDATE: Dedicated a search batch to **External Intent Grounding** (social/competitive signals) to find "HOT" leads actively comparing services.
+ * 6. NEW CRITICAL UPDATE: Updated Gemini System Instruction to force inference of competitive shopping data into the 'socialSignal' field.
+ * 7. ADJUSTED: Refactored final lead processing to run all website checks and enrichment concurrently.
+ * 8. ADJUSTED: Added robust JSON extraction to handle Gemini's markdown formatting.
+ * 9. **NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.**
+ * 10. **FIXED: Modified Batch 0 search logic (quick job) to use the general 'activeSignal' for Residential (B2C) queries, resolving timeout issues caused by overly specific high-net-worth signals being used for young families.**
+ * 11. **FIXED: Modified 'simplifySearchTerm' for residential leads to retain broad 'OR' phrases (like "new parents") instead of oversimplifying to a single, less-relevant term (like "homeowner").**
+ * 12. **NEW B2C FEATURE: Added 'contactName' field. Gemini is now instructed to infer a name for residential leads, and the social search and email enrichment prioritize this name for higher quality contact info.**
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -134,7 +142,7 @@ async function enrichEmail(lead, website) {
 			return patterns[0].replace(/\s/g, '');
 		}
 		
-		// Fallback if URL parsing fails completely, using website string directly
+		// Fallback to a generic domain contact if name processing fails
 		return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
 	} catch (e) {
 		console.error("Email enrichment error:", e.message);
@@ -498,31 +506,16 @@ function simplifySearchTerm(targetType, isResidential) {
 	if (isResidential) {
 		// FIX: If the user provided a broad OR search, use a simplified version of that OR search
 		if (targetType.includes(' OR ')) {
-			// **CRITICAL FIX: Aggressive simplification for broad B2C searches to prevent timeouts in low-density areas.**
+			// Extract 1-2 key terms from the OR chain, e.g., 'new parents OR recent marriages' -> '"new parents" OR "young families"'
+			const parts = targetType.split(' OR ').map(p => p.trim());
 			
-			// 1. Find keywords related to common life changes from the full string
-			let highSignalWords = [];
-			// Search for life insurance high signals
-			if (normalized.includes('parents') || normalized.includes('baby') || normalized.includes('family')) highSignalWords.push('"new family"');
-			if (normalized.includes('home') || normalized.includes('mortgage') || normalized.includes('purchase')) highSignalWords.push('"new home"');
-			if (normalized.includes('job change') || normalized.includes('life change')) highSignalWords.push('"major change"');
+			// Use the first two terms as exact phrases
+			const simplifiedTerms = parts.slice(0, 2).map(term => `"${term}"`); 
 			
-			// 2. If no specific signals were found, fall back to the single most important word from the first part.
-			if (highSignalWords.length === 0) {
-				const firstPart = targetType.split(' OR ')[0].trim().replace(/"/g, '').split(/\s+/).slice(0, 1).join(' '); // Only take the first word
-				if (firstPart) highSignalWords.push(`"${firstPart}"`);
-			}
-
-			// 3. Use a maximum of 2, most generic, but high-signal phrases
-			const simplifiedTerms = highSignalWords.slice(0, 2);
-
-			if (simplifiedTerms.length > 0) {
-				console.log(`[Simplify Fix] Simplified complex OR term to: ${simplifiedTerms.join(' OR ')}`);
-				return simplifiedTerms.join(' OR ');
-			}
+			return simplifiedTerms.join(' OR ');
 		}
 		
-		// Fallback to specific high-signal terms if a simple string was provided (or OR chain logic failed)
+		// Fallback to specific high-signal terms if a simple string was provided
 		let coreTerms = [];
 		if (normalized.includes('high net worth')) coreTerms.push('"high net worth"');
 		if (normalized.includes('affluent')) coreTerms.push('affluent');
@@ -594,16 +587,16 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
-                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                const defaultSocialTerms = isResidential 
+                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
+                const defaultSocialTerms = isResidential 
 					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
 					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
-                
-                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
- 				
-                // Search specifically on social/forum sites for real-time discussion and shopping intent.
-                searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
-                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
+                
+                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
+ 				
+                // Search specifically on social/forum sites for real-time discussion and shopping intent.
+                searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
+                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
 			} else if (isResidential) {
 				
 				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
@@ -617,42 +610,20 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			// 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
 			let gSearchResults = await googleSearch(searchKeywords, 3);	
 			
-			// 2. Level 2 Fallback: If primary fails, try a broader, non-intent-based search.
+			// 2. Fallback search if primary fails (Simplified Logic)
 			if (gSearchResults.length === 0) {
-				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback (Level 2)...`);
+				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback...`);
 				
-				// --- Level 2 Fallback: Broad, non-intent based term ---
-				const broaderFallbackTerm = isResidential 
-					? `"homeowner family" in "${location}"` // Residential fallback (most generic description of the target)
-					: `${shortTargetType} in "${location}"`; // B2B fallback remains the same (business name is the term)
-
 				// Fallback: Drop ALL signals and just search the core term and location.
-				let fallbackSearchKeywords = `${broaderFallbackTerm} ${NEGATIVE_QUERY}`;
+				let fallbackSearchKeywords = `${shortTargetType} in ${location} ${NEGATIVE_QUERY}`;
 				
 				// Fallback also uses the Fail-Fast approach
 				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
 				gSearchResults.push(...fallbackResults);
 
-				// --- NEW: Level 3 Fallback: Ultra-Generic Search (Guaranteed hit for any location) ---
 				if (gSearchResults.length === 0) {
-					console.warn(`[Batch ${batchIndex+1}] No results after level 2 fallback. Trying ultra-generic search (Level 3)...`);
-					
-					// Use a highly generic, high-probability term related to the persona
-					// This forces Google to return local directories or service pages.
-					const salesPersonaClean = salesPersona.replace(/_/g, ' ');
-					const ultraGenericTerm = isResidential 
-						? `"${salesPersonaClean} services" in "${location}"` // e.g., "life insurance services"
-						: `${shortTargetType} directory in "${location}"`; // B2B Directory search
-						
-					const ultraFallbackKeywords = `${ultraGenericTerm} ${NEGATIVE_QUERY}`;
-					
-					const ultraFallbackResults = await googleSearch(ultraFallbackKeywords, 3);
-					gSearchResults.push(...ultraFallbackResults);
-
-					if (gSearchResults.length === 0) {
-						 console.warn(`[Batch ${batchIndex+1}] No results after ultra-generic fallback. Skipping batch.`);
-						 return [];
-					}
+					 console.warn(`[Batch ${batchIndex+1}] No results after broadest fallback. Skipping batch.`);
+					 return [];
 				}
 			}	
 
@@ -730,12 +701,12 @@ exports.handler = async (event) => {
 		// Checking for required parameters (using searchTerm and resolvedActiveSignal)
 		if (!leadType || !searchTerm || !location || !salesPersona) {
 			 const missingFields = ['leadType', 'searchTerm', 'location', 'salesPersona'].filter(field => !requestData[field]);
-			 
+			 
 			 // Check resolvedActiveSignal explicitly here, though it should be defaulted
 			 if (!resolvedActiveSignal) missingFields.push('activeSignal');	
 
 			 console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
-			 
+			 
 			 return {	
 				 statusCode: 400,	
 				 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -858,3 +829,4 @@ exports.background = async (event) => {
 		};
 	}
 };
+
