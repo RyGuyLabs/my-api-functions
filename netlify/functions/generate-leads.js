@@ -1,17 +1,18 @@
 /**
- * Ultimate Premium Lead Generator – Gemini + Google Custom Search
- *
- * This file contains two exports:
- * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
- * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
- *
- * CRITICAL SPEED FIX APPLIED:
- * 1. FIX: The synchronous job (Batch 0) now uses the 'shortTargetType' (simplified search term) instead of the long, complex 'searchTerm'.
- * 2. ENHANCEMENT: The 'simplifySearchTerm' logic is improved to strip parenthetical notes and conjunctions (AND/OR) to produce a cleaner, faster search query, minimizing 503/timeouts.
- */
+ * Ultimate Premium Lead Generator – Gemini + Google Custom Search
+ *
+ * This file contains two exports:
+ * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
+ * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
+ *
+ * CRITICAL SPEED FIX APPLIED:
+ * 1. FIX: The synchronous job (Batch 0) now uses the 'shortTargetType' (simplified search term) instead of the long, complex 'searchTerm'.
+ * 2. ENHANCEMENT: The 'simplifySearchTerm' logic is improved to strip parenthetical notes and conjunctions (AND/OR) to produce a cleaner, faster search query, minimizing 503/timeouts.
+ * 3. **CRITICAL FIX FOR TIMEOUTS:** The logic for Batch 0 and Batch 1 has been swapped. Batch 0 (the quick job) now uses the broader, safer 'activeSignal' to ensure speed and prevent the 10-second timeout.
+ */
 
-const nodeFetch = require('node-fetch'); 
-const fetch = nodeFetch.default || nodeFetch; 
+const nodeFetch = require('node-fetch'); 
+const fetch = nodeFetch.default || nodeFetch; 
 
 const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
@@ -37,7 +38,7 @@ const fetchWithTimeout = (url, options, timeout = 10000) => {
 const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
-			const response = await fn(); 
+			const response = await fn(); 
 			if (response.ok) return response;
 
 			let errorBody = {};
@@ -76,19 +77,19 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
 
 /**
- * Checks if a website is responsive using a head request (fastest check).
- * @param {string} url 
- * @returns {boolean} True if the website responds without major errors.
- */
+ * Checks if a website is responsive using a head request (fastest check).
+ * @param {string} url 
+ * @returns {boolean} True if the website responds without major errors.
+ */
 async function checkWebsiteStatus(url) {
 	// Basic validation to prevent invalid URL usage
-	if (!url || !url.startsWith('http')) return false; 
+	if (!url || !url.startsWith('http')) return false; 
 	try {
 		// Use HEAD request for speed, timeout short for validation (5 seconds)
 		// Set maxRetries to 1 (meaning no retries) for a fast validation check
-		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
+		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
 		// We consider 2xx (Success) and 3xx (Redirection) as valid.
-		return response.ok || (response.status >= 300 && response.status < 400); 
+		return response.ok || (response.status >= 300 && response.status < 400); 
 	} catch (e) {
 		console.warn(`Website check failed for ${url}: ${e.message}`);
 		return false;
@@ -97,8 +98,8 @@ async function checkWebsiteStatus(url) {
 
 
 /**
- * Generates a realistic email pattern based on name and website.
- */
+ * Generates a realistic email pattern based on name and website.
+ */
 async function enrichEmail(lead, website) {
 	try {
 		const url = new URL(website);
@@ -141,8 +142,8 @@ async function enrichEmail(lead, website) {
 }
 
 /**
- * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
- */
+ * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
+ */
 async function enrichPhoneNumber(currentNumber) {
 	// If a number was found and is not a known placeholder, keep it.
 	if (currentNumber && currentNumber.length > 5 && !currentNumber.includes('555')) {
@@ -153,9 +154,9 @@ async function enrichPhoneNumber(currentNumber) {
 }
 
 /**
- * Calculates a match score between the lead's description/insights and the sales persona.
- * NOTE: This relies on the core 'persona' keywords previously defined.
- */
+ * Calculates a match score between the lead's description/insights and the sales persona.
+ * NOTE: This relies on the core 'persona' keywords previously defined.
+ */
 function calculatePersonaMatchScore(lead, salesPersona) {
 	// Simple scoring based on general financial and commercial terms, since specific persona keywords are removed.
 	if (!lead.description && !lead.insights) return 0;
@@ -209,7 +210,7 @@ function rankLeads(leads) {
 			// Add weight for the new specialized fields (High Intent Focus)
 			if (l.transactionStage && l.keyPainPoint) score += 2;
 			else if (l.transactionStage || l.keyPainPoint) score += 1;
-			if (l.socialSignal) score += 1; 
+			if (l.socialSignal) score += 1; 
 
 			// Add Persona Match Score (Max 5 points)
 			score += l.personaMatchScore || 0;	
@@ -230,8 +231,8 @@ function deduplicateLeads(leads) {
 }
 
 /**
- * NEW: Concurrent processing of a single lead, including non-blocking network checks.
- */
+ * NEW: Concurrent processing of a single lead, including non-blocking network checks.
+ */
 async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	// Assign leadType and salesPersona for use in the NEW scoring functions
 	lead.leadType = leadType;	
@@ -261,7 +262,7 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	if (shouldEnrichEmail && lead.website) {	
 		lead.email = await enrichEmail(lead, lead.website);
 	} else if (!lead.website) {
-		 lead.email = null; 
+		 lead.email = null; 
 	}
 
 	// 3. Scoring
@@ -395,11 +396,11 @@ async function generateGeminiLeads(query, systemInstruction) {
 // Single list of powerful, cross-industry intent signals
 const HIGH_INTENT_SIGNALS = [
 	// Financial/Transactional signals
-	`"pre-approved" OR "comparing rates" OR "finalizing deal" OR "securing funding"`, 
+	`"pre-approved" OR "comparing rates" OR "finalizing deal" OR "securing funding"`, 
 	// Competitive/Shopping signals
-	`"need new vendor" OR "shopping around" OR "reviewing bids" OR "asking for quotes"`, 
+	`"need new vendor" OR "shopping around" OR "reviewing bids" OR "asking for quotes"`, 
 	// Time-sensitive/Growth signals
-	`"new construction" OR "business expansion" OR "urgent need" OR "new hiring"`, 
+	`"new construction" OR "business expansion" OR "urgent need" OR "new hiring"`, 
 	// Liquidity/Asset signals
 	`"high net worth" OR "annuity maturing" OR "recent major purchase" OR "trust fund established"`
 ];
@@ -417,9 +418,9 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 
 /**
- * Aggressively simplifies a complex search term into core search keywords for broad coverage.
- * CRITICAL ENHANCEMENT: Strips parenthetical clutter and conjunctions.
- */
+ * Aggressively simplifies a complex search term into core search keywords for broad coverage.
+ * CRITICAL ENHANCEMENT: Strips parenthetical clutter and conjunctions.
+ */
 function simplifySearchTerm(targetType, isResidential) {
 	// 1. Remove parenthetical descriptions and 'AND'/'OR' for simplicity
 	let core = targetType
@@ -429,7 +430,7 @@ function simplifySearchTerm(targetType, isResidential) {
 		.trim();
 
 	// 2. Normalize and split, filtering out short, common words (like 'for', 'the', 'a')
-	const words = core.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['seeking', 'targeting', 'new', 'owner', 'key'].includes(w)); 
+	const words = core.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['seeking', 'targeting', 'new', 'owner', 'key'].includes(w)); 
 
 	// 3. Keep the 4 most relevant words/phrases
 	const targetWords = words.slice(0, 4);
@@ -440,7 +441,7 @@ function simplifySearchTerm(targetType, isResidential) {
 	}
 	
 	// Fallback to cleaned core term
-	return core; 
+	return core; 
 }
 
 
@@ -469,7 +470,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 	const batchPromises = [];
 	
 	// Calculate simplified term once for use in all batches to ensure speed and consistency
-	const shortTargetType = simplifySearchTerm(targetType, isResidential); 
+	const shortTargetType = simplifySearchTerm(targetType, isResidential); 
 
 	// --- Create ALL Promises Concurrently (Max 3 Batches) ---
 	for (let i = 0; i < totalBatches; i++) {
@@ -479,18 +480,18 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			
 			if (batchIndex === 0) {
 				// BATCH 0: PRIMARY INTENT SEARCH (Highest Quality / QUICK JOB)
-				// CRITICAL FIX: Use the simplified term (shortTargetType) for speed and reliability.
-				const intentSignal = HIGH_INTENT_SIGNALS[0]; 
-				console.log(`[Batch 1] Running PRIMARY Intent Query (Simplified Term + High Signal).`);
-				searchKeywords = `(${shortTargetType}) in "${location}" AND (${intentSignal}) ${NEGATIVE_QUERY}`;
+				// CRITICAL FIX: SWAPPED LOGIC - Use the user's broader activeSignal for a guaranteed quick result.
+				console.log(`[Batch 1] Running QUICK Intent Query (Simplified Term + Active Signal).`);
+				searchKeywords = `(${shortTargetType}) in "${location}" AND (${activeSignal}) ${NEGATIVE_QUERY}`;
 				
 			} else if (batchIndex === 1) {
-				// BATCH 1: BROAD COVERAGE SEARCH (Guaranteed Results/Fallback)
-				// Uses the simplified 'shortTargetType' + the user's activeSignal. This provides a safety net.
-				console.log(`[Batch 2] Running BROAD COVERAGE Query (Simplified Term + Active Signal).`);
-				searchKeywords = `(${shortTargetType}) in "${location}" AND (${activeSignal}) ${NEGATIVE_QUERY}`;
+				// BATCH 1: BROAD COVERAGE SEARCH (Guaranteed Results/Fallback for the long job)
+				// SWAPPED LOGIC - Use the highly restrictive HIGH_INTENT_SIGNALS for the long job's second batch.
+				const intentSignal = HIGH_INTENT_SIGNALS[0]; 
+				console.log(`[Batch 2] Running RESTRICTIVE Intent Query (Simplified Term + High Signal).`);
+				searchKeywords = `(${shortTargetType}) in "${location}" AND (${intentSignal}) ${NEGATIVE_QUERY}`;
 
-			} else if (batchIndex === 2) { 
+			} else if (batchIndex === 2) { 
 				// BATCH 2: DEDICATED SOCIAL/COMPETITIVE INTENT (Hot Leads)
 				// Targets social/forum sites specifically for competitive shopping signals.
 				const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : `"shopping around" OR "need new provider"`;
@@ -505,6 +506,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			let gSearchResults = await googleSearch(searchKeywords, 3);	
 			
 			// If the high-intent searches (0 or 2) fail, fall back to the broadest search possible
+			// NOTE: This fallback is now less likely to trigger for Batch 0 due to the broader query.
 			if (gSearchResults.length === 0 && batchIndex !== 1) {
 				console.warn(`[Batch ${batchIndex+1}] No results for high-intent query. Trying generic term fallback...`);
 				
@@ -543,7 +545,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 	allLeads = deduplicateLeads(allLeads);
 	
 	// CRITICAL FIX: Run the enrichment and scoring *concurrently*
-	const enrichmentPromises = allLeads.map(lead => 
+	const enrichmentPromises = allLeads.map(lead => 
 		enrichAndScoreLead(lead, leadType, salesPersona)
 	);
 	
@@ -588,11 +590,11 @@ exports.handler = async (event) => {
 
 		if (!leadType || !searchTerm || !location || !salesPersona) {
 			 const missingFields = ['leadType', 'searchTerm', 'location', 'salesPersona'].filter(field => !requestData[field]);
-			 
+			 
 			 if (!resolvedActiveSignal) missingFields.push('activeSignal');	
 
 			 console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
-			 
+			 
 			 return {	
 				 statusCode: 400,	
 				 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -671,7 +673,7 @@ exports.background = async (event) => {
 		}
 		
 		// Set the background job to run the 3 high-value search batches.
-		const batchesToRun = 3; 
+		const batchesToRun = 3; 
 
 		console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
 
