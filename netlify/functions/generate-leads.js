@@ -5,12 +5,13 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIXES APPLIED:
- * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
- * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
- * - The Level 1 Search for COMMERCIAL leads is now forced into a "Public Records/Competitive Review" search
- * strategy to guarantee high-quality, verifiable B2B leads and ensure search results are returned.
- * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
+ * CRITICAL FIX APPLIED (PRIORITIZING QUALITY OVER SPEED):
+ * 1. GOOGLE SEARCH TIMEOUT INCREASED: The query timeout is now 15 seconds (up from 5-10s) 
+ * with up to 3 retries (up from 1 retry). This allows complex, high-quality search queries 
+ * to complete successfully, especially for the background job.
+ * 2. B2B SEARCH WIDENED (Batch 1): The synchronous B2B search is now using a wider, 
+ * quality-focused list of authority sites (BATCH_QUALITY_B2B) to find better data, 
+ * accepting a slightly higher risk of synchronous handler timeout for better lead content.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -25,7 +26,8 @@ const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 // -------------------------
 // Helper: Fetch with Timeout (CRITICAL for preventing 504)
 // -------------------------
-const fetchWithTimeout = (url, options, timeout = 10000) => {
+// CRITICAL CHANGE: Increased timeout to 15 seconds to allow complex queries to complete.
+const fetchWithTimeout = (url, options, timeout = 15000) => {
 	return Promise.race([
 		fetch(url, options),
 		new Promise((_, reject) =>
@@ -63,7 +65,7 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 		} catch (err) {
 			if (attempt === maxRetries) throw err;
 			
-			// If the error is the 10-second timeout, we still respect the retry count
+			// If the error is the 15-second timeout, we still respect the retry count
 			const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
 			
 			console.warn(`Attempt ${attempt} failed with network error or timeout. Retrying in ${Math.round(delay)}ms...`, err.message);
@@ -313,8 +315,9 @@ async function googleSearch(query, numResults = 3) {
 	console.log(`[Google Search] Sending Query: ${query}`);	
 	
 	try {
-		// CRITICAL FIX: Max retries set to 1 (meaning no retries) to enforce fail-fast within 10 seconds.
-		const response = await withBackoff(() => fetchWithTimeout(url, {}), 1, 500);	
+		// CRITICAL CHANGE: Max retries set to 3, and timeout is 15 seconds.
+		// This prioritizes content quality over immediate speed.
+		const response = await withBackoff(() => fetchWithTimeout(url, {}), 3, 500);	
 		const data = await response.json();
 		
 		if (data.error) {
@@ -328,8 +331,7 @@ async function googleSearch(query, numResults = 3) {
 			description: item.snippet
 		}));
 	} catch (e) {
-		console.error("Google Search failed on the only attempt (Max 10s):", e.message);
-		// If the single attempt times out or fails, return empty results immediately
+		console.error("Google Search failed after retries:", e.message);
 		return [];	
 	}
 }
@@ -482,14 +484,21 @@ const BATCH_PROFESSIONAL_SOCIAL = [
 	'instagram.com'
 ].map(domain => `site:${domain}`).join(' OR ');
 
-// Level 2: Government & Public Records (Verification & Financial Data)
-const BATCH_TRUST_GOV = [
+// Level 2: Comprehensive B2B Batch (Used for Batch 1 Sync Request, prioritizes Quality)
+const BATCH_QUALITY_B2B = [
 	'bbb.org', 
-	'usa.gov', 
-	'foia.gov',
 	'guidestar.org', 
 	'propublica.org/nonprofit', 
-	'county.gov', 
+	'g2.com',
+	'capterra.com', 
+	'trustradius.com',
+].map(domain => `site:${domain}`).join(' OR '); 
+
+// Level 2.5: Government & Public Records (Verification & Financial Data)
+const BATCH_TRUST_GOV = [
+	'bbb.org', 
+	'guidestar.org', 
+	'propublica.org/nonprofit', 
 ].map(domain => `site:${domain}`).join(' OR ');
 
 // Level 3: Competitive Review Sites (Data Aggregators/Active Shopping) 
@@ -539,7 +548,6 @@ function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	// FIX: For Commercial, we rely on the original search term to contain the OR chain,
 	// and we will apply the B2B enhancer loosely in the main generator function.
 	if (!isResidential) {
-		// --- CRITICAL B2B FIX START ---
 		// 1. Extract the primary term, removing all content inside parentheses.
 		let cleanedTarget = targetType.split('(')[0].trim();
 		
@@ -551,8 +559,6 @@ function simplifySearchTerm(targetType, financialTerm, isResidential) {
 		
 		// Use the cleaned, primary term, wrapped in quotes for exact match of the type (e.g., "small businesses")
 		let coreTerms = [`"${cleanedTarget}"`];
-		
-		// --- CRITICAL B2B FIX END ---
 		
 		if (financialTerm && financialTerm.trim().length > 0) {
 			coreTerms.push(`(${financialTerm})`);
@@ -650,10 +656,11 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
 					console.log(`[Batch 1] Running PRIMARY Life Event Query (B2C Fix: No activeSignal filter).`);
 				} else {
-					// Level 1: Primary Search (Public Records/Competitive Review) - B2B FIX
-					const primaryB2BSites = `${BATCH_TRUST_GOV} OR ${BATCH_COMPETITIVE_REVIEW}`;
+					// Level 1: Primary Search (QUALITY Public Records/Competitive Review) - B2B FIX
+					// CRITICAL CHANGE: Use BATCH_QUALITY_B2B for the synchronous call (Batch 1)
+					const primaryB2BSites = BATCH_QUALITY_B2B; 
 					searchKeywords = `(${primaryB2BSites}) AND ${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
-					console.log(`[Batch 1] Running PRIMARY Public Records Intent Query (B2B Fix: Starting with Trust Sites).`);
+					console.log(`[Batch 1] Running PRIMARY QUALITY Public Records Intent Query (B2B Fix: Starting with WIDER Trust Sites).`);
 				}
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
                 // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
@@ -676,7 +683,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				searchKeywords = `${shortTargetType} in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
 			}
 			
-			// 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
+			// 1. Get verified search results (Primary) - Timeout is now 15s with 3 retries
 			let gSearchResults = await googleSearch(searchKeywords, 3);	
 			
 			// 2. Level 2 Fallback: If primary fails, try a broader, non-intent-based search.
