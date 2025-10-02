@@ -8,8 +8,8 @@
  * CRITICAL FIXES APPLIED:
  * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
  * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
- * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
- * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
+ * - The Level 1 Search for COMMERCIAL leads is now forced into a "Public Records/Competitive Review" search
+ * strategy to guarantee high-quality, verifiable B2B leads and ensure search results are returned.
  * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
  */
 
@@ -101,7 +101,6 @@ async function checkWebsiteStatus(url) {
 
 /**
  * Generates a realistic email pattern based on name and website.
- * ENHANCEMENT: Now uses 'contactName' for B2C leads for better accuracy.
  */
 async function enrichEmail(lead, website) {
 	try {
@@ -204,7 +203,7 @@ async function generatePremiumInsights(lead) {
 	const events = [
 		`Featured in local news about ${lead.name}`,
 		`Announced new product/service in ${lead.website}`,
-		`Recent funding or partnership signals for ${lead.name}`,
+		`Recent funding or partnership signals for ${lead.website}`,
 		`High engagement on social media for ${lead.name}`
 	];
 	// CRITICAL: Since we are now using a dedicated search batch for socialSignal, 
@@ -243,8 +242,7 @@ function deduplicateLeads(leads) {
 }
 
 /**
- * NEW: Concurrent processing of a single lead, including non-blocking network checks.
- * This function is designed to be run in parallel with other leads.
+ * Concurrent processing of a single lead, including non-blocking network checks.
  */
 async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	// Assign leadType and salesPersona for use in the NEW scoring functions
@@ -414,7 +412,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 // -------------------------
-// Keyword Definitions (UPDATED for High Intent)
+// Keyword Definitions
 // -------------------------
 const PERSONA_KEYWORDS = {
 	"real_estate": [
@@ -457,7 +455,6 @@ const PERSONA_KEYWORDS = {
 	]
 };
 
-// FIX: Made the COMMERCIAL_ENHANCERS more likely to hit with fewer terms.
 const COMMERCIAL_ENHANCERS = [
 	`"new funding" OR "business expansion"`, // Looser
 	`"recent hiring" OR "job posting" AND "sales staff needed"`, 
@@ -476,10 +473,65 @@ const NEGATIVE_FILTERS = [
 
 const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
+// --- NEW/UPDATED: Directory Groupings for Round-Robin Strategy ---
+
+// Level 1: Professional & Social Intent
+const BATCH_PROFESSIONAL_SOCIAL = [
+	'linkedin.com/company', 
+	'facebook.com', 
+	'instagram.com'
+].map(domain => `site:${domain}`).join(' OR ');
+
+// Level 2: Government & Public Records (Verification & Financial Data)
+const BATCH_TRUST_GOV = [
+	'bbb.org', 
+	'usa.gov', 
+	'foia.gov',
+	'guidestar.org', 
+	'propublica.org/nonprofit', 
+	'county.gov', 
+].map(domain => `site:${domain}`).join(' OR ');
+
+// Level 3: Competitive Review Sites (Data Aggregators/Active Shopping) 
+const BATCH_COMPETITIVE_REVIEW = [
+	'g2.com',
+	'capterra.com',
+	'trustradius.com',
+	'saasgenius.com',
+].map(domain => `site:${domain}`).join(' OR ');
+
+// Level 4: Generic Review & Local Directory (Fallback)
+const BATCH_REVIEW_DIRECTORY = [
+	'yelp.com', 
+	'angi.com', 
+	'manta.com', 
+	'yellowpages.com',
+].map(domain => `site:${domain}`).join(' OR ');
+
+
+// Master list of directory batches (PRIORITIZED FOR INTENT)
+const DIRECTORY_BATCHES = [
+	BATCH_PROFESSIONAL_SOCIAL,    // Highest Intent: People talking about solutions
+	BATCH_TRUST_GOV,              // High Intent: Public filings, financial health, property records
+	BATCH_COMPETITIVE_REVIEW,     // High Intent: Active product shopping/reviewing competitors
+	BATCH_REVIEW_DIRECTORY        // Medium Intent: Local listing verification (Fallback)
+];
+
+// Dedicated High-Intent Social/Forum Search Sites (unchanged)
+const HIGH_INTENT_FORUMS = [
+	'linkedin.com',
+	'reddit.com', 
+	'quora.com',  
+	'facebook.com' 
+].map(domain => `site:${domain}`).join(' OR ');
+
+// Explicit buyer-intent phrases to target in forums/social platforms (unchanged)
+const HOT_INTENT_PHRASES = `"seeking advice on" OR "struggling with" OR "best way to" OR "recommendations for" OR "who to hire"`;
+// --------------------------------------------------------------------------------------
+
 
 /**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * FIX: Commercial logic now returns the full target term to prevent accidental removal of intent.
  */
 function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	const normalized = targetType.toLowerCase();
@@ -487,14 +539,27 @@ function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	// FIX: For Commercial, we rely on the original search term to contain the OR chain,
 	// and we will apply the B2B enhancer loosely in the main generator function.
 	if (!isResidential) {
-		let coreTerms = [`(${targetType})`]; // Use the full original term
+		// --- CRITICAL B2B FIX START ---
+		// 1. Extract the primary term, removing all content inside parentheses.
+		let cleanedTarget = targetType.split('(')[0].trim();
+		
+		// Fallback safety if the clean split is too short (i.e., if it was only a phrase in parentheses)
+		if (cleanedTarget.length < 5) {
+			// Second attempt: use regex to remove all parentheses content
+			cleanedTarget = targetType.replace(/\s*\(.*\)\s*/g, '').trim();
+		}
+		
+		// Use the cleaned, primary term, wrapped in quotes for exact match of the type (e.g., "small businesses")
+		let coreTerms = [`"${cleanedTarget}"`];
+		
+		// --- CRITICAL B2B FIX END ---
 		
 		if (financialTerm && financialTerm.trim().length > 0) {
 			coreTerms.push(`(${financialTerm})`);
 		}
 		
 		const finalTerm = coreTerms.join(' AND ');
-		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Full Intent) to: ${finalTerm}`);
+		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Fixed) to: ${finalTerm}`);
 		return finalTerm;
 	}
 	
@@ -557,7 +622,7 @@ CRITICAL: All information MUST pertain to the lead referenced in the search resu
 
 Email: When fabricating an address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
-High-Intent Metrics: You MUST infer and populate both 'transactionStage' (e.g., "Active Bidding", "Comparing Quotes") and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation. You MUST also use the search results to infer and summarize any **competitive shopping signals, recent social media discussions, or current events** in the 'socialSignal' field.
+High-Intent Metrics: You MUST infer and populate both 'transactionStage' (e.g., "Active Bidding", "Comparing Quotes") and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation. You MUST also use the search results to infer and summarize any **competitive shopping signals, recent social media discussions, public filings, or non-profit financial data** in the 'socialSignal' field.
 Geographical Detail: Based on the search snippet and the known location, you MUST infer and populate the 'geoDetail' field with the specific neighborhood, street name, or zip code mentioned for that lead. If none is found, return the general location provided.`;
 
 	const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
@@ -573,7 +638,6 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			
 			// Cycle through hardcoded enhancers for variety/safety
 			const personaEnhancer = personaKeywords[batchIndex % personaKeywords.length];	
-			const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
 
 			// Pass financialTerm to ensure it's included in the simplified target if it exists
 			const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
@@ -581,39 +645,35 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			// Determine primary search keywords
 			if (batchIndex === 0) {
 				
-				// CRITICAL FIX: Decouple 'activeSignal' from the primary B2C search (Level 1)
 				if (isResidential) {
-					// B2C Primary: Focus on Life Event + Financial Term (in location). NO activeSignal.
+					// Level 1: Primary Search (Life Event/Financial Term) - B2C
 					searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
 					console.log(`[Batch 1] Running PRIMARY Life Event Query (B2C Fix: No activeSignal filter).`);
 				} else {
-					// B2B PRIMARY FIX: Use the full original 'targetType' (OR chain) 
-					// combined with the first, looser B2B enhancer.
-					searchKeywords = `(${targetType}) in "${location}" AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
-					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Fix: Using full OR chain + 1 enhancer).`);
+					// Level 1: Primary Search (Public Records/Competitive Review) - B2B FIX
+					const primaryB2BSites = `${BATCH_TRUST_GOV} OR ${BATCH_COMPETITIVE_REVIEW}`;
+					searchKeywords = `(${primaryB2BSites}) AND ${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+					console.log(`[Batch 1] Running PRIMARY Public Records Intent Query (B2B Fix: Starting with Trust Sites).`);
 				}
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
-                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                const defaultSocialTerms = isResidential 
+                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
+                const defaultSocialTerms = isResidential 
 					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
 					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
-                
-                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
- 				
-                // Search specifically on social/forum sites for real-time discussion and shopping intent.
-				// CRITICAL FIX: Use the resolvedActiveSignal here combined with the shortTargetType for a high-intent, broad search.
-                searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) AND (${socialTerms} OR ${activeSignal}) in "${location}" ${NEGATIVE_QUERY}`;
-                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
+                
+                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
+ 				
+                // Search explicitly for buyer-intent phrases like "struggling with" combined with the target.
+                searchKeywords = `${HIGH_INTENT_FORUMS} (${shortTargetType}) AND (${socialTerms} OR ${activeSignal} OR ${HOT_INTENT_PHRASES}) in "${location}" ${NEGATIVE_QUERY}`;
+                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
 			} else if (isResidential) {
 				
-				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
-				// These batches now serve as the active signal/financial filter
+				// Level 2/3: RESIDENTIAL QUERY: Simplified core target + location + high-intent persona signal
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${personaEnhancer}) ${NEGATIVE_QUERY}`;
 			} else {
 				
-				// B2B QUERY (Batch > 0): Simplified core target + location + high-intent B2B signal
-				// Use a different B2B enhancer for variety
-				searchKeywords = `(${targetType}) in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
+				// Level 2/3: B2B QUERY: Clean core target + location + high-intent B2B signal (Looser intent query)
+				searchKeywords = `${shortTargetType} in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
 			}
 			
 			// 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
@@ -623,35 +683,34 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			if (gSearchResults.length === 0) {
 				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback (Level 2)...`);
 				
-				// --- Level 2 Fallback: Broad, non-intent based term ---
-				
 				let broaderFallbackTerm;
 				if (isResidential) {
-					broaderFallbackTerm = `"homeowner family" in "${location}"`; // Residential fallback (most generic description of the target)
+					broaderFallbackTerm = `"homeowner family" in "${location}"`; 
 				} else {
-					// B2B LEVEL 2 FIX: Only search for the company type (first term in the OR chain) in the location.
-					const firstB2BTerm = targetType.split(' OR ')[0].trim().replace(/"/g, ''); // e.g., "software companies"
-					broaderFallbackTerm = `"${firstB2BTerm}" in "${location}"`;
+					// CRITICAL: B2B Fallback now uses the CLEAN shortTargetType (e.g. "small businesses" in Florida)
+					broaderFallbackTerm = `${shortTargetType} in "${location}"`;
 				}
 				
 				// Fallback: Drop ALL signals and just search the core term and location.
 				let fallbackSearchKeywords = `${broaderFallbackTerm} ${NEGATIVE_QUERY}`;
 				
-				// Fallback also uses the Fail-Fast approach
 				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
 				gSearchResults.push(...fallbackResults);
 
-				// --- NEW: Level 3 Fallback: Ultra-Generic Search (Guaranteed hit for any location) ---
+				// --- Level 3 Fallback: Ultra-Generic Search with Directory Batches ---
 				if (gSearchResults.length === 0) {
-					console.warn(`[Batch ${batchIndex+1}] No results after level 2 fallback. Trying ultra-generic search (Level 3)...`);
+					console.warn(`[Batch ${batchIndex+1}] No results after level 2 fallback. Trying ultra-generic search (Level 3) with a directory batch...`);
 					
-					// Use a highly generic, high-probability term related to the persona
-					// This forces Google to return local directories or service pages.
+					// Use Round-Robin to select a manageable directory batch
+					// Note: The index `batchIndex` is used here to cycle through the 4 directory types
+					const directoryBatch = DIRECTORY_BATCHES[batchIndex % DIRECTORY_BATCHES.length];
+					
 					const salesPersonaClean = salesPersona.replace(/_/g, ' ');
 					
+					// Combine persona/target type with the directory batch
 					const ultraGenericTerm = isResidential 
-						? `"${salesPersonaClean} services" in "${location}"` // e.g., "life insurance services"
-						: `${targetType.split(' OR ')[0].trim().replace(/"/g, '')} directory in "${location}"`; // e.g., "software companies directory"
+						? `(${directoryBatch}) AND "${salesPersonaClean} services" in "${location}"`
+						: `(${directoryBatch}) AND ${shortTargetType} in "${location}"`;
 						
 					const ultraFallbackKeywords = `${ultraGenericTerm} ${NEGATIVE_QUERY}`;
 					
@@ -739,12 +798,12 @@ exports.handler = async (event) => {
 		// Checking for required parameters (using searchTerm and resolvedActiveSignal)
 		if (!leadType || !searchTerm || !location || !salesPersona) {
 			 const missingFields = ['leadType', 'searchTerm', 'location', 'salesPersona'].filter(field => !requestData[field]);
-			 
+			 
 			 // Check resolvedActiveSignal explicitly here, though it should be defaulted
 			 if (!resolvedActiveSignal) missingFields.push('activeSignal');	
 
 			 console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
-			 
+			 
 			 return {	
 				 statusCode: 400,	
 				 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
