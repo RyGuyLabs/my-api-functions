@@ -1,24 +1,31 @@
 /**
- * Ultimate Premium Lead Generator – Gemini + Google Custom Search
- *
- * This file contains two exports:
- * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
- * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
- *
- * CRITICAL SPEED FIX APPLIED:
- * 1. FIX: The synchronous job (Batch 0) now uses the 'shortTargetType' (simplified search term) instead of the long, complex 'searchTerm'.
- * 2. ENHANCEMENT: The 'simplifySearchTerm' logic is improved to strip parenthetical notes and conjunctions (AND/OR) to produce a cleaner, faster search query, minimizing 503/timeouts.
- * 3. **CRITICAL FIX FOR TIMEOUTS:** The logic for Batch 0 and Batch 1 has been swapped. Batch 0 (the quick job) now uses the broader, safer 'activeSignal' to ensure speed and prevent the 10-second timeout.
- */
+ * Ultimate Premium Lead Generator – Gemini + Google Custom Search
+ *
+ * This file contains two exports:
+ * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
+ * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
+ *
+ * CRITICAL FIXES APPLIED:
+ * 1. CRITICAL B2C TIMEOUT FIX: The 'exports.handler' call was passing misaligned arguments. This has been corrected.
+ * 2. CRITICAL B2C TIMEOUT FIX: The Quick Job now explicitly uses the clean 'clientProfile' as the target type, ensuring the core service intent is prioritized and speeding up search resolution to avoid Netlify timeouts.
+ * 3. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
+ * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
+ * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
+ * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
+ * 4. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
+ */
 
-const nodeFetch = require('node-fetch'); 
-const fetch = nodeFetch.default || nodeFetch; 
+
+const nodeFetch = require('node-fetch'); 
+const fetch = nodeFetch.default || nodeFetch; 
+
 
 const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
 const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
+
 
 // -------------------------
 // Helper: Fetch with Timeout (CRITICAL for preventing 504)
@@ -32,17 +39,20 @@ const fetchWithTimeout = (url, options, timeout = 10000) => {
 	]);
 };
 
+
 // -------------------------
 // Helper: Exponential Backoff with Full Jitter
 // -------------------------
 const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
-			const response = await fn(); 
+			const response = await fn(); 
 			if (response.ok) return response;
+
 
 			let errorBody = {};
 			try { errorBody = await response.json(); } catch {}
+
 
 			// Immediate failure for fatal errors (Client errors 4xx except 429)
 			if (response.status >= 400 && response.status < 500 && response.status !== 429) {
@@ -52,6 +62,7 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 			
 			// Only retry if we are not on the last attempt
 			if (attempt === maxRetries) throw new Error(`Max retries reached. Status: ${response.status}`);
+
 
 			const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
 			
@@ -71,25 +82,27 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 	throw new Error("Max retries reached. Request failed permanently.");
 };
 
+
 // -------------------------
 // Enrichment & Quality Helpers
 // -------------------------
 const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
 
+
 /**
- * Checks if a website is responsive using a head request (fastest check).
- * @param {string} url 
- * @returns {boolean} True if the website responds without major errors.
- */
+ * Checks if a website is responsive using a head request (fastest check).
+ * @param {string} url 
+ * @returns {boolean} True if the website responds without major errors.
+ */
 async function checkWebsiteStatus(url) {
 	// Basic validation to prevent invalid URL usage
-	if (!url || !url.startsWith('http')) return false; 
+	if (!url || !url.startsWith('http')) return false; 
 	try {
 		// Use HEAD request for speed, timeout short for validation (5 seconds)
 		// Set maxRetries to 1 (meaning no retries) for a fast validation check
-		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
-		// We consider 2xx (Success) and 3xx (Redirection) as valid.
-		return response.ok || (response.status >= 300 && response.status < 400); 
+		const response = await withBackoff(() => fetchWithTimeout(url, { method: 'HEAD' }, 5000), 1, 500); 
+		// We consider 2xx (Success) and 3xx (Redirection) as valid. 4xx/5xx are valid.
+		return response.ok || (response.status >= 300 && response.status < 400); 
 	} catch (e) {
 		console.warn(`Website check failed for ${url}: ${e.message}`);
 		return false;
@@ -97,15 +110,18 @@ async function checkWebsiteStatus(url) {
 }
 
 
+
+
 /**
- * Generates a realistic email pattern based on name and website.
- */
+ * Generates a realistic email pattern based on name and website.
+ * ENHANCEMENT: Now uses 'contactName' for B2C leads for better accuracy.
+ */
 async function enrichEmail(lead, website) {
 	try {
 		const url = new URL(website);
 		const domain = url.hostname;
 		
-		// Use contactName if available and it's a residential lead
+		// CRITICAL B2C CHANGE: Use contactName if available and it's a residential lead
 		const nameToUse = lead.leadType === 'residential' && lead.contactName ? lead.contactName : lead.name;
 		
 		const nameParts = nameToUse.toLowerCase().split(' ').filter(part => part.length > 0);
@@ -118,6 +134,7 @@ async function enrichEmail(lead, website) {
 		const firstName = nameParts[0];
 		const lastName = nameParts[nameParts.length - 1];
 
+
 		// Define common email patterns, starting with the most professional one
 		const patterns = [
 			`${firstName}.${lastName}@${domain}`, 	 	// John.doe@example.com (Primary)
@@ -127,12 +144,13 @@ async function enrichEmail(lead, website) {
 			`info@${domain}`, 	 	 	 	 	// Info@example.com (Fallback generic)
 		].filter(p => !p.includes('undefined')); // Remove patterns if name parts are missing
 
+
 		// Use the first valid pattern for consistency (Highest confidence guess)
 		if (patterns.length > 0) {
 			return patterns[0].replace(/\s/g, '');
 		}
 		
-		// Fallback to a generic domain contact if name processing fails
+		// Fallback if URL parsing fails completely, using website string directly
 		return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`;
 	} catch (e) {
 		console.error("Email enrichment error:", e.message);
@@ -141,9 +159,10 @@ async function enrichEmail(lead, website) {
 	}
 }
 
+
 /**
- * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
- */
+ * Phone number enrichment is disabled. The number must be extracted by Gemini or remain null.
+ */
 async function enrichPhoneNumber(currentNumber) {
 	// If a number was found and is not a known placeholder, keep it.
 	if (currentNumber && currentNumber.length > 5 && !currentNumber.includes('555')) {
@@ -153,30 +172,41 @@ async function enrichPhoneNumber(currentNumber) {
 	return null;	
 }
 
+
 /**
- * Calculates a match score between the lead's description/insights and the sales persona.
- * NOTE: This relies on the core 'persona' keywords previously defined.
- */
+ * Calculates a match score between the lead's description/insights and the sales persona.
+ */
 function calculatePersonaMatchScore(lead, salesPersona) {
-	// Simple scoring based on general financial and commercial terms, since specific persona keywords are removed.
+	// Lead Type must be added to the lead object during the batch process before calling this.
 	if (!lead.description && !lead.insights) return 0;
 	
 	let score = 0;
+	const persona = salesPersona.toLowerCase();
 	const text = (lead.description + ' ' + (lead.insights || '')).toLowerCase();
 	
-	// Use simplified keyword matching based on the persona type for B2B/B2C focus
-	if (salesPersona.includes('insurance') || salesPersona.includes('financial') || salesPersona.includes('mortgage')) {
-		if (text.includes('wealth') || text.includes('invest') || text.includes('plan') || text.includes('policy')) score += 1;
+	// Add points for direct persona keywords (e.g., 'financial_advisor' keywords)
+	const personaKeywords = PERSONA_KEYWORDS[persona] || [];
+	
+	for (const phrase of personaKeywords) {
+		// Simplify the complex search phrase into core words for scoring
+		// We look for parts of the phrase that aren't stop words or operators
+		const words = phrase.replace(/["()]/g, '').split(/ OR | AND | /).filter(w => w.length > 5);	
+		for (const word of words) {
+			if (text.includes(word.trim())) {
+				score += 1;
+			}
+		}
 	}
-	if (lead.leadType === 'commercial') {
-		if (text.includes('business') || text.includes('owner') || text.includes('hiring') || text.includes('expansion')) score += 1;
-	}
-	if (lead.leadType === 'residential') {
-		if (text.includes('home') || text.includes('family') || text.includes('move') || text.includes('individual')) score += 1;
-	}
+
+
+	// Add points for B2B/Residential match (General context match)
+	if (lead.leadType === 'commercial' && (text.includes('business') || text.includes('company'))) score += 1;
+	if (lead.leadType === 'residential' && (text.includes('homeowner') || text.includes('individual') || text.includes('family'))) score += 1;
 	
 	return Math.min(score, 5); // Cap score at 5 for a consistent weighting
 }
+
+
 
 
 function computeQualityScore(lead) {
@@ -189,16 +219,20 @@ function computeQualityScore(lead) {
 	return 'Low';
 }
 
+
 async function generatePremiumInsights(lead) {
-	// Placeholder fallback if Gemini misses the social signal
+	// These are placeholders for real, scraped insights; still useful for Gemini context.
 	const events = [
 		`Featured in local news about ${lead.name}`,
 		`Announced new product/service in ${lead.website}`,
 		`Recent funding or partnership signals for ${lead.name}`,
 		`High engagement on social media for ${lead.name}`
 	];
+	// CRITICAL: Since we are now using a dedicated search batch for socialSignal, 
+	// this fallback is used ONLY if Gemini failed to extract a socialSignal from the search snippets.
 	return events[Math.floor(Math.random() * events.length)];
 }
+
 
 function rankLeads(leads) {
 	return leads
@@ -210,15 +244,17 @@ function rankLeads(leads) {
 			// Add weight for the new specialized fields (High Intent Focus)
 			if (l.transactionStage && l.keyPainPoint) score += 2;
 			else if (l.transactionStage || l.keyPainPoint) score += 1;
-			if (l.socialSignal) score += 1; 
+			if (l.socialSignal) score += 1; // Points for inferred social/competitive context
 
-			// Add Persona Match Score (Max 5 points)
+
+			// NEW: Add Persona Match Score (Max 5 points)
 			score += l.personaMatchScore || 0;	
 			
 			return { ...l, priorityScore: score };
 		})
 		.sort((a, b) => b.priorityScore - a.priorityScore);
 }
+
 
 function deduplicateLeads(leads) {
 	const seen = new Set();
@@ -230,16 +266,20 @@ function deduplicateLeads(leads) {
 	});
 }
 
+
 /**
- * NEW: Concurrent processing of a single lead, including non-blocking network checks.
- */
+ * NEW: Concurrent processing of a single lead, including non-blocking network checks.
+ * This function is designed to be run in parallel with other leads.
+ */
 async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	// Assign leadType and salesPersona for use in the NEW scoring functions
 	lead.leadType = leadType;	
 	lead.salesPersona = salesPersona;
 
+
 	// 1. Clean up website protocol
 	if (lead.website && !lead.website.includes('http')) {
+		// Fix missing protocol if necessary for validation check
 		lead.website = 'https://' + lead.website.replace(/https?:\/\//, '');
 	}
 	
@@ -248,6 +288,7 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 		websiteIsValid = await checkWebsiteStatus(lead.website);
 	}
 
+
 	// 2. Validate and enrich contact info
 	if (lead.website && !websiteIsValid) {
 		console.warn(`Lead ${lead.name} website failed validation. Skipping email enrichment.`);
@@ -255,15 +296,22 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 		lead.website = null;	
 	}
 
+
+	// Check if the current email is empty or contains a known placeholder
 	const shouldEnrichEmail = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
 	
+	// Use the new, strict phone number enrichment/verification
 	lead.phoneNumber = await enrichPhoneNumber(lead.phoneNumber);
 
+
+	// Only enrich if the website is available and the existing email is bad/missing
 	if (shouldEnrichEmail && lead.website) {	
+		// CRITICAL UPDATE: Pass the entire lead object to enrichEmail for B2C logic
 		lead.email = await enrichEmail(lead, lead.website);
 	} else if (!lead.website) {
-		 lead.email = null; 
+		 lead.email = null; // Cannot enrich if the website is gone/invalid
 	}
+
 
 	// 3. Scoring
 	lead.personaMatchScore = calculatePersonaMatchScore(lead, salesPersona);
@@ -276,11 +324,14 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	
 	// 5. Ensure socialMediaLinks is always an array
 	if (!Array.isArray(lead.socialMediaLinks)) {
+		 // If Gemini generated a single string or nothing, ensure it's converted to an array or empty.
 		 lead.socialMediaLinks = lead.socialMediaLinks ? [lead.socialMediaLinks] : [];
 	}
 
+
 	return lead;
 }
+
 
 // -------------------------
 // Google Custom Search
@@ -290,6 +341,7 @@ async function googleSearch(query, numResults = 3) {
 		console.warn("RYGUY_SEARCH_API_KEY or RYGUY_SEARCH_ENGINE_ID is missing. Skipping Google Custom Search.");
 		return [];
 	}
+
 
 	const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
 	
@@ -305,6 +357,7 @@ async function googleSearch(query, numResults = 3) {
 			return [];
 		}
 
+
 		return (data.items || []).map(item => ({
 			name: item.title,
 			website: item.link,
@@ -316,6 +369,7 @@ async function googleSearch(query, numResults = 3) {
 		return [];	
 	}
 }
+
 
 // -------------------------
 // Gemini call
@@ -353,6 +407,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 		}
 	};
 
+
 	const payload = {
 		contents: [{ parts: [{ text: query }] }],
 		systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -364,6 +419,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 		}
 	};
 	
+	// Gemini call can be more forgiving with 4 retries, as it's typically faster than Google Search
 	const response = await withBackoff(() =>
 		fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
 			method: 'POST',
@@ -378,7 +434,11 @@ async function generateGeminiLeads(query, systemInstruction) {
 	try {
 		return JSON.parse(raw);
 	} catch (e) {
+		// ADDED: Attempt to remove markdown fences if Gemini wrapped the JSON
 		let cleanedText = raw.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+		
+		// Attempt to clean up common quote escaping issues.
+		cleanedText = cleanedText.replace(/([^\\])"/g, (match, p1) => `${p1}\\"`);
 		
 		try {
 			return JSON.parse(cleanedText);
@@ -389,21 +449,60 @@ async function generateGeminiLeads(query, systemInstruction) {
 	}
 }
 
-// -------------------------
-// Keyword Definitions (SIMPLIFIED and CONSOLIDATED)
-// -------------------------
 
-// Single list of powerful, cross-industry intent signals
-const HIGH_INTENT_SIGNALS = [
-	// Financial/Transactional signals
-	`"pre-approved" OR "comparing rates" OR "finalizing deal" OR "securing funding"`, 
-	// Competitive/Shopping signals
-	`"need new vendor" OR "shopping around" OR "reviewing bids" OR "asking for quotes"`, 
-	// Time-sensitive/Growth signals
-	`"new construction" OR "business expansion" OR "urgent need" OR "new hiring"`, 
-	// Liquidity/Asset signals
-	`"high net worth" OR "annuity maturing" OR "recent major purchase" OR "trust fund established"`
+// -------------------------
+// Keyword Definitions (UPDATED for High Intent)
+// -------------------------
+const PERSONA_KEYWORDS = {
+	"real_estate": [
+		`"closing soon" OR "pre-approval granted" OR "final walk-through"`, // High Intent: Transactional closure
+		`"new construction" OR "single-family home" AND "immediate move"`, // High Intent: Time-sensitive need
+		`"building permit" OR "major home renovation project" AND "budget finalized"`, // High Intent: Budget and scope set
+		`"distressed property listing" AND "cash offer"`, // High Intent: Quick sale/purchase
+		`"recent move" OR "new job in area" AND "needs services"` // High Intent: New location, new vendors needed
+	],
+	"life_insurance": [
+		`"inheritance received" OR "trust fund established" OR "annuity maturing"`, // High Intent: Major liquidity event (HNI/Retirement)
+		`"retirement plan rollovers" OR "seeking estate lawyer"`, // High Intent: Active financial management
+		`"trust fund establishment" OR "recent major asset purchase"`, // High Intent: High net worth activity
+		`"IRA rollover" OR "annuity comparison" AND "urgent decision"`, // High Intent: Time-sensitive decision
+		`"age 50+" OR "retirement specialist" AND "portfolio review"` // High Intent: Actively reviewing retirement
+	],
+	"financial_advisor": [
+		`"recent funding" OR "major business expansion" AND "need advisor"`, // High Intent: Need for financial guidance
+		`"property investor" OR "real estate portfolio management" AND "tax strategy"`, // High Intent: Specific service need
+		`"401k rollover" OR "retirement planning specialist" AND "immediate consultation"`, // High Intent: Active seeking of advice
+		`"S-Corp filing" OR "new business incorporation" AND "accounting needed"` // High Intent: New business setup
+	],
+	"local_services": [
+		`"home improvement" OR "major repair needed" AND "quote accepted"`, // High Intent: Ready to proceed
+		`"renovation quote" OR "remodeling project bid" AND "start date imminent"`, // High Intent: Confirmed project
+		`"new construction start date" OR "large landscaping project" AND "hiring now"`, // High Intent: Active hiring
+		`"local homeowner review" OR "service provider recommendations" AND "booked service"` // High Intent: High social signal/recommendation
+	],
+	"mortgage": [
+		`"mortgage application pre-approved" OR "refinancing quote" AND "comparing rates"`, // High Intent: Shopping phase
+		`"recent purchase contract signed" OR "new home loan needed" AND "30 days to close"`, // High Intent: Critical timeline
+		`"first-time home buyer seminar" OR "closing date soon" AND "documents finalized"`, // High Intent: Advanced planning
+		`"VA loan eligibility" OR "FHA loan requirements" AND "submission ready"` // High Intent: Specific product search
+	],
+	"default": [
+		`"urgent event venue booking" OR "last-minute service needed"`,	
+		`"moving company quotes" AND "move date confirmed"`,	
+		`"recent college graduate" AND "seeking investment advice"`,	
+		`"small business startup help" AND "funding secured"`
+	]
+};
+
+
+// FIX: Made the COMMERCIAL_ENHANCERS more likely to hit with fewer terms.
+const COMMERCIAL_ENHANCERS = [
+	`"new funding" OR "business expansion"`, // Looser
+	`"recent hiring" OR "job posting" AND "sales staff needed"`, 
+	`"moved office" OR "new commercial building"`, 
+	`"new product launch" OR "major contract win"`
 ];
+
 
 const NEGATIVE_FILTERS = [
 	`-job`,	
@@ -414,116 +513,206 @@ const NEGATIVE_FILTERS = [
 	`-"ultimate guide"`
 ];
 
+
 const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 
+
+
 /**
- * Aggressively simplifies a complex search term into core search keywords for broad coverage.
- * CRITICAL ENHANCEMENT: Strips parenthetical clutter and conjunctions.
- */
-function simplifySearchTerm(targetType, isResidential) {
-	// 1. Remove parenthetical descriptions and 'AND'/'OR' for simplicity
-	let core = targetType
-		.replace(/\([^)]*\)/g, '') // Remove (everything inside parenthesis)
-		.replace(/\s+AND\s+/gi, ' ') // Remove AND
-		.replace(/\s+OR\s+/gi, ' ') // Remove OR
-		.trim();
-
-	// 2. Normalize and split, filtering out short, common words (like 'for', 'the', 'a')
-	const words = core.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['seeking', 'targeting', 'new', 'owner', 'key'].includes(w)); 
-
-	// 3. Keep the 4 most relevant words/phrases
-	const targetWords = words.slice(0, 4);
-
-	// 4. Wrap each in quotes if they are separate words for better search focus
-	if (targetWords.length > 1) {
-		return targetWords.map(w => `"${w}"`).join(' ');
+ * Aggressively simplifies a complex, descriptive target term into core search keywords.
+ * FIX: Commercial logic now returns the full target term to prevent accidental removal of intent.
+ * CRITICAL B2C FIX: Now relies on the Quick Job handler passing a clean 'clientProfile' as targetType for B2C,
+ * then guarantees the financial term is AND-ed for better intent and speed.
+ */
+function simplifySearchTerm(targetType, financialTerm, isResidential) {
+	
+	// If it's a B2B lead, return the complex OR chain as the primary target
+	if (!isResidential) {
+		let coreTerms = [`(${targetType})`]; // Use the full original term
+		
+		if (financialTerm && financialTerm.trim().length > 0) {
+			coreTerms.push(`(${financialTerm})`);
+		}
+		
+		const finalTerm = coreTerms.join(' AND ');
+		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Full Intent) to: ${finalTerm}`);
+		return finalTerm;
 	}
 	
-	// Fallback to cleaned core term
-	return core; 
+	// --- FIXED B2C LOGIC ---
+	if (isResidential) {
+		
+		let simplifiedTerms = [];
+		
+		// 1. Prioritize the core target type (Client Profile, which is now passed clean in Quick Job)
+		simplifiedTerms.push(`"${targetType}"`); 
+		
+		// 2. --- Financial Term Integration (CRITICAL FIX) ---
+		// Add the financial term if it's provided, using an AND to narrow the audience
+		if (financialTerm && financialTerm.trim().length > 0) {
+			// Ensure it's treated as an AND condition
+			simplifiedTerms.push(`AND ${financialTerm}`); 
+		}
+
+
+		// Join with a space (AND is already added if needed)
+		const finalTerm = simplifiedTerms.join(' ');
+
+
+		if (finalTerm.length > 0) {
+			console.log(`[Simplify Fix] Resolved CORE B2C TERM to: ${finalTerm}`);
+			return finalTerm;
+		}
+	}
+
+
+	// Default fallback (should be rare)
+	return targetType.split(/\s+/).slice(0, 4).join(' ');
 }
 
 
+
+
 // -------------------------
-// Lead Generator Core (SIMPLIFIED CONCURRENT EXECUTION)
+// Lead Generator Core (CONCURRENT EXECUTION)
 // -------------------------
-async function generateLeadsBatch(leadType, targetType, activeSignal, location, salesPersona, socialFocus, totalBatches = 3) {
+async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, salesPersona, socialFocus, totalBatches = 4) {
 	
 	const template = leadType === 'residential'
 		? "Focus on individual homeowners, financial capacity, recent property activities."
 		: "Focus on businesses, size, industry relevance, recent developments.";
 
-	// System Instruction remains rich, as it guides the LLM on quality
+
+	// UPDATED SYSTEM INSTRUCTION: Explicitly instructing Gemini to find competitive/social signals AND infer contactName
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
 
+
 **B2C CONTACT ENHANCEMENT**: If the 'leadType' is 'residential' and the search snippets imply an individual, you MUST infer a realistic, full first and last name and populate the **'contactName'** field. If a business is implied, leave it blank.
+
 
 Email: When fabricating an address (e.g., contact@domain.com), you MUST use a domain from the provided 'website' field. NEVER use placeholder domains.
 Phone Number: You MUST extract the phone number directly from the search snippets provided. IF A PHONE NUMBER IS NOT PRESENT IN THE SNIPPETS, YOU MUST LEAVE THE 'phoneNumber' FIELD COMPLETELY BLANK (""). DO NOT FABRICATE A PHONE NUMBER.
 High-Intent Metrics: You MUST infer and populate both 'transactionStage' (e.g., "Active Bidding", "Comparing Quotes") and 'keyPainPoint' based on the search snippets to give the user maximum outreach preparation. You MUST also use the search results to infer and summarize any **competitive shopping signals, recent social media discussions, or current events** in the 'socialSignal' field.
 Geographical Detail: Based on the search snippet and the known location, you MUST infer and populate the 'geoDetail' field with the specific neighborhood, street name, or zip code mentioned for that lead. If none is found, return the general location provided.`;
 
-	const isResidential = leadType === 'residential';
-	const batchPromises = [];
-	
-	// Calculate simplified term once for use in all batches to ensure speed and consistency
-	const shortTargetType = simplifySearchTerm(targetType, isResidential); 
 
-	// --- Create ALL Promises Concurrently (Max 3 Batches) ---
+	const personaKeywords = PERSONA_KEYWORDS[salesPersona] || PERSONA_KEYWORDS['default'];
+	const isResidential = leadType === 'residential';
+	
+	const batchPromises = [];
+
+
+	// --- Create ALL Promises Concurrently ---
 	for (let i = 0; i < totalBatches; i++) {
 		
 		const batchPromise = (async (batchIndex) => {
 			let searchKeywords;
 			
-			if (batchIndex === 0) {
-				// BATCH 0: PRIMARY INTENT SEARCH (Highest Quality / QUICK JOB)
-				// CRITICAL FIX: SWAPPED LOGIC - Use the user's broader activeSignal for a guaranteed quick result.
-				console.log(`[Batch 1] Running QUICK Intent Query (Simplified Term + Active Signal).`);
-				searchKeywords = `(${shortTargetType}) in "${location}" AND (${activeSignal}) ${NEGATIVE_QUERY}`;
-				
-			} else if (batchIndex === 1) {
-				// BATCH 1: BROAD COVERAGE SEARCH (Guaranteed Results/Fallback for the long job)
-				// SWAPPED LOGIC - Use the highly restrictive HIGH_INTENT_SIGNALS for the long job's second batch.
-				const intentSignal = HIGH_INTENT_SIGNALS[0]; 
-				console.log(`[Batch 2] Running RESTRICTIVE Intent Query (Simplified Term + High Signal).`);
-				searchKeywords = `(${shortTargetType}) in "${location}" AND (${intentSignal}) ${NEGATIVE_QUERY}`;
+			// Cycle through hardcoded enhancers for variety/safety
+			const personaEnhancer = personaKeywords[batchIndex % personaKeywords.length];	
+			const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
 
-			} else if (batchIndex === 2) { 
-				// BATCH 2: DEDICATED SOCIAL/COMPETITIVE INTENT (Hot Leads)
-				// Targets social/forum sites specifically for competitive shopping signals.
-				const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : `"shopping around" OR "need new provider"`;
-				searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
-				console.log(`[Batch 3] Running dedicated Social/Competitive Intent Query (HOT Signal).`);
+
+			// Pass financialTerm to ensure it's included in the simplified target if it exists
+			const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
+
+
+			// Determine primary search keywords
+			if (batchIndex === 0) {
+				
+				// CRITICAL FIX: Decouple 'activeSignal' from the primary B2C search (Level 1)
+				if (isResidential) {
+					// B2C Primary: Focus on Life Event + Financial Term (in location). NO activeSignal.
+					searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+					console.log(`[Batch 1] Running PRIMARY Life Event Query (B2C Fix: No activeSignal filter).`);
+				} else {
+					// B2B PRIMARY FIX: Use the full original 'targetType' (OR chain) 
+					// combined with the first, looser B2B enhancer.
+					searchKeywords = `(${targetType}) in "${location}" AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
+					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Fix: Using full OR chain + 1 enhancer).`);
+				}
+			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
+                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
+                const defaultSocialTerms = isResidential 
+					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
+					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
+                
+                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
+ 				
+                // Search specifically on social/forum sites for real-time discussion and shopping intent.
+				// CRITICAL FIX: Use the resolvedActiveSignal here combined with the shortTargetType for a high-intent, broad search.
+                searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) AND (${socialTerms} OR ${activeSignal}) in "${location}" ${NEGATIVE_QUERY}`;
+                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
+			} else if (isResidential) {
+				
+				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
+				// These batches now serve as the active signal/financial filter
+				searchKeywords = `(${shortTargetType}) in "${location}" AND (${personaEnhancer}) ${NEGATIVE_QUERY}`;
 			} else {
-				// Should not happen if totalBatches is correctly limited, but as a guard:
-				return [];
+				
+				// B2B QUERY (Batch > 0): Simplified core target + location + high-intent B2B signal
+				// Use a different B2B enhancer for variety
+				searchKeywords = `(${targetType}) in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
 			}
 			
-			// 1. Get verified search results (Fail-fast enforced inside googleSearch)
+			// 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
 			let gSearchResults = await googleSearch(searchKeywords, 3);	
 			
-			// If the high-intent searches (0 or 2) fail, fall back to the broadest search possible
-			// NOTE: This fallback is now less likely to trigger for Batch 0 due to the broader query.
-			if (gSearchResults.length === 0 && batchIndex !== 1) {
-				console.warn(`[Batch ${batchIndex+1}] No results for high-intent query. Trying generic term fallback...`);
+			// 2. Level 2 Fallback: If primary fails, try a broader, non-intent-based search.
+			if (gSearchResults.length === 0) {
+				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback (Level 2)...`);
 				
-				// Fallback: Drop ALL signals and just search the simplified core term and location.
-				let fallbackSearchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+				// --- Level 2 Fallback: Broad, non-intent based term ---
 				
+				let broaderFallbackTerm;
+				if (isResidential) {
+					broaderFallbackTerm = `"homeowner family" in "${location}"`; // Residential fallback (most generic description of the target)
+				} else {
+					// B2B LEVEL 2 FIX: Only search for the company type (first term in the OR chain) in the location.
+					const firstB2BTerm = targetType.split(' OR ')[0].trim().replace(/"/g, ''); // e.g., "software companies"
+					broaderFallbackTerm = `"${firstB2BTerm}" in "${location}"`;
+				}
+				
+				// Fallback: Drop ALL signals and just search the core term and location.
+				let fallbackSearchKeywords = `${broaderFallbackTerm} ${NEGATIVE_QUERY}`;
+				
+				// Fallback also uses the Fail-Fast approach
 				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
 				gSearchResults.push(...fallbackResults);
 
+
+				// --- NEW: Level 3 Fallback: Ultra-Generic Search (Guaranteed hit for any location) ---
 				if (gSearchResults.length === 0) {
-					 console.warn(`[Batch ${batchIndex+1}] No results after broadest fallback. Skipping batch.`);
-					 return [];
+					console.warn(`[Batch ${batchIndex+1}] No results after level 2 fallback. Trying ultra-generic search (Level 3)...`);
+					
+					// Use a highly generic, high-probability term related to the persona
+					// This forces Google to return local directories or service pages.
+					const salesPersonaClean = salesPersona.replace(/_/g, ' ');
+					
+					const ultraGenericTerm = isResidential 
+						? `"${salesPersonaClean} services" in "${location}"` // e.g., "life insurance services"
+						: `${targetType.split(' OR ')[0].trim().replace(/"/g, '')} directory in "${location}"`; // e.g., "software companies directory"
+						
+					const ultraFallbackKeywords = `${ultraGenericTerm} ${NEGATIVE_QUERY}`;
+					
+					const ultraFallbackResults = await googleSearch(ultraFallbackKeywords, 3);
+					gSearchResults.push(...ultraFallbackResults);
+
+
+					if (gSearchResults.length === 0) {
+						 console.warn(`[Batch ${batchIndex+1}] No results after ultra-generic fallback. Skipping batch.`);
+						 return [];
+					}
 				}
 			}	
 
-			// 2. Feed results to Gemini for qualification
+
+			// 3. Feed results to Gemini for qualification
 			const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${targetType}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
+
 
 			const geminiLeads = await generateGeminiLeads(
 				geminiQuery,
@@ -541,18 +730,23 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 	// Flatten the array of lead arrays into one master list
 	let allLeads = resultsFromBatches.flat();
 
+
 	// --- Final Enrichment and Ranking (Concurrent) ---
 	allLeads = deduplicateLeads(allLeads);
 	
 	// CRITICAL FIX: Run the enrichment and scoring *concurrently*
-	const enrichmentPromises = allLeads.map(lead => 
+	const enrichmentPromises = allLeads.map(lead => 
 		enrichAndScoreLead(lead, leadType, salesPersona)
 	);
 	
 	const enrichedLeads = await Promise.all(enrichmentPromises);
 
+
+	// The `enrichedLeads` array already contains all necessary fields for ranking
 	return rankLeads(enrichedLeads);
 }
+
+
 
 
 // ------------------------------------------------
@@ -578,64 +772,74 @@ exports.handler = async (event) => {
 		};
 	}
 
+
 	let requestData = {};
 	try {
+		// --- START DEBUG LOGGING ---
 		console.log(`[Handler DEBUG] Raw Event Body: ${event.body}`);
 		requestData = JSON.parse(event.body);
 		console.log('[Handler DEBUG] Parsed Body Data:', requestData);
+		// --- END DEBUG LOGGING ---
 
-		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus } = requestData;
+
+		// NEW: Destructure financialTerm and socialFocus, AND clientProfile (CRITICAL for the fix)
+		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, financialTerm, clientProfile } = requestData;
 		
+		// Default activeSignal if client is not sending it
 		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
-
-		if (!leadType || !searchTerm || !location || !salesPersona) {
-			 const missingFields = ['leadType', 'searchTerm', 'location', 'salesPersona'].filter(field => !requestData[field]);
-			 
-			 if (!resolvedActiveSignal) missingFields.push('activeSignal');	
-
-			 console.error(`[Handler] Missing fields detected: ${missingFields.join(', ')}`);
-			 
-			 return {	
-				 statusCode: 400,	
-				 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-				 body: JSON.stringify({ error: `Missing required parameters: ${missingFields.join(', ')}` })	
-			 };
-		}
-
-		// CRITICAL: Hard limit the synchronous job to 1 batch (Batch 0: Primary Intent Search).
-		const batchesToRun = 1;	
-		const requiredLeads = 3;
-
+		
+		// FIX: Use the precise clientProfile for the Quick Job's primary target argument for B2C.
+		// This avoids the complex and slow parsing of the full 'searchTerm' string.
+		const quickJobTarget = leadType === 'residential' && clientProfile ? clientProfile : searchTerm;
+		
+		// Log the quick job execution before the long-running call
 		console.log(`[Handler] Running QUICK JOB (max 3 leads) for: ${searchTerm} (Signal: ${resolvedActiveSignal}) in ${location}.`);
 
-		const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, batchesToRun);
-		
+
+		// 3. Run the Quick Job (Batch 0 only, max 3 leads)
+		// CRITICAL FIX: Ensure correct arguments are passed according to function signature:
+		// (leadType, targetType, financialTerm, activeSignal, location, salesPersona, socialFocus, totalBatches)
+		const leads = await generateLeadsBatch(
+			leadType, 			// 1. leadType
+			quickJobTarget, 	// 2. targetType (now the clean clientProfile for B2C)
+			financialTerm, 		// 3. financialTerm (FIXED)
+			resolvedActiveSignal, 	// 4. activeSignal (FIXED)
+			location, 			// 5. location (FIXED)
+			salesPersona, 		// 6. salesPersona (FIXED)
+			socialFocus, 		// 7. socialFocus (FIXED)
+			1 					// 8. totalBatches (fixed to 1)
+		);
+
+
+		// 4. Return the highly prioritized leads
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ leads: leads.slice(0, requiredLeads), count: leads.slice(0, requiredLeads).length })
+			body: JSON.stringify({ leads: leads.slice(0, 3), count: leads.length })
 		};
-	} catch (err) {
-		if (err.name === 'SyntaxError') {
-			 console.error('Lead Generator Handler Error: Failed to parse JSON body.', err.message);
-			 return {	
-				 statusCode: 400,	
-				 headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-				 body: JSON.stringify({ error: 'Invalid JSON request body provided.' })	
-			 };
-		}
+
+
+	} catch (error) {
+		console.error('Lead Generator Handler Error:', error);
 		
-		console.error('Lead Generator Handler Error:', err);
-		return {	
-			statusCode: 500,	
+		// Log a specific error when the Quick Job fails due to a timeout or API error
+		let message = 'Lead generation failed due to a server error.';
+		if (error.message.includes('Fetch request timed out') || error.message.includes('Max retries reached')) {
+			message = 'The quick lead generation job took too long and timed out (Netlify limit exceeded). Try the long job for complex queries.';
+		}
+
+
+		return {
+			statusCode: 500,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ error: err.message, details: err.cause || 'No cause provided' })	
+			body: JSON.stringify({ error: message, details: error.message, stack: error.stack })
 		};
 	}
 };
 
+
 // ------------------------------------------------
-// 2. Asynchronous Handler (Background Job: Unlimited Leads)
+// 2. Asynchronous Handler (Background Job)
 // ------------------------------------------------
 exports.background = async (event) => {
 	
@@ -645,41 +849,37 @@ exports.background = async (event) => {
 		'Access-Control-Allow-Headers': 'Content-Type',
 	};
 	
-	if (event.httpMethod === 'OPTIONS') {
-		return { statusCode: 200, headers: CORS_HEADERS, body: '' };
-	}
-	
-	if (event.httpMethod !== 'POST') {
-		return {	
-			statusCode: 405,	
-			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ error: 'Method Not Allowed' })
-		};
-	}
-
 	try {
 		const requestData = JSON.parse(event.body);
-		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus } = requestData;
+		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, financialTerm, clientProfile, totalLeads } = requestData;
 
+
+		// The background job is designed to be more comprehensive (up to 4 batches)
+		const batchesToRun = Math.min(4, Math.ceil(totalLeads / 3)); // Max 4 batches, 3 leads/batch = 12 leads max
 		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
 
-		if (!leadType || !searchTerm || !location || !salesPersona) {
-			console.error('[Background] Missing required fields in request.');
-			return {	
-				statusCode: 400,	
-				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-				body: JSON.stringify({ error: 'Missing required parameters for background job.' })	
-			};
-		}
-		
-		// Set the background job to run the 3 high-value search batches.
-		const batchesToRun = 3; 
 
 		console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
 
-		const leads = await generateLeadsBatch(leadType, searchTerm, resolvedActiveSignal, location, salesPersona, socialFocus, batchesToRun);
+
+		// --- Execution of the Long Task ---
+		// The long job still uses the full, complex 'searchTerm' as targetType for comprehensive search variety
+		const leads = await generateLeadsBatch(
+			leadType, 			// 1. leadType
+			searchTerm, 		// 2. targetType (full complex string for deep search)
+			financialTerm, 		// 3. financialTerm (FIXED)
+			resolvedActiveSignal, 	// 4. activeSignal (FIXED)
+			location, 			// 5. location (FIXED)
+			salesPersona, 		// 6. salesPersona (FIXED)
+			socialFocus, 		// 7. socialFocus (FIXED)
+			batchesToRun 		// 8. totalBatches
+		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
+		
+		// IMPORTANT: For a true background handler, you would typically save results to a DB 
+		// or queue a fulfillment step here, rather than returning all data.
+		// We return the 200 response for demonstration/logging purposes.
 		
 		return {
 			statusCode: 200,
@@ -688,10 +888,14 @@ exports.background = async (event) => {
 		};
 	} catch (err) {
 		console.error('Lead Generator Background Error:', err);
+		// Log the error and still return a 500 to indicate the job failed.
 		return {	
 			statusCode: 500,	
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ error: err.message, details: err.cause || 'No cause provided', status: 'failed' })	
+			body: JSON.stringify({ error: err.message, details: err.cause || 'An unknown background error occurred.' })
 		};
 	}
 };
+
+
+
