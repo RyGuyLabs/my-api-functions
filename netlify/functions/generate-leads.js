@@ -5,9 +5,12 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIXES APPLIED:
- * 1. DYNAMIC NEGATIVE KEYWORDS: Implemented filtering to exclude competitor companies based on the 'salesPersona'.
- * 2. NEW CRITICAL UPDATE: **Enhanced Batch 2 Search** to focus on directories (Yellow Pages) and high-activity social platforms (Quora, Facebook, Instagram, LinkedIn, Reddit, Twitter) to prioritize urgent, local, and contact-rich leads.
+ * CRITICAL UPDATE V8: PIVOT TO INDUSTRY PAIN POINTS & SOLUTION-SEEKING BEHAVIOR
+ * The pipeline's second batch (Batch 2) is now entirely dedicated to finding public discussions,
+ * articles, and posts that explicitly mention common, high-urgency pain points across four key verticals:
+ * SaaS/High-Tech, FinTech/Finance, HealthTech/Healthcare, and E-Commerce/Retail.
+ *
+ * This prioritizes leads actively struggling with a known, monetizable problem.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -108,24 +111,21 @@ function generateNegativeKeywords(persona) {
 async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, salesPersona) {
     if (!GEMINI_API_KEY) {
          console.warn("[API Missing] GEMINI_API_KEY not set. Cannot perform enrichment.");
-         return { name: 'API Key Missing', website: snippet.url, email: null, phoneNumber: null, description: snippet.snippet, insights: 'Cannot enrich lead without Gemini API Key.', qualityScore: 'Low', suggestedAction: 'Check environment setup.', socialSignal: 'N/A', draftPitch: 'Please check API keys to generate verified leads.' };
+         return { name: 'API Key Missing', website: snippet.url, email: null, phoneNumber: null, socialMediaHandle: null, description: snippet.snippet, insights: 'Cannot enrich lead without Gemini API Key.', qualityScore: 'Low', suggestedAction: 'Check environment setup.', socialSignal: 'N/A', draftPitch: 'Please check API keys to generate verified leads.' };
     }
 
-    const systemPrompt = `You are a world-class lead qualifier and sales development representative.
+    const systemPrompt = `You are a world-class lead qualifier and sales development representative specializing in finding **active buying signals**.
         Analyze the provided search snippet (Title, Snippet, URL) grounded by the Google Search API.
         Your task is to extract or infer a high-quality, actionable B2B or B2C lead object.
         The lead must be relevant to the sales persona: "${salesPersona}".
         
         CRITICAL RULES:
         1. Only use information EXPLICITLY contained within the snippet for grounding. Do NOT search externally.
-        2. Infer the 'name' (Company Name or Individual Name) from the snippet's title or URL.
-        3. Infer the 'website' (URL) from the snippet link.
+        2. The 'socialSignal' must explicitly describe the **Buying Signal** or **Active Pain Point** found (e.g., 'Discussing EHR integration pain', 'Suffering high abandoned cart rates', 'Just failed a security audit').
+        3. The 'insights' must detail *why* this specific buying signal is a perfect opportunity for the sales persona.
         4. If a verifiable contact (email, phone, social handle) is not in the snippet, set it to NULL. **DO NOT** use placeholders like 'N/A' or 'Requires Research' for contact fields.
-        5. The 'description' must be a one-sentence summary of the business/person's intent found in the snippet.
-        6. The 'insights' must detail *why* this is a good lead for the sales persona.
-        7. The 'socialSignal' must state if the lead shows active intent (e.g., asking for quotes, comparing competitors, or **having an active local directory listing**) based on the snippet text.
-        8. The 'qualityScore' must be 'High', 'Medium', or 'Low' based on the clarity of intent in the snippet.
-        9. The 'draftPitch' should be a concise, personalized opening line for the contact.
+        5. The 'qualityScore' must be 'High', 'Medium', or 'Low' based on the clarity and urgency of the **Buying Signal/Pain Point** in the snippet.
+        6. The 'draftPitch' should be a concise, personalized opening line that references the **Buying Signal**.
     `;
     
     const userQuery = `
@@ -153,11 +153,11 @@ async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, s
                     "phoneNumber": { "type": "STRING", "description": "Extracted phone number, or null if not found." },
                     "socialMediaHandle": { "type": "STRING", "description": "Extracted social media handle (e.g., @user) or null." },
                     "description": { "type": "STRING", "description": "A one-sentence summary of the entity or the intent." },
-                    "insights": { "type": "STRING", "description": "Why this is a good lead (for the sales persona)." },
-                    "qualityScore": { "type": "STRING", "enum": ["High", "Medium", "Low"], "description": "The inferred lead quality score." },
+                    "insights": { "type": "STRING", "description": "Why this specific buying signal is a good lead (for the sales persona)." },
+                    "qualityScore": { "type": "STRING", "enum": ["High", "Medium", "Low"], "description": "The inferred lead quality score based on urgency of the buying signal." },
                     "suggestedAction": { "type": "STRING", "description": "The immediate next step (e.g., 'Check Reddit thread', 'Verify LLC details')." },
-                    "socialSignal": { "type": "STRING", "description": "A signal of competitive shopping, active intent, or high local relevance." },
-                    "draftPitch": { "type": "STRING", "description": "A concise, personalized opening pitch." }
+                    "socialSignal": { "type": "STRING", "description": "The explicit Buying Signal (e.g., Funding, Hiring, Tech Stack Change)." },
+                    "draftPitch": { "type": "STRING", "description": "A concise, personalized opening pitch referencing the buying signal." }
                 },
                 required: ["name", "website", "email", "phoneNumber", "socialMediaHandle", "description", "insights", "qualityScore", "suggestedAction", "socialSignal", "draftPitch"]
             }
@@ -196,29 +196,53 @@ async function generateLeadsBatch(leadType, searchTerm, financialTerm, activeSig
 
     // --- Generate Dynamic Negative Keywords (still critical for competitor filtering) ---
     const negativeKeywords = generateNegativeKeywords(salesPersona);
-
-    // --- BATCH 1: General Web & Location Focus (B2B Commercial Intent) ---
-    // If B2B, use the full, unsimplified OR-chain for maximum relevance.
+    
+    // Use the most focused search term
     const primaryTerm = leadType === 'commercial' ? searchTerm : activeSignal;
 
-    // Use negative keywords to exclude competitors
-    const generalQuery = `${primaryTerm} in "${location}" ${negativeKeywords} -job -careers -"blog post"`;
+    // --- BATCH 1: Foundation (Broad Web, Location, Advanced Operators for Key Docs) ---
+    // Uses the full search context to find general relevance and deep documents (PDF reports, etc.)
+    const docOperators = `filetype:pdf OR intitle:"annual report" OR intitle:"case study"`;
+    const generalQuery = `${primaryTerm} in "${location}" ${negativeKeywords} OR (${docOperators} AND "${primaryTerm}")`;
     const generalSnippets = await withBackoff(() => searchGoogle(generalQuery));
 
     
-    // --- BATCH 2: Active Intent & Directory Focus (HOT, Local Leads) ---
-    // Scoped to social platforms and directories to find active discussions/competitive intent and high-contact listings.
-    const socialPlatforms = "site:linkedin.com OR site:reddit.com OR site:twitter.com OR site:yellowpages.com OR site:quora.com OR site:facebook.com OR site:instagram.com";
-    const socialQueryTerm = socialFocus || financialTerm || searchTerm;
+    // --- BATCH 2: HIGH-INTENT PAIN SIGNALS (Industry-Specific Problems & Solution-Seeking) ---
+    // Targets sites and keywords that confirm industry pain points and urgent need.
     
-    // Use negative keywords here too to prevent finding competitor social profiles
-    const socialQuery = `${socialPlatforms} "${socialQueryTerm}" in "${location}" ${negativeKeywords}`;
-    const socialSnippets = await withBackoff(() => searchGoogle(socialQuery));
+    // 1. Social & Discussion Sites (Public Pain Signaling)
+    const socialSites = "site:reddit.com OR site:quora.com OR site:twitter.com OR site:hacker news";
+    // 2. Funding & General High-Intent Sites (Budget/Company Context)
+    const fundingSites = "site:techcrunch.com OR site:crunchbase.com OR site:businesswire.com";
+    
+    // CRITICAL UPDATE: High-Value Industry Pain Points from the user's strategy
+    // These keywords indicate active struggle and solution-seeking in key verticals.
+    const painPointSignals = `("data silos" OR "reducing customer churn" OR "AML reporting pain" OR "security audit failure" OR "HIPAA violation fines" OR "EHR integration" OR "abandoned cart rate" OR "better personalization")`;
 
-    const allSnippets = [...generalSnippets, ...socialSnippets];
+    // The query now heavily prioritizes the combination of the search term (e.g., "SaaS company") 
+    // with the specific industry pain points across social and high-intent news/funding sites.
+    const intentQuery = `(${fundingSites} OR ${socialSites}) ("${searchTerm}" in "${location}") AND (${painPointSignals} OR "actively seeking" OR "needs help with")`;
+    const intentSnippets = await withBackoff(() => searchGoogle(intentQuery));
+
+
+    
+    // --- BATCH 3: VERIFICATION, COMPLIANCE, & CONTENT SIGNALS (Competitive, Public Records, Contact) ---
+    // Targets validation, public risk/compliance, and inbound signals (Gated Content).
+    
+    // Directories, Review Sites, Public Records, and Content
+    const validationSites = "site:g2.com OR site:capterra.com OR site:bbb.org OR site:usagov.gov OR site:publicrecords.gov OR site:linkedin.com";
+    
+    // Verification, Competitive Review, and Public Data:
+    const validationKeywords = `("apollo io" OR "lusha" OR "contact verification") OR ("Form 990" OR "public contract") OR ("webinar: ${searchTerm}" OR "ebook: ${searchTerm}") OR ("reviewing ${financialTerm}")`;
+    
+    const validationQuery = `${validationSites} "${searchTerm}" in "${location}" AND (${validationKeywords})`;
+    const validationSnippets = await withBackoff(() => searchGoogle(validationQuery));
+
+
+    const allSnippets = [...generalSnippets, ...intentSnippets, ...validationSnippets];
 
     if (allSnippets.length === 0) {
-        console.warn(`[Batch Fail] No leads found after general and social searches.`);
+        console.warn(`[Batch Fail] No leads found after multi-batch high-intent search.`);
         return [];
     }
 
@@ -284,7 +308,7 @@ exports.handler = async (event) => {
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} high-fidelity leads from real-time search and AI enrichment.` })
+            body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} high-fidelity leads from a three-batch search strategy (Foundation, High-Intent Pain Signals, and Validation).` })
         };
 
     } catch (err) {
@@ -332,7 +356,7 @@ exports.background = async (event) => {
 		// Set a higher number of batches for the "unlimited" background job (e.g., 8 batches)
 		const batchesToRun = 8; 
 
-		console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
+		console.log(`[Background] Starting LONG JOB (${batchesToRun} leads) for: ${searchTerm} in ${location}.`);
 
 		// --- Execution of the Long Task ---
 		const leads = await generateLeadsBatch(
@@ -351,7 +375,7 @@ exports.background = async (event) => {
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} leads in background.` })
+			body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} leads in background using a three-batch high-intent strategy (Foundation, High-Intent Pain Signals, and Validation).` })
 		};
 	} catch (err) {
 		console.error('Lead Generator Background Error:', err);
