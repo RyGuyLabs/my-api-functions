@@ -5,15 +5,9 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * SIMPLIFICATION & REFACTORING APPLIED:
- * 1. REMOVED: All complex, persona-specific keyword arrays (PERSONA_KEYWORDS, COMMERCIAL_ENHANCERS).
- * 2. NEW: Consolidated all high-intent signals into a single, powerful list: HIGH_INTENT_SIGNALS.
- * 3. REFACTORED: The core 'generateLeadsBatch' function is simplified to run a maximum of 3 distinct, high-value searches:
- * - Batch 0: Full Search Term + Intent Signal (Highest Quality / Quick Job Focus).
- * - Batch 1: Simplified Search Term + Broad Coverage (Guaranteed Results / Robust Fallback).
- * - Batch 2: Social/Competitive Search (Hot Leads / Dedicated).
- * 4. ADJUSTED: 'totalBatches' for the background job is now set to 3 to reflect the new, targeted strategy.
- * 5. B2B FIX RETAINED: Batch 0 still uses the full user-provided rich 'searchTerm' to maximize immediate success.
+ * CRITICAL SPEED FIX APPLIED:
+ * 1. FIX: The synchronous job (Batch 0) now uses the 'shortTargetType' (simplified search term) instead of the long, complex 'searchTerm'.
+ * 2. ENHANCEMENT: The 'simplifySearchTerm' logic is improved to strip parenthetical notes and conjunctions (AND/OR) to produce a cleaner, faster search query, minimizing 503/timeouts.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -424,33 +418,29 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 /**
  * Aggressively simplifies a complex search term into core search keywords for broad coverage.
+ * CRITICAL ENHANCEMENT: Strips parenthetical clutter and conjunctions.
  */
 function simplifySearchTerm(targetType, isResidential) {
-	const normalized = targetType.toLowerCase();
-	
-	// If the user used an OR chain, we keep the first two OR terms as the core focus.
-	if (targetType.includes(' OR ')) {
-		const parts = targetType.split(' OR ').map(p => p.trim());
-		const simplifiedTerms = parts.slice(0, 2).map(term => `"${term}"`); 
-		return simplifiedTerms.join(' OR ');
+	// 1. Remove parenthetical descriptions and 'AND'/'OR' for simplicity
+	let core = targetType
+		.replace(/\([^)]*\)/g, '') // Remove (everything inside parenthesis)
+		.replace(/\s+AND\s+/gi, ' ') // Remove AND
+		.replace(/\s+OR\s+/gi, ' ') // Remove OR
+		.trim();
+
+	// 2. Normalize and split, filtering out short, common words (like 'for', 'the', 'a')
+	const words = core.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['seeking', 'targeting', 'new', 'owner', 'key'].includes(w)); 
+
+	// 3. Keep the 4 most relevant words/phrases
+	const targetWords = words.slice(0, 4);
+
+	// 4. Wrap each in quotes if they are separate words for better search focus
+	if (targetWords.length > 1) {
+		return targetWords.map(w => `"${w}"`).join(' ');
 	}
 	
-	// For simple phrases, extract 2-4 core descriptive words.
-	let coreTerms = [];
-	if (isResidential) {
-		if (normalized.includes('homeowner')) coreTerms.push('homeowner');
-		if (normalized.includes('family')) coreTerms.push('family');
-	} else {
-		if (normalized.includes('business')) coreTerms.push('"small business"');
-		if (normalized.includes('owner')) coreTerms.push('owner');
-	}
-	
-	if (coreTerms.length === 0) {
-		// Final fallback: use the first three words of the input
-		return targetType.split(/\s+/).slice(0, 3).join(' ');
-	}
-	
-	return coreTerms.join(' OR ');
+	// Fallback to cleaned core term
+	return core; 
 }
 
 
@@ -478,8 +468,8 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 	const isResidential = leadType === 'residential';
 	const batchPromises = [];
 	
-	// Calculate simplified term once for use in batches 1 and 2
-	const shortTargetType = simplifySearchTerm(targetType, isResidential);
+	// Calculate simplified term once for use in all batches to ensure speed and consistency
+	const shortTargetType = simplifySearchTerm(targetType, isResidential); 
 
 	// --- Create ALL Promises Concurrently (Max 3 Batches) ---
 	for (let i = 0; i < totalBatches; i++) {
@@ -488,11 +478,11 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			let searchKeywords;
 			
 			if (batchIndex === 0) {
-				// BATCH 0: PRIMARY INTENT SEARCH (Highest Quality)
-				// Uses the full, rich user-provided 'targetType' + a high-intent signal.
+				// BATCH 0: PRIMARY INTENT SEARCH (Highest Quality / QUICK JOB)
+				// CRITICAL FIX: Use the simplified term (shortTargetType) for speed and reliability.
 				const intentSignal = HIGH_INTENT_SIGNALS[0]; 
-				console.log(`[Batch 1] Running PRIMARY Intent Query (Full User Term + High Signal).`);
-				searchKeywords = `(${targetType}) in "${location}" AND (${intentSignal}) ${NEGATIVE_QUERY}`;
+				console.log(`[Batch 1] Running PRIMARY Intent Query (Simplified Term + High Signal).`);
+				searchKeywords = `(${shortTargetType}) in "${location}" AND (${intentSignal}) ${NEGATIVE_QUERY}`;
 				
 			} else if (batchIndex === 1) {
 				// BATCH 1: BROAD COVERAGE SEARCH (Guaranteed Results/Fallback)
