@@ -587,16 +587,16 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
-                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                const defaultSocialTerms = isResidential 
+				// Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
+				const defaultSocialTerms = isResidential 
 					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
 					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
-                
-                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
- 				
-                // Search specifically on social/forum sites for real-time discussion and shopping intent.
-                searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
-                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
+				
+				const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
+				
+				// Search specifically on social/forum sites for real-time discussion and shopping intent.
+				searchKeywords = `site:linkedin.com OR site:facebook.com OR site:twitter.com (${shortTargetType}) in "${location}" AND (${socialTerms}) ${NEGATIVE_QUERY}`;
+				console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
 			} else if (isResidential) {
 				
 				// RESIDENTIAL QUERY (Batch > 0): Simplified core target + location + high-intent persona signal
@@ -829,4 +829,3 @@ exports.background = async (event) => {
 		};
 	}
 };
-
