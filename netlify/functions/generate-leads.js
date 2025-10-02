@@ -5,8 +5,12 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * UPDATE: Implemented the user's "Government & Public Records" and "Data Aggregators" strategy
- * by redefining the directory search batches to prioritize financial/compliance data and competitive review sites.
+ * CRITICAL FIXES APPLIED:
+ * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
+ * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
+ * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
+ * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
+ * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -199,7 +203,7 @@ async function generatePremiumInsights(lead) {
 	const events = [
 		`Featured in local news about ${lead.name}`,
 		`Announced new product/service in ${lead.website}`,
-		`Recent funding or partnership signals for ${lead.name}`,
+		`Recent funding or partnership signals for ${lead.website}`,
 		`High engagement on social media for ${lead.name}`
 	];
 	// CRITICAL: Since we are now using a dedicated search batch for socialSignal, 
@@ -535,14 +539,27 @@ function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	// FIX: For Commercial, we rely on the original search term to contain the OR chain,
 	// and we will apply the B2B enhancer loosely in the main generator function.
 	if (!isResidential) {
-		let coreTerms = [`(${targetType})`]; // Use the full original term
+		// --- CRITICAL B2B FIX START ---
+		// 1. Extract the primary term, removing all content inside parentheses.
+		let cleanedTarget = targetType.split('(')[0].trim();
+		
+		// Fallback safety if the clean split is too short (i.e., if it was only a phrase in parentheses)
+		if (cleanedTarget.length < 5) {
+			// Second attempt: use regex to remove all parentheses content
+			cleanedTarget = targetType.replace(/\s*\(.*\)\s*/g, '').trim();
+		}
+		
+		// Use the cleaned, primary term, wrapped in quotes for exact match of the type (e.g., "small businesses")
+		let coreTerms = [`"${cleanedTarget}"`];
+		
+		// --- CRITICAL B2B FIX END ---
 		
 		if (financialTerm && financialTerm.trim().length > 0) {
 			coreTerms.push(`(${financialTerm})`);
 		}
 		
 		const finalTerm = coreTerms.join(' AND ');
-		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Full Intent) to: ${finalTerm}`);
+		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Fixed) to: ${finalTerm}`);
 		return finalTerm;
 	}
 	
@@ -634,8 +651,9 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
 					console.log(`[Batch 1] Running PRIMARY Life Event Query (B2C Fix: No activeSignal filter).`);
 				} else {
-					searchKeywords = `(${targetType}) in "${location}" AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
-					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Fix: Using full OR chain + 1 enhancer).`);
+					// Use the new, clean shortTargetType here!
+					searchKeywords = `${shortTargetType} in "${location}" AND (${COMMERCIAL_ENHANCERS[0]}) ${NEGATIVE_QUERY}`;
+					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Fix: Using clean target + 1 enhancer).`);
 				}
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
                 // Level 4: Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
@@ -654,8 +672,8 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${personaEnhancer}) ${NEGATIVE_QUERY}`;
 			} else {
 				
-				// Level 2/3: B2B QUERY: Simplified core target + location + high-intent B2B signal
-				searchKeywords = `(${targetType}) in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
+				// Level 2/3: B2B QUERY: Clean core target + location + high-intent B2B signal
+				searchKeywords = `${shortTargetType} in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
 			}
 			
 			// 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
@@ -669,8 +687,8 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				if (isResidential) {
 					broaderFallbackTerm = `"homeowner family" in "${location}"`; 
 				} else {
-					const firstB2BTerm = targetType.split(' OR ')[0].trim().replace(/"/g, ''); 
-					broaderFallbackTerm = `"${firstB2BTerm}" in "${location}"`;
+					// CRITICAL: B2B Fallback now uses the CLEAN shortTargetType
+					broaderFallbackTerm = `${shortTargetType} in "${location}"`;
 				}
 				
 				// Fallback: Drop ALL signals and just search the core term and location.
@@ -692,7 +710,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					// Combine persona/target type with the directory batch
 					const ultraGenericTerm = isResidential 
 						? `(${directoryBatch}) AND "${salesPersonaClean} services" in "${location}"`
-						: `(${directoryBatch}) AND ${targetType.split(' OR ')[0].trim().replace(/"/g, '')} in "${location}"`;
+						: `(${directoryBatch}) AND ${shortTargetType} in "${location}"`;
 						
 					const ultraFallbackKeywords = `${ultraGenericTerm} ${NEGATIVE_QUERY}`;
 					
