@@ -6,9 +6,10 @@
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
  * FIX: CRITICAL UPDATE to FALLBACK LOGIC within generateLeadsBatch.
- * The function now uses a truly broad, low-intent search term (e.g., '"homeowner family" in [Location]') 
- * as the final fallback. This ensures results are returned quickly in low-data-density areas, 
- * preventing the entire Netlify function from timing out after the initial focused searches fail.
+ * The function now uses a 3-Tier Fallback Strategy:
+ * 1. Targeted Intent Query (Primary)
+ * 2. Broad Homeowner/Business Query (Level 2 Fallback)
+ * 3. Ultra-Generic Persona Service Query (Level 3 Fallback) - This final level ensures a search hit in low-density areas.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -616,11 +617,11 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			// 1. Get verified search results (Primary) - Fail-fast enforced inside googleSearch
 			let gSearchResults = await googleSearch(searchKeywords, 3);	
 			
-			// 2. Fallback search if primary fails (Simplified Logic)
+			// 2. Level 2 Fallback: If primary fails, try a broader, non-intent-based search.
 			if (gSearchResults.length === 0) {
-				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback...`);
+				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback (Level 2)...`);
 				
-				// --- CRITICAL FIX: Use a truly broad, non-intent based term for the final fallback ---
+				// --- Level 2 Fallback: Broad, non-intent based term ---
 				const broaderFallbackTerm = isResidential 
 					? `"homeowner family" in "${location}"` // Residential fallback (most generic description of the target)
 					: `${shortTargetType} in "${location}"`; // B2B fallback remains the same (business name is the term)
@@ -632,9 +633,26 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
 				gSearchResults.push(...fallbackResults);
 
+				// --- NEW: Level 3 Fallback: Ultra-Generic Search (Guaranteed hit for any location) ---
 				if (gSearchResults.length === 0) {
-					 console.warn(`[Batch ${batchIndex+1}] No results after broadest fallback. Skipping batch.`);
-					 return [];
+					console.warn(`[Batch ${batchIndex+1}] No results after level 2 fallback. Trying ultra-generic search (Level 3)...`);
+					
+					// Use a highly generic, high-probability term related to the persona
+					// This forces Google to return local directories or service pages.
+					const salesPersonaClean = salesPersona.replace(/_/g, ' ');
+					const ultraGenericTerm = isResidential 
+						? `"${salesPersonaClean} services" in "${location}"` // e.g., "life insurance services"
+						: `${shortTargetType} directory in "${location}"`; // B2B Directory search
+						
+					const ultraFallbackKeywords = `${ultraGenericTerm} ${NEGATIVE_QUERY}`;
+					
+					const ultraFallbackResults = await googleSearch(ultraFallbackKeywords, 3);
+					gSearchResults.push(...ultraFallbackResults);
+
+					if (gSearchResults.length === 0) {
+						 console.warn(`[Batch ${batchIndex+1}] No results after ultra-generic fallback. Skipping batch.`);
+						 return [];
+					}
 				}
 			}	
 
