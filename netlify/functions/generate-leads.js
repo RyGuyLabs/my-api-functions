@@ -5,13 +5,10 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIXES APPLIED:
- * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
- * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
- * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
- * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
- * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
- * 3. NEW: Added 'socialFocus' input field contingency to customize the social/competitive search query.
+ * CRITICAL FIX: API Key Transmission
+ * The Gemini API key is now injected directly into the URL as a query parameter (?key=...),
+ * which is the most reliable method for authenticating with the Generative Language API
+ * and resolves the "Method doesn't allow unregistered callers" (403) error.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -24,7 +21,7 @@ const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
 const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 
 // --- API Endpoints ---
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
+const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 
 // --- Configuration ---
@@ -193,11 +190,14 @@ async function qualifyLeadsWithGemini(snippets, salesPersona) {
     }
     
     // CRITICAL: Check for API Key before attempting the call
-    // Note: The constant GEMINI_API_KEY is defined via process.env.LEAD_QUALIFIER_API_KEY 
     if (!GEMINI_API_KEY) {
         console.error("CRITICAL: GEMINI_API_KEY (from LEAD_QUALIFIER_API_KEY) is not set.");
         throw new Error("Gemini API Key Missing. Please set the LEAD_QUALIFIER_API_KEY environment variable.");
     }
+    
+    // --- CRITICAL FIX: Construct the API URL with the key as a query parameter ---
+    const authenticatedUrl = `${GEMINI_API_BASE_URL}?key=${GEMINI_API_KEY}`;
+
 
     const snippetText = snippets.map((item, index) => 
         `--- SNIPPET ${index + 1} (Source: ${item.source}) ---\nTitle: ${item.title}\nURL: ${item.link}\nSnippet: ${item.snippet}\n`
@@ -242,11 +242,12 @@ async function qualifyLeadsWithGemini(snippets, salesPersona) {
 
     let resultJson;
     try {
-        const response = await fetch(GEMINI_API_URL, {
+        // --- USING AUTHENTICATED URL HERE ---
+        const response = await fetch(authenticatedUrl, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'X-API-Key': GEMINI_API_KEY // Use key in header if needed, but typically passed in URL
+                // Removed 'X-API-Key' header as the key is now in the URL query string
             },
             body: JSON.stringify(payload)
         });
@@ -256,7 +257,7 @@ async function qualifyLeadsWithGemini(snippets, salesPersona) {
             console.error('Gemini API Error:', response.status, errorBody);
             // Throw a specific error for the 403 to indicate API key or billing issue
             if (response.status === 403) {
-                 throw new Error('403 Forbidden: Check LEAD_QUALIFIER_API_KEY, API Enablement, and Billing Status.');
+                 throw new Error('403 Forbidden: Check LEAD_QUALIFIER_API_KEY, API Enablement, and Billing Status. The key is now passed via URL parameter.');
             }
             throw new Error(`Gemini API failed with status ${response.status}`);
         }
