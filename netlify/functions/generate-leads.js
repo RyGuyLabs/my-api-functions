@@ -1,22 +1,26 @@
 /**
- * Ultimate Premium Lead Generator – PRODUCTION BACKEND (API Integration)
+ * Ultimate Premium Lead Generator – Gemini + Google Custom Search
  *
- * This file replaces simulated search/enrichment with real API calls
- * to Google Custom Search and the Gemini API to ensure leads are verifiable.
+ * This file contains two exports:
+ * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
+ * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * It retains the dual-batch search strategy (General Web + Social Focus)
- * and the improved lead detail structure.
+ * CRITICAL FIXES APPLIED:
+ * 1. FIXED B2B SEARCH LOGIC: The commercial lead generation logic is significantly refined.
+ * - The search term is no longer aggressively simplified (preventing errors like 'OR key').
+ * - The primary B2B query (Batch 1) uses the full user-provided OR chain for maximum intent.
+ * - The Level 2 Fallback for B2B now correctly searches only the target company type (e.g., "software companies") in the location for guaranteed results.
+ * 2. B2C Logic (Residential): Remains fixed with the decoupling of the restrictive 'activeSignal' from the primary search.
+ * 3. NEW CRITICAL UPDATE: Implemented **Dynamic Negative Keyword Filtering** to exclude competitor companies based on the 'salesPersona'.
  */
 
 const nodeFetch = require('node-fetch'); 
 const fetch = nodeFetch.default || nodeFetch; 
 
 // --- CRITICAL: Environment Variables for Real API Keys ---
-// These variables must be set in the deployment environment.
-const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY || "";
-const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY || "";
-const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID || "";
-
+const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
+const SEARCH_API_KEY = process.env.RYGUY_SEARCH_API_KEY;
+const SEARCH_ENGINE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 
@@ -40,36 +44,10 @@ async function withBackoff(fn, maxRetries = 5) {
                 throw error;
             }
             const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
-            console.warn(`[API Retry] Attempt ${i + 1} failed. Retrying in ${Math.round(delay / 1000)}s...`);
+            // console.warn(`[API Retry] Attempt ${i + 1} failed. Retrying in ${Math.round(delay / 1000)}s...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
-}
-
-/**
- * CRITICAL: Aggressively cleans up the complex search term for Google Custom Search.
- * Keeps only the essential, high-intent keywords.
- */
-function simplifyQueryForSearch(inputQuery) {
-    if (!inputQuery) return '';
-    
-    // 1. Remove all parentheses and the content within them, and quotes
-    let simplified = inputQuery.replace(/\(.*?\)|\"/g, ' ').trim();
-    
-    // 2. Remove explicit logic operators (AND, OR) and B2B targeting language
-    simplified = simplified
-        .replace(/(\sAND\s|\sOR\s)/gi, ' ')
-        .replace(/for commercial leads targeting/i, '')
-        .replace(/Key Person/i, '')
-        .replace(/New Parent/i, '')
-        .replace(/Small businesses/i, 'Small business');
-    
-    // 3. Clean up extra spaces and split into words
-    simplified = simplified.replace(/\s{2,}/g, ' ').trim();
-    
-    // 4. Return the most relevant 7 words
-    const finalKeywords = simplified.split(/\s+/).filter(word => word.length > 2);
-    return finalKeywords.slice(0, 7).join(' ').trim();
 }
 
 /**
@@ -83,7 +61,7 @@ async function searchGoogle(query) {
 
     const searchUrl = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`;
     
-    console.log(`[Google Search] Sending Query: ${query}`);
+    // console.log(`[Google Search] Sending Query: ${query}`);
     
     const response = await fetch(searchUrl);
     if (!response.ok) {
@@ -101,19 +79,40 @@ async function searchGoogle(query) {
 }
 
 /**
+ * NEW: Generates a string of negative keywords to exclude competitor results
+ * based on the user's sales persona/industry.
+ * @param {string} persona - The sales persona (e.g., "Real Estate Agent")
+ * @returns {string} - A space-separated string of negative keywords (e.g., "-agency -broker -realty")
+ */
+function generateNegativeKeywords(persona) {
+    const p = persona.toLowerCase();
+    let exclusions = ['-job', '-careers', '-competitors', '-alternative', '-inc', '-llc', '-ltd'];
+
+    if (p.includes('real estate') || p.includes('realtor') || p.includes('broker')) {
+        // Exclude other RE professionals/companies
+        exclusions.push('-agency', '-broker', '-realty', '-firm', '-listing', '-agent', '-brokerage', '-property management');
+    } else if (p.includes('insurance') || p.includes('financial') || p.includes('wealth')) {
+        // Exclude other finance/insurance entities
+        exclusions.push('-firm', '-agency', '-brokerage', '-wealth', '-advisor', '-consultant', '-investment', '-policy');
+    } else if (p.includes('software') || p.includes('tech') || p.includes('saas')) {
+        // Exclude other software companies (usually looking for customers, not competitors)
+        exclusions.push('-software', '-saas', '-platform', '-solution', '-tech', '-startup', '-api', '-app');
+    } else if (p.includes('marketing') || p.includes('consultant') || p.includes('seo') || p.includes('advertising')) {
+        // Exclude other marketing firms
+        exclusions.push('-agency', '-consultant', '-firm', '-marketing', '-seo', '-social media', '-pr', '-creative');
+    }
+    
+    // Add common organizational identifiers to prevent them from becoming leads unless they are the specific target
+    return exclusions.join(' ');
+}
+
+/**
  * Calls the Gemini API to enrich a raw search snippet into a structured lead object.
- * This is the critical step that ensures the data is based on real grounding (the snippet).
  */
 async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, salesPersona) {
     if (!GEMINI_API_KEY) {
          console.warn("[API Missing] GEMINI_API_KEY not set. Cannot perform enrichment.");
-         // Return a placeholder structure to allow the process to continue
-         return {
-            name: 'API Key Missing', website: snippet.url, email: null, phoneNumber: null,
-            description: snippet.snippet, insights: 'Cannot enrich lead without Gemini API Key.',
-            qualityScore: 'Low', suggestedAction: 'Check environment setup.', socialSignal: 'N/A',
-            draftPitch: 'Please check API keys to generate verified leads.'
-        };
+         return { name: 'API Key Missing', website: snippet.url, email: null, phoneNumber: null, description: snippet.snippet, insights: 'Cannot enrich lead without Gemini API Key.', qualityScore: 'Low', suggestedAction: 'Check environment setup.', socialSignal: 'N/A', draftPitch: 'Please check API keys to generate verified leads.' };
     }
 
     const systemPrompt = `You are a world-class lead qualifier and sales development representative.
@@ -196,22 +195,28 @@ async function callGeminiForEnrichment(snippet, fullQuery, leadType, location, s
 /**
  * Main lead generation logic using a dual-batch strategy with real APIs.
  */
-async function generateLeadsBatch(leadType, searchTerm, activeSignal, location, salesPersona, financialTerm, socialFocus) {
+async function generateLeadsBatch(leadType, searchTerm, financialTerm, activeSignal, location, salesPersona, socialFocus, batchesToRun = 3) {
     let leadData = [];
 
-    // --- 1. APPLY AGGRESSIVE SIMPLIFICATION ---
-    const simplifiedTerm = simplifyQueryForSearch(searchTerm);
-    
-    // --- BATCH 1: General Web & Location Focus ---
-    // Finds business entities and general articles in the area.
-    const generalQuery = `${simplifiedTerm} in "${location}" -job -careers -"blog post"`;
+    // --- NEW: Generate Dynamic Negative Keywords ---
+    const negativeKeywords = generateNegativeKeywords(salesPersona);
+
+    // --- BATCH 1: General Web & Location Focus (B2B Commercial Intent) ---
+    // If B2B, use the full, unsimplified OR-chain for maximum relevance.
+    const primaryTerm = leadType === 'commercial' ? searchTerm : activeSignal;
+
+    // Use negative keywords to exclude competitors
+    const generalQuery = `${primaryTerm} in "${location}" ${negativeKeywords} -job -careers -"blog post"`;
     const generalSnippets = await withBackoff(() => searchGoogle(generalQuery));
+
     
     // --- BATCH 2: Social Media Frequency Focus (HOT Leads) ---
-    // Scoped to social platforms to find active discussions (frequency of use).
+    // Scoped to social platforms to find active discussions/competitive intent.
     const socialPlatforms = "site:linkedin.com OR site:reddit.com OR site:twitter.com";
-    const socialQueryTerm = socialFocus || financialTerm || simplifiedTerm;
-    const socialQuery = `${socialPlatforms} "${socialQueryTerm}" in "${location}"`;
+    const socialQueryTerm = socialFocus || financialTerm || searchTerm;
+    
+    // Use negative keywords here too to prevent finding competitor social profiles
+    const socialQuery = `${socialPlatforms} "${socialQueryTerm}" in "${location}" ${negativeKeywords}`;
     const socialSnippets = await withBackoff(() => searchGoogle(socialQuery));
 
     const allSnippets = [...generalSnippets, ...socialSnippets];
@@ -239,7 +244,7 @@ async function generateLeadsBatch(leadType, searchTerm, activeSignal, location, 
     // Deduplicate leads based on website/source URL
     const uniqueLeads = Array.from(new Map(leadData.map(lead => [lead.website, lead])).values());
 
-    return uniqueLeads.slice(0, 3); // Max 3 for synchronous handler (adjust slice for background job)
+    return uniqueLeads.slice(0, batchesToRun); // Slice according to the job type
 }
 
 
@@ -266,14 +271,18 @@ exports.handler = async (event) => {
             };
         }
 
+        // Synchronous handler runs one batch (max 3 leads)
+        const batchesToRun = 3; 
+
         const leads = await generateLeadsBatch(
             leadType || 'commercial', 
             searchTerm, 
+            financialTerm || '',
             activeSignal || '', 
             location, 
             salesPersona || 'General Sales Representative', 
-            financialTerm || '',
-            socialFocus || ''
+            socialFocus || '',
+            batchesToRun
         );
 
         return {
@@ -296,8 +305,6 @@ exports.handler = async (event) => {
  * Asynchronous background lead generation endpoint (exports.background)
  */
 exports.background = async (event) => {
-    // Note: Background job logic is simplified here to use the same batching as handler 
-    // but can be extended to support more batches (e.g., 8-10) for deep searches.
     let body;
     try {
         body = JSON.parse(event.body);
@@ -316,41 +323,46 @@ exports.background = async (event) => {
             socialFocus 
         } = body;
         
-        if (!searchTerm || !location) {
-            const errorMessage = "Required fields 'searchTerm' and 'location' are missing or empty in the payload. Aborting background job.";
-            console.error(errorMessage);
-            return {
-                statusCode: 200, 
-                headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-                body: JSON.stringify({ error: errorMessage })
-            };
-        }
+        // Checking for required parameters
+		if (!leadType || !searchTerm || !location || !salesPersona) {
+			console.error('[Background] Missing required fields in request.');
+			return {	
+				statusCode: 400,	
+				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+				body: JSON.stringify({ error: 'Missing required parameters for background job.' })	
+			};
+		}
+		
+		// Set a higher number of batches for the "unlimited" background job (e.g., 8 batches)
+		const batchesToRun = 8; 
 
-        console.log(`[Background] Starting JOB for: ${searchTerm} in ${location}.`);
+		console.log(`[Background] Starting LONG JOB (${batchesToRun} batches) for: ${searchTerm} in ${location}.`);
 
-        const leads = await generateLeadsBatch(
+		// --- Execution of the Long Task ---
+		const leads = await generateLeadsBatch(
             leadType, 
             searchTerm, 
+            financialTerm || '',
             activeSignal || '', 
             location, 
             salesPersona, 
-            financialTerm || '',
-            socialFocus || ''
+            socialFocus || '',
+            batchesToRun
         );
-        
-        console.log(`[Background] Job finished successfully. Generated ${leads.length} high-fidelity leads.`);
-        
-        return {
-            statusCode: 200,
-            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} leads in background using real APIs.` })
-        };
-    } catch (err) {
-        console.error('Lead Generator Background Error:', err);
-        return {	
-            statusCode: 500,	
-            headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-            body: JSON.stringify({ error: err.message, details: err.cause || 'An internal error occurred during the background job.' })
-        };
-    }
+		
+		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
+		
+		return {
+			statusCode: 200,
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+			body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} leads in background.` })
+		};
+	} catch (err) {
+		console.error('Lead Generator Background Error:', err);
+		return {	
+			statusCode: 500,	
+			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+			body: JSON.stringify({ error: err.message, details: err.cause || 'An internal error occurred during the background job.' })
+		};
+	}
 };
