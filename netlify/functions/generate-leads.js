@@ -18,6 +18,7 @@
  * 10. **FIXED: Modified Batch 0 search logic (quick job) to use the general 'activeSignal' for Residential (B2C) queries, resolving timeout issues caused by overly specific high-net-worth signals being used for young families.**
  * 11. **FIXED: Modified 'simplifySearchTerm' for residential leads to retain broad 'OR' phrases (like "new parents") instead of oversimplifying to a single, less-relevant term (like "homeowner").**
  * 12. **NEW B2C FEATURE: Added 'contactName' field. Gemini is now instructed to infer a name for residential leads, and the social search and email enrichment prioritize this name for higher quality contact info.**
+ * 13. **CRITICAL B2B FIX: For the primary (Batch 0) B2B query, now using the full, rich user-provided 'searchTerm' instead of the generic simplified version (e.g., using "Business Owners needing Key Person Insurance..." instead of just "small business") to maximize the chance of an immediate successful search.**
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -484,7 +485,6 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 
 /**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * FIX: Enhanced B2C logic to retain 'OR' groupings for broader, more relevant searches (e.g., "new parents" OR "young families").
  */
 function simplifySearchTerm(targetType, isResidential) {
 	const normalized = targetType.toLowerCase();
@@ -568,6 +568,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			const b2bEnhancer = COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length];
 
 			// Simplify the user's target input before combining it with signals
+			// This is used for all batches EXCEPT Batch 0, and for Fallback
 			const shortTargetType = simplifySearchTerm(targetType, isResidential);
 
 			// Determine primary search keywords
@@ -576,16 +577,20 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				
 				if (isResidential) {
 					// CRITICAL FIX: For B2C/Residential leads, use the user's general activeSignal for Batch 0 
-					// to avoid using an overly specific persona keyword (like HNI/retirement) that leads to 0 results.
 					enhancer = activeSignal; 
 					console.log(`[Batch 1] Running PRIMARY Intent Query (B2C Fix: using activeSignal).`);
+					
+					// B2C uses shortTargetType (which handles OR logic well)
+                    searchKeywords = `(${shortTargetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
 				} else {
-					// B2B leads still use the strong B2B enhancer
+					// B2B Fix: Use the full, unsimplified targetType for maximum intent on the first, critical search.
 					enhancer = COMMERCIAL_ENHANCERS[0]; 
-					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Focus).`);
+					console.log(`[Batch 1] Running PRIMARY Intent Query (B2B Full Intent Focus).`);
+                    
+                    // CRITICAL B2B FIX: Use the original, rich 'targetType' for the primary search.
+					searchKeywords = `(${targetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
 				}
 					
-				searchKeywords = `(${shortTargetType}) in "${location}" AND (${enhancer}) ${NEGATIVE_QUERY}`;
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
 				// Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
 				const defaultSocialTerms = isResidential 
