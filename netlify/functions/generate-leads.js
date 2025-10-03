@@ -5,16 +5,12 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIX APPLIED (PRIORITIZING QUALITY OVER SPEED):
- * 1. GOOGLE SEARCH TIMEOUT INCREASED: The query timeout is now 15 seconds (up from 5-10s) 
- * with up to 3 retries (up from 1 retry). This allows complex, high-quality search queries 
- * to complete successfully, especially for the background job.
- * 2. B2B SEARCH WIDENED (Batch 1): The synchronous B2B search is now using a wider, 
- * quality-focused list of authority sites (BATCH_QUALITY_B2B) to find better data, 
- * accepting a slightly higher risk of synchronous handler timeout for better lead content.
- * 3. NEW FALLBACK LOGIC (LEVEL 4): Added an "Ultra-Broad/Nuclear Option" search that 
- * removes all restrictions (intent, negative filters, sites) if all previous high-quality 
- * searches yield zero results. This guarantees data for Gemini to analyze.
+ * CRITICAL FIX APPLIED (ROBUST FALLBACK):
+ * 1. NEW Helper Function: Introduced 'getNuclearTerm' to aggressively strip all 
+ * parentheses, operators (AND/OR), and quotes from the user's complex 'searchTerm'.
+ * 2. GUARANTEED LEVEL 4 FALLBACK: The Level 4 search now uses ONLY this stripped, 
+ * clean term (e.g., "local law firms") combined with the location, making this final 
+ * search virtually impossible to fail, thereby preventing "No results found" errors.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -543,7 +539,28 @@ const HOT_INTENT_PHRASES = `"seeking advice on" OR "struggling with" OR "best wa
 
 
 /**
+ * Aggressively strips all complexity to get the simplest core company type.
+ * Used exclusively for the Level 4 Nuclear Option search to guarantee a result.
+ */
+function getNuclearTerm(targetType) {
+    let cleanedTarget = targetType
+        .replace(/\(.+?\)/g, '') // Remove all content in parentheses
+        .replace(/AND|OR|NOT/gi, '') // Remove boolean operators
+        .replace(/"/g, '') // Remove quotes
+        .trim();
+
+    // Fallback if cleaning removed everything
+    if (cleanedTarget.length < 3) {
+        cleanedTarget = targetType.split(/\s+/).slice(0, 3).join(' ');
+    }
+    
+    // Always wrap the cleaned term in quotes for better relevance matching
+    return `"${cleanedTarget}"`;
+}
+
+/**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
+ * This is used for Level 1, 2, and 3 searches, which still respect the financial term.
  */
 function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	const normalized = targetType.toLowerCase();
@@ -650,6 +667,9 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 
 			// Pass financialTerm to ensure it's included in the simplified target if it exists
 			const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
+			
+			// CRITICAL: Get the absolutely clean term for the Level 4 fallback
+			const nuclearTargetType = getNuclearTerm(targetType); 
 
 			// Determine primary search keywords
 			if (batchIndex === 0) {
@@ -731,8 +751,8 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					if (gSearchResults.length === 0) {
 						console.warn(`[Batch ${batchIndex+1}] ALL high-intent fallbacks failed. Running LEVEL 4 (Nuclear Option) fallback.`);
 						
-						// Search only the core target type and location, stripping ALL restrictions.
-						const nuclearFallbackKeywords = `${shortTargetType} in "${location}"`;
+						// Search only the CORE, aggressively cleaned target type and location, stripping ALL restrictions.
+						const nuclearFallbackKeywords = `${nuclearTargetType} in "${location}"`;
 						
 						const nuclearFallbackResults = await googleSearch(nuclearFallbackKeywords, 3);
 						gSearchResults.push(...nuclearFallbackResults);
