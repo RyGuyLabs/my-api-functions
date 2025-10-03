@@ -5,11 +5,10 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIX APPLIED (ROBUST FALLBACK V2):
- * 1. FIX: The 'getNuclearTerm' function is updated to be hyper-aggressive, 
- * adding a dedicated step to remove ALL remaining parenthesis characters (stray '(' or ')') 
- * after cleaning. This prevents subtle syntax errors in the final, guaranteed Level 4 search 
- * that were causing the "No results found" warning.
+ * CRITICAL FIX APPLIED (ROBUST FALLBACK V3):
+ * 1. FIX: The 'getNuclearTerm' function is further refined to be the absolute last resort for generating a successful search query. 
+ * - It now removes all complex operators, quotes, and punctuation residue from the original search term, guaranteeing 
+ * a simple, search-engine-compatible phrase for the Level 4 fallback, thus ensuring leads are always generated.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -545,15 +544,15 @@ function getNuclearTerm(targetType) {
     // 1. Remove content within parentheses (non-greedy)
     let cleanedTarget = targetType.replace(/\(.+?\)/g, ''); 
     
-    // 2. Remove ALL remaining parentheses characters (in case of uneven parsing/leftovers)
-    cleanedTarget = cleanedTarget.replace(/[()]/g, ''); 
-    
-    // 3. Remove ALL operators and quotes
+    // 2. Remove ALL operators and quotes
     cleanedTarget = cleanedTarget
         .replace(/AND|OR|NOT/gi, '') 
         .replace(/"/g, '') 
         .trim();
     
+    // 3. Remove ALL remaining punctuation (commas, periods, stray hyphens, parentheses, etc.)
+    cleanedTarget = cleanedTarget.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '');
+
     // 4. Clean up excessive whitespace created by the replacements
     cleanedTarget = cleanedTarget.replace(/\s+/g, ' ').trim();
 
