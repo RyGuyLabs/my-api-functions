@@ -73,9 +73,20 @@ async function runCustomSearch(query, apiKey, cseId, keyName, keywords) {
 
 // --- NETLIFY HANDLER ---
 exports.handler = async (event) => {
-    // CORS Setup
-    if (event.httpMethod === 'OPTIONS') { return { statusCode: 200, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', }, body: '', }; }
-    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json', };
+    
+    // --- CORS SETUP ---
+    const headers = { 
+        'Access-Control-Allow-Origin': '*', 
+        'Access-Control-Allow-Methods': 'POST, OPTIONS', 
+        'Access-Control-Allow-Headers': 'Content-Type', 
+        'Content-Type': 'application/json', 
+    };
+
+    if (event.httpMethod === 'OPTIONS') { 
+        return { statusCode: 200, headers: headers, body: '', }; 
+    }
+    // --- END CORS SETUP ---
+
 
     // --- 1. KEY VALIDATION (7 Environment Variables) ---
     const geminiApiKey = process.env.LEAD_QUALIFIER_API_KEY;
