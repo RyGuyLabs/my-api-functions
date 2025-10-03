@@ -21,8 +21,8 @@ const CSE_API_URL_BASE = `https://www.googleapis.com/customsearch/v1`;
 
 // --- CORE GUIDANCE FOR GEMINI SYNTHESIS ---
 const SYSTEM_PROMPT_GUIDANCE = `
-You are a Lead Scoring and Evidence Synthesis Engine. You have been provided with FIVE distinct blocks of search evidence.
-CRITICAL DIRECTIVE: You MUST base your final score (0-100) and analysis ONLY on the evidence provided in these five blocks. Do not perform external searches. Analyze the segregated evidence and output a single, consolidated, strictly formatted JSON object. Prioritize evidence based on the mode: B2B (competitive pain, financial distress, high hiring growth) or B2C (explicit purchasing intent, specific problem, recent life events).
+You are a Lead Scoring and Evidence Synthesis Engine. Your task is to analyze the five blocks of search evidence provided below.
+CRITICAL DIRECTIVE: You MUST base your final score (0-100) and analysis ONLY on the evidence provided in these five blocks. The evidence is the *ONLY* source of truth. Your analysis must strictly align with the user-defined criteria. Do not perform external searches. Analyze the segregated evidence and output a single, consolidated, strictly formatted JSON object. Prioritize evidence based on the mode: B2B (competitive pain, financial distress, high hiring growth) or B2C (explicit purchasing intent, specific problem, recent life events). Ensure the 'signalSummary' or 'explicitNeed' is a direct synthesis of the *specific snippets* found in the evidence.
 `;
 
 // --- FUNCTION TO CALL CUSTOM SEARCH ENGINE (CSE) ---
@@ -188,8 +188,9 @@ exports.handler = async (event) => {
         contents: [
             {
                 parts: [
-                    { text: userPrompt }, // The original query
-                    { text: aggregatedSearchEvidence } // The combined evidence block
+                    // Enhanced context for the LLM to clearly see the criteria it must synthesize against
+                    { text: `[LEAD CRITERIA/INSTRUCTION]: ${userPrompt}` },
+                    { text: aggregatedSearchEvidence }
                 ]
             }
         ],
