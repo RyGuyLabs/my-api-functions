@@ -5,10 +5,11 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIX APPLIED (Search Resiliency):
- * 1. FIXED B2B DECOUPLING: For commercial leads, the Google Search query is now STRICTLY decoupled from the 'financialTerm'.
- * - The search term now only includes the 'clientProfile' (e.g., "Local law offices") and 'location'.
- * - The restrictive 'financialTerm' is reserved solely for the Gemini LLM qualification step, ensuring the search always returns public results.
+ * CRITICAL FIX APPLIED (Batch Prioritization and Search Resiliency):
+ * 1. FIXED B2B DECOUPLING: The restrictive 'financialTerm' is still decoupled from Google Search and is reserved for LLM qualification.
+ * 2. FIXED BATCH 1 FAILURE: The highly restrictive Directory Search (Batch 1) is now moved to a later batch.
+ * - Batch 1 (Index 0) for B2B now executes the simple, high-probability search ("Local law firms" in "Location"), ensuring the synchronous job almost always succeeds.
+ * - The complex internal fallback logic (Levels 2, 3, 4) is removed, relying on the concurrent execution of varied batches for lead variety.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -481,16 +482,6 @@ const BATCH_PROFESSIONAL_SOCIAL = [
 	'instagram.com'
 ].map(domain => `site:${domain}`).join(' OR ');
 
-// Level 2: Comprehensive B2B Batch (Used for Batch 1 Sync Request, prioritizes Quality)
-const BATCH_QUALITY_B2B = [
-	'bbb.org', 
-	'guidestar.org', 
-	'propublica.org/nonprofit', 
-	'g2.com',
-	'capterra.com', 
-	'trustradius.com',
-].map(domain => `site:${domain}`).join(' OR '); 
-
 // Level 2.5: Government & Public Records (Verification & Financial Data)
 const BATCH_TRUST_GOV = [
 	'bbb.org', 
@@ -506,22 +497,6 @@ const BATCH_COMPETITIVE_REVIEW = [
 	'saasgenius.com',
 ].map(domain => `site:${domain}`).join(' OR ');
 
-// Level 4: Generic Review & Local Directory (Fallback)
-const BATCH_REVIEW_DIRECTORY = [
-	'yelp.com', 
-	'angi.com', 
-	'manta.com', 
-	'yellowpages.com',
-].map(domain => `site:${domain}`).join(' OR ');
-
-
-// Master list of directory batches (PRIORITIZED FOR INTENT)
-const DIRECTORY_BATCHES = [
-	BATCH_PROFESSIONAL_SOCIAL,    // Highest Intent: People talking about solutions
-	BATCH_TRUST_GOV,              // High Intent: Public filings, financial health, property records
-	BATCH_COMPETITIVE_REVIEW,     // High Intent: Active product shopping/reviewing competitors
-	BATCH_REVIEW_DIRECTORY        // Medium Intent: Local listing verification (Fallback)
-];
 
 // Dedicated High-Intent Social/Forum Search Sites (unchanged)
 const HIGH_INTENT_FORUMS = [
@@ -537,37 +512,7 @@ const HOT_INTENT_PHRASES = `"seeking advice on" OR "struggling with" OR "best wa
 
 
 /**
- * Aggressively strips all complexity to get the simplest core company type.
- * Used exclusively for the Level 4 Nuclear Option search to guarantee a result.
- */
-function getNuclearTerm(targetType) {
-    // 1. Remove content within parentheses (non-greedy)
-    let cleanedTarget = targetType.replace(/\(.+?\)/g, ''); 
-    
-    // 2. Remove ALL operators and quotes
-    cleanedTarget = cleanedTarget
-        .replace(/AND|OR|NOT/gi, '') 
-        .replace(/"/g, '') 
-        .trim();
-    
-    // 3. Remove ALL remaining punctuation (commas, periods, stray hyphens, parentheses, etc.)
-    cleanedTarget = cleanedTarget.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '');
-
-    // 4. Clean up excessive whitespace created by the replacements
-    cleanedTarget = cleanedTarget.replace(/\s+/g, ' ').trim();
-
-    // Fallback if cleaning removed everything
-    if (cleanedTarget.length < 3) {
-        cleanedTarget = targetType.split(/\s+/).slice(0, 3).join(' ');
-    }
-    
-    // Always wrap the cleaned term in quotes for better relevance matching
-    return `"${cleanedTarget}"`;
-}
-
-/**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * This is used for Level 1, 2, and 3 searches.
  */
 function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	const normalized = targetType.toLowerCase();
@@ -671,104 +616,54 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 			// Pass financialTerm to ensure it's included in the simplified target if it exists
 			const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
 			
-			// CRITICAL: Get the absolutely clean term for the Level 4 fallback
-			const nuclearTargetType = getNuclearTerm(targetType); 
-
-			// Determine primary search keywords
+			// Determine primary search keywords based on index
 			if (batchIndex === 0) {
-				
-				if (isResidential) {
-					// Level 1: Primary Search (Life Event/Financial Term) - B2C
-					searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
-					console.log(`[Batch 1] Running PRIMARY Life Event Query (B2C Fix: No activeSignal filter).`);
-				} else {
-					// Level 1: Primary Search (QUALITY Public Records/Competitive Review) - B2B FIX
-					// CRITICAL CHANGE: shortTargetType for B2B now ONLY contains the client profile (e.g., "Local law offices")
-					const primaryB2BSites = BATCH_QUALITY_B2B; 
-					searchKeywords = `(${primaryB2BSites}) AND ${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
-					console.log(`[Batch 1] Running PRIMARY QUALITY Public Records Intent Query (B2B Fix: Starting with WIDER Trust Sites, Decoupled Financial Term).`);
-				}
-			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
-                // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
-                const defaultSocialTerms = isResidential 
+				// --- BATCH 1: Guaranteed Success Query (Simplest/Broadest) ---
+				// This is now the default for the synchronous handler.
+				searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+				console.log(`[Batch 1] Running Guaranteed Simple Term Query.`);
+			} else if (batchIndex === 1) {
+				// --- BATCH 2: Hot Intent Social Signal Query ---
+				const defaultSocialTerms = isResidential 
 					? `"new homeowner" OR "local recommendation" OR "asking for quotes"` // B2C focused
 					: `"shopping around" OR "comparing quotes" OR "need new provider"`; // B2B focused
-                
-                const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
+				
+				const socialTerms = socialFocus && socialFocus.trim().length > 0 ? socialFocus.trim() : defaultSocialTerms;
  				
-                // Search explicitly for buyer-intent phrases like "struggling with" combined with the target.
+                // Search explicitly for buyer-intent phrases in high-intent sites.
                 searchKeywords = `${HIGH_INTENT_FORUMS} (${shortTargetType}) AND (${socialTerms} OR ${activeSignal} OR ${HOT_INTENT_PHRASES}) in "${location}" ${NEGATIVE_QUERY}`;
-                console.log(`[Batch ${batchIndex+1}] Running dedicated Social/Competitive Intent Query (HOT Signal, targeting names).`);
-			} else if (isResidential) {
-				
-				// Level 2/3: RESIDENTIAL QUERY: Simplified core target + location + high-intent persona signal
+                console.log(`[Batch 2] Running dedicated Social/Competitive Intent Query (HOT Signal).`);
+			} else if (batchIndex === 2 && !isResidential) {
+				// --- BATCH 3 (B2B Only): Quality/Trust Directory Check ---
+				const trustSites = BATCH_TRUST_GOV; // bbb, guidestar, propublica
+				searchKeywords = `(${trustSites}) AND ${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+				console.log(`[Batch 3] Running QUALITY Public Records/Trust Intent Query.`);
+			} else if (batchIndex === 3 && !isResidential) {
+				// --- BATCH 4 (B2B Only): Competitive Review Directory Check ---
+				const competitiveSites = BATCH_COMPETITIVE_REVIEW;
+				searchKeywords = `(${competitiveSites}) AND ${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+				console.log(`[Batch 4] Running COMPETITIVE Review Site Intent Query.`);
+			} else if (batchIndex === 2 || batchIndex === 3) { // B2C logic for remaining batches (if more than 2 total are run)
+				// --- BATCH 3/4 (B2C Only): Simplified core target + location + high-intent persona signal ---
 				searchKeywords = `(${shortTargetType}) in "${location}" AND (${personaEnhancer}) ${NEGATIVE_QUERY}`;
+				console.log(`[Batch ${batchIndex+1}] Running Secondary B2C Persona Query.`);
 			} else {
-				
-				// Level 2/3: B2B QUERY: Clean core target + location + high-intent B2B signal (Looser intent query)
-				searchKeywords = `${shortTargetType} in "${location}" AND (${COMMERCIAL_ENHANCERS[batchIndex % COMMERCIAL_ENHANCERS.length]}) ${NEGATIVE_QUERY}`;
+				// Fallback to the simplest query for any index > 3 or for B2C if totalBatches > 4
+				searchKeywords = `${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
+				console.log(`[Batch ${batchIndex+1}] Running Generic Default Query.`);
 			}
 			
 			// 1. Get verified search results (Primary) - Timeout is now 15s with 3 retries
 			let gSearchResults = await googleSearch(searchKeywords, 3);	
 			
-			// 2. Level 2 Fallback: If primary fails, try a broader, non-intent-based search.
+			// --- Simplified Logic: If a search fails, we do NOT re-run a fallback inside the batch. ---
+			// --- We rely on the other concurrent batches to succeed. ---
 			if (gSearchResults.length === 0) {
-				console.warn(`[Batch ${batchIndex+1}] No results for primary query. Trying broadest fallback (Level 2)...`);
-				
-				let broaderFallbackTerm;
-				if (isResidential) {
-					broaderFallbackTerm = `"homeowner family" in "${location}"`; 
-				} else {
-					// CRITICAL: B2B Fallback now uses the CLEAN shortTargetType (e.g. "small businesses" in Florida)
-					broaderFallbackTerm = `${shortTargetType} in "${location}"`;
-				}
-				
-				// Fallback: Drop ALL signals and just search the core term and location.
-				let fallbackSearchKeywords = `${broaderFallbackTerm} ${NEGATIVE_QUERY}`;
-				
-				const fallbackResults = await googleSearch(fallbackSearchKeywords, 3);	
-				gSearchResults.push(...fallbackResults);
+				console.warn(`[Batch ${batchIndex+1}] No results found for query type. Skipping batch.`);
+				return [];
+			}
 
-				// --- Level 3 Fallback: Ultra-Generic Search with Directory Batches ---
-				if (gSearchResults.length === 0) {
-					console.warn(`[Batch ${batchIndex+1}] No results after level 2 fallback. Trying ultra-generic search (Level 3) with a directory batch...`);
-					
-					// Use Round-Robin to select a manageable directory batch
-					// Note: The index `batchIndex` is used here to cycle through the 4 directory types
-					const directoryBatch = DIRECTORY_BATCHES[batchIndex % DIRECTORY_BATCHES.length];
-					
-					const salesPersonaClean = salesPersona.replace(/_/g, ' ');
-					
-					// Combine persona/target type with the directory batch
-					const ultraGenericTerm = isResidential 
-						? `(${directoryBatch}) AND "${salesPersonaClean} services" in "${location}"`
-						: `(${directoryBatch}) AND ${shortTargetType} in "${location}"`;
-						
-					const ultraFallbackKeywords = `${ultraGenericTerm} ${NEGATIVE_QUERY}`;
-					
-					const ultraFallbackResults = await googleSearch(ultraFallbackKeywords, 3);
-					gSearchResults.push(...ultraFallbackResults);
-
-					// --- CRITICAL LEVEL 4 FALLBACK (The Nuclear Option) ---
-					if (gSearchResults.length === 0) {
-						console.warn(`[Batch ${batchIndex+1}] ALL high-intent fallbacks failed. Running LEVEL 4 (Nuclear Option) fallback.`);
-						
-						// Search only the CORE, aggressively cleaned target type and location, stripping ALL restrictions.
-						const nuclearFallbackKeywords = `${nuclearTargetType} in "${location}"`;
-						
-						const nuclearFallbackResults = await googleSearch(nuclearFallbackKeywords, 3);
-						gSearchResults.push(...nuclearFallbackResults);
-						
-						if (gSearchResults.length === 0) {
-							console.warn(`[Batch ${batchIndex+1}] No results found even after Nuclear Option. Skipping batch.`);
-							return [];
-						}
-					}
-				}
-			}	
-
-			// 3. Feed results to Gemini for qualification
+			// 2. Feed results to Gemini for qualification
 			const geminiQuery = `Generate 3 high-quality leads for a ${leadType} audience, with a focus on: "${template}". The primary query is "${targetType}" in "${location}". Base your leads strictly on these search results: ${JSON.stringify(gSearchResults)}`;
 
 			const geminiLeads = await generateGeminiLeads(
