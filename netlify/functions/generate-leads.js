@@ -7,7 +7,7 @@
 * * ENVIRONMENT VARIABLES REQUIRED:
 * 1. LEAD_QUALIFIER_API_KEY (Gemini Key)
 * 2. RYGUY_SEARCH_API_KEY (Master Search Key for all CSE calls)
-* 3. B2B_PAIN_CSE_ID (CSE ID for Review/Pain Sites)
+* 3. RYGUY_SEARCH_ENGINE_ID (CSE ID for Review/Pain Sites)
 * 4. CORP_COMP_CSE_ID (CSE ID for Legal/Compliance Sites)
 * 5. TECH_SIM_CSE_ID (CSE ID for Technology Stack Sites)
 * 6. SOCIAL_PRO_CSE_ID (CSE ID for Social/Professional Sites)
@@ -80,7 +80,7 @@ exports.handler = async (event) => {
     // --- 1. KEY VALIDATION (7 Environment Variables) ---
     const geminiApiKey = process.env.LEAD_QUALIFIER_API_KEY;
     const masterSearchKey = process.env.RYGUY_SEARCH_API_KEY;
-    const b2bPainCseId = process.env.B2B_PAIN_CSE_ID;
+    const b2bPainCseId = process.env.RYGUY_SEARCH_ENGINE_ID;
     const corpCompCseId = process.env.CORP_COMP_CSE_ID;
     const techSimCseId = process.env.TECH_SIM_CSE_ID;
     const socialProCseId = process.env.SOCIAL_PRO_CSE_ID;
@@ -106,7 +106,7 @@ exports.handler = async (event) => {
         // We repurpose the B2B CSE IDs but use B2C-focused keywords for forum and social sites.
         
         searchPromises = [
-            // 1. B2C Forum/Review (Repurposing B2B_PAIN_CSE_ID for consumer pain)
+            // 1. B2C Forum/Review (Repurposing RYGUY_SEARCH_ENGINE_ID for consumer pain)
             runCustomSearch(userPrompt, masterSearchKey, b2bPainCseId, 'B2C_FORUM_REVIEW', 'site:reddit.com OR site:quora.com OR "best reviews" OR "need advice" OR complaint'),
             
             // 2. B2C Scam/Complaint Check (Repurposing CORP_COMP_CSE_ID for consumer trust)
