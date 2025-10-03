@@ -5,10 +5,10 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIX APPLIED (ROBUST FALLBACK V3):
- * 1. FIX: The 'getNuclearTerm' function is further refined to be the absolute last resort for generating a successful search query. 
- * - It now removes all complex operators, quotes, and punctuation residue from the original search term, guaranteeing 
- * a simple, search-engine-compatible phrase for the Level 4 fallback, thus ensuring leads are always generated.
+ * CRITICAL FIX APPLIED (Search Resiliency):
+ * 1. FIXED B2B DECOUPLING: For commercial leads, the Google Search query is now STRICTLY decoupled from the 'financialTerm'.
+ * - The search term now only includes the 'clientProfile' (e.g., "Local law offices") and 'location'.
+ * - The restrictive 'financialTerm' is reserved solely for the Gemini LLM qualification step, ensuring the search always returns public results.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -382,7 +382,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 	
 	// Gemini call can be more forgiving with 4 retries, as it's typically faster than Google Search
 	const response = await withBackoff(() =>
-		fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+		fetchWithTimeout(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(payload)
@@ -567,13 +567,13 @@ function getNuclearTerm(targetType) {
 
 /**
  * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * This is used for Level 1, 2, and 3 searches, which still respect the financial term.
+ * This is used for Level 1, 2, and 3 searches.
  */
 function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	const normalized = targetType.toLowerCase();
 	
-	// FIX: For Commercial, we rely on the original search term to contain the OR chain,
-	// and we will apply the B2B enhancer loosely in the main generator function.
+	// FIX: For Commercial, we will now STRICTLY decouple the financial term from the Google Search term
+	// to ensure the search query succeeds using only the Client Profile. The LLM will perform the financial check.
 	if (!isResidential) {
 		// 1. Extract the primary term, removing all content inside parentheses.
 		let cleanedTarget = targetType.split('(')[0].trim();
@@ -585,14 +585,10 @@ function simplifySearchTerm(targetType, financialTerm, isResidential) {
 		}
 		
 		// Use the cleaned, primary term, wrapped in quotes for exact match of the type (e.g., "small businesses")
-		let coreTerms = [`"${cleanedTarget}"`];
+		// CRITICAL FIX: DO NOT include financialTerm here. It is too restrictive for Google Search.
+		let finalTerm = `"${cleanedTarget}"`;
 		
-		if (financialTerm && financialTerm.trim().length > 0) {
-			coreTerms.push(`(${financialTerm})`);
-		}
-		
-		const finalTerm = coreTerms.join(' AND ');
-		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Fixed) to: ${finalTerm}`);
+		console.log(`[Simplify Fix] Resolved CORE B2B TERM (Decoupled) to: ${finalTerm}`);
 		return finalTerm;
 	}
 	
@@ -687,10 +683,10 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					console.log(`[Batch 1] Running PRIMARY Life Event Query (B2C Fix: No activeSignal filter).`);
 				} else {
 					// Level 1: Primary Search (QUALITY Public Records/Competitive Review) - B2B FIX
-					// CRITICAL CHANGE: Use BATCH_QUALITY_B2B for the synchronous call (Batch 1)
+					// CRITICAL CHANGE: shortTargetType for B2B now ONLY contains the client profile (e.g., "Local law offices")
 					const primaryB2BSites = BATCH_QUALITY_B2B; 
 					searchKeywords = `(${primaryB2BSites}) AND ${shortTargetType} in "${location}" ${NEGATIVE_QUERY}`;
-					console.log(`[Batch 1] Running PRIMARY QUALITY Public Records Intent Query (B2B Fix: Starting with WIDER Trust Sites).`);
+					console.log(`[Batch 1] Running PRIMARY QUALITY Public Records Intent Query (B2B Fix: Starting with WIDER Trust Sites, Decoupled Financial Term).`);
 				}
 			} else if (batchIndex === totalBatches - 1 && totalBatches > 1) { 
                 // Dedicated final batch for Social/Competitive Intent Grounding (HOT Lead Signal)
