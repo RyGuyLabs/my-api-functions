@@ -10,8 +10,8 @@
  *
  * ENVIRONMENT VARIABLES REQUIRED:
  * 1. LEAD_QUALIFIER_API_KEY (Gemini Key)
- * 2. RYGUY_SEARCH_API_KEY (Master Search Key for all CSE calls) <--- UPDATED
- * 3. RYGUY_SEARCH_ENGINE_ID (CSE ID for Review/Pain Sites) <--- UPDATED
+ * 2. RYGUY_SEARCH_API_KEY (Master Search Key for all CSE calls)
+ * 3. RYGUY_SEARCH_ENGINE_ID (CSE ID for Review/Pain Sites)
  * 4. CORP_COMP_CSE_ID (CSE ID for Legal/Compliance Sites)
  * 5. TECH_SIM_CSE_ID (CSE ID for Technology Stack Sites)
  * 6. SOCIAL_PRO_CSE_ID (CSE ID for Social/Professional Sites)
@@ -25,10 +25,10 @@ const fetch = nodeFetch.default || nodeFetch;
 const GEMINI_API_KEY = process.env.LEAD_QUALIFIER_API_KEY;
 
 // Master Search Key for all CSE calls
-const SEARCH_MASTER_KEY = process.env.RYGUY_SEARCH_API_KEY; // <-- UPDATED HERE
+const SEARCH_MASTER_KEY = process.env.RYGUY_SEARCH_API_KEY; 
 
 // Specialized CSE IDs
-const B2B_PAIN_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID; // <-- UPDATED HERE
+const B2B_PAIN_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID; 
 const CORP_COMP_CSE_ID = process.env.CORP_COMP_CSE_ID;
 const TECH_SIM_CSE_ID = process.env.TECH_SIM_CSE_ID;
 const SOCIAL_PRO_CSE_ID = process.env.SOCIAL_PRO_CSE_ID;
@@ -36,6 +36,7 @@ const DIR_INFO_CSE_ID = process.env.DIR_INFO_CSE_ID;
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
+
 
 // -------------------------
 // Helper: Fetch with Timeout (CRITICAL for preventing 504)
@@ -90,7 +91,7 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 
 
 // -------------------------
-// Enrichment & Quality Helpers (No changes needed)
+// Enrichment & Quality Helpers
 // -------------------------
 const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
 
@@ -221,7 +222,7 @@ function computeQualityScore(lead) {
 
 
 async function generatePremiumInsights(lead) {
-	// Since we are not running a dedicated social search here, use placeholder logic
+	// Fallback logic for when social signal is missing from Gemini response
 	const events = [
 		`Featured in local news about ${lead.name}`,
 		`Announced new product/service in ${lead.website}`,
@@ -240,9 +241,10 @@ function rankLeads(leads) {
 			if (l.qualityScore === 'Medium') score += 2;
 			if (l.qualityScore === 'Low') score += 1;
 			// Add weight for the new specialized fields (High Intent Focus)
-			if (l.transactionStage && l.keyPainPoint) score += 2;
-			else if (l.transactionStage || l.keyPainPoint) score += 1;
-			if (l.socialSignal) score += 1; // Points for inferred social/competitive context
+			// Check against the 'N/A' string to ensure only real signals count
+			if (l.transactionStage !== 'N/A' && l.keyPainPoint !== 'N/A') score += 2;
+			else if (l.transactionStage !== 'N/A' || l.keyPainPoint !== 'N/A') score += 1;
+			if (l.socialSignal !== 'N/A') score += 1; // Points for inferred social/competitive context
 
 
 			// NEW: Add Persona Match Score (Max 5 points)
@@ -268,6 +270,7 @@ function deduplicateLeads(leads) {
 
 /**
  * Concurrent processing of a single lead, including non-blocking network checks.
+ * Ensures all final fields have a value (either generated or 'N/A').
  */
 async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	// Assign leadType and salesPersona for use in the NEW scoring functions
@@ -277,7 +280,6 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 
 	// 1. Clean up website protocol
 	if (lead.website && !lead.website.includes('http')) {
-		// Fix missing protocol if necessary for validation check
 		lead.website = 'https://' + lead.website.replace(/https?:\/\//, '');
 	}
 	
@@ -290,26 +292,22 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	// 2. Validate and enrich contact info
 	if (lead.website && !websiteIsValid) {
 		console.warn(`Lead ${lead.name} website failed validation. Skipping email enrichment.`);
-		// Clear website if it's dead, preventing failed URL parsing later
 		lead.website = null;	
 	}
 
 
-	// Check if the current email is empty or contains a known placeholder
 	const shouldEnrichEmail = !lead.email || PLACEHOLDER_DOMAINS.some(domain => lead.email.includes(domain));
 	
-	// Use the new, strict phone number enrichment/verification
+	// Use the new, strict phone number enrichment/verification (sets to null if bad/missing)
 	lead.phoneNumber = await enrichPhoneNumber(lead.phoneNumber);
 
 
 	// Only enrich if the website is available and the existing email is bad/missing
 	if (shouldEnrichEmail && lead.website) {	
-		// CRITICAL UPDATE: Pass the entire lead object to enrichEmail for B2C logic
 		lead.email = await enrichEmail(lead, lead.website);
 	} else if (!lead.website) {
 		 lead.email = null; // Cannot enrich if the website is gone/invalid
 	} else if (lead.email && !shouldEnrichEmail) {
-		 // Ensure we still validate the existing email structure
 		 if (!lead.email.includes('@')) lead.email = null;
 	}
 
@@ -319,22 +317,36 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	lead.qualityScore = computeQualityScore(lead);
 	
 	// 4. Fallback for social signal (should only happen if Gemini missed it)
-	if (!lead.socialSignal) {
+	if (!lead.socialSignal || lead.socialSignal.trim() === '') {
 		lead.socialSignal = await generatePremiumInsights(lead);
 	}
 	
-	// 5. Ensure socialMediaLinks is always an array
-	if (!Array.isArray(lead.socialMediaLinks)) {
-		 // If Gemini generated a single string or nothing, ensure it's converted to an array or empty.
-		 lead.socialMediaLinks = lead.socialMediaLinks ? [lead.socialMediaLinks] : [];
-	}
-
-	// 6. Final Clean up
+	// 5. Final Clean up and "N/A" Fallback (CRITICAL CHANGE)
 	// Ensure mandatory fields for B2C are present for ranking
 	if (lead.leadType === 'residential' && !lead.name && lead.contactName) {
-		lead.name = lead.contactName; // Use contactName as the main name if no name property exists for B2C
+		lead.name = lead.contactName; 
 	}
 
+    const contactFields = [
+        'name', 'website', 'email', 'phoneNumber', 'contactName', 
+        'description', 'insights', 'suggestedAction', 'draftPitch', 
+        'socialSignal', 'transactionStage', 'keyPainPoint', 'geoDetail'
+    ];
+    
+    // Convert all falsy values (null, "", undefined) in required fields to "N/A"
+    for (const field of contactFields) {
+        if (!lead[field] || (typeof lead[field] === 'string' && lead[field].trim() === '')) {
+            lead[field] = 'N/A';
+        }
+    }
+
+    // Special handling for socialMediaLinks array (must be an array of strings)
+	if (!Array.isArray(lead.socialMediaLinks) || lead.socialMediaLinks.length === 0 || lead.socialMediaLinks.every(link => !link || link.trim() === '')) {
+        lead.socialMediaLinks = ['N/A'];
+    } else {
+        // Ensure any empty strings inside the array are also converted to "N/A"
+        lead.socialMediaLinks = lead.socialMediaLinks.map(link => (link && link.trim() !== '') ? link : 'N/A');
+    }
 
 	return lead;
 }
@@ -380,7 +392,7 @@ async function googleSearch(query, numResults = 3, cseId) {
 
 
 // -------------------------
-// Gemini call (No change needed)
+// Gemini call
 // -------------------------
 async function generateGeminiLeads(query, systemInstruction) {
 	if (!GEMINI_API_KEY) {
@@ -456,7 +468,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 
 
 // -------------------------
-// Keyword Definitions (No change needed)
+// Keyword Definitions
 // -------------------------
 const PERSONA_KEYWORDS = {
 	"real_estate": [
@@ -500,7 +512,6 @@ const PERSONA_KEYWORDS = {
 };
 
 
-// FIX: Made the COMMERCIAL_ENHANCERS more likely to hit with fewer terms.
 const COMMERCIAL_ENHANCERS = [
 	`"new funding" OR "business expansion"`, // Looser
 	`"recent hiring" OR "job posting" AND "sales staff needed"`,	
@@ -680,7 +691,7 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 	let allLeads = deduplicateLeads(geminiLeads);
 	
 	// CRITICAL FIX: Run the enrichment and scoring *concurrently*
-	const enrichmentPromises = allLeads.map(lead => 
+	const enrichmentPromises = allLeads.map(lead => 
 		enrichAndScoreLead(lead, leadType, salesPersona)
 	);
 	
@@ -819,7 +830,7 @@ exports.background = async (event) => {
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
 		
-		// IMPORTANT: For a true background handler, you would typically save results to a DB 
+		// IMPORTANT: For a true background handler, you would typically save results to a DB 
 		// or queue a fulfillment step here, rather than returning all data.
 		// We return the 200 response for demonstration/logging purposes.
 		
