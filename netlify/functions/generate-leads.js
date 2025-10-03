@@ -78,8 +78,8 @@ exports.handler = async (event) => {
 
     // --- 1. KEY VALIDATION (7 Environment Variables) ---
     const geminiApiKey = process.env.LEAD_QUALIFIER_API_KEY;
-    const masterSearchKey = process.env.GOOGLE_SEARCH_MASTER_KEY;
-    const b2bPainCseId = process.env.B2B_PAIN_CSE_ID;
+    const masterSearchKey = process.env.RYGUY_SEARCH_API_KEY;
+    const b2bPainCseId = process.env.RYGUY_SEARCH_ENGINE_ID;
     const corpCompCseId = process.env.CORP_COMP_CSE_ID;
     const techSimCseId = process.env.TECH_SIM_CSE_ID;
     const socialProCseId = process.env.SOCIAL_PRO_CSE_ID;
