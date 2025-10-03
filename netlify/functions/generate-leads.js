@@ -12,6 +12,9 @@
  * 2. B2B SEARCH WIDENED (Batch 1): The synchronous B2B search is now using a wider, 
  * quality-focused list of authority sites (BATCH_QUALITY_B2B) to find better data, 
  * accepting a slightly higher risk of synchronous handler timeout for better lead content.
+ * 3. NEW FALLBACK LOGIC (LEVEL 4): Added an "Ultra-Broad/Nuclear Option" search that 
+ * removes all restrictions (intent, negative filters, sites) if all previous high-quality 
+ * searches yield zero results. This guarantees data for Gemini to analyze.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -724,9 +727,20 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 					const ultraFallbackResults = await googleSearch(ultraFallbackKeywords, 3);
 					gSearchResults.push(...ultraFallbackResults);
 
+					// --- CRITICAL LEVEL 4 FALLBACK (The Nuclear Option) ---
 					if (gSearchResults.length === 0) {
-						 console.warn(`[Batch ${batchIndex+1}] No results after ultra-generic fallback. Skipping batch.`);
-						 return [];
+						console.warn(`[Batch ${batchIndex+1}] ALL high-intent fallbacks failed. Running LEVEL 4 (Nuclear Option) fallback.`);
+						
+						// Search only the core target type and location, stripping ALL restrictions.
+						const nuclearFallbackKeywords = `${shortTargetType} in "${location}"`;
+						
+						const nuclearFallbackResults = await googleSearch(nuclearFallbackKeywords, 3);
+						gSearchResults.push(...nuclearFallbackResults);
+						
+						if (gSearchResults.length === 0) {
+							console.warn(`[Batch ${batchIndex+1}] No results found even after Nuclear Option. Skipping batch.`);
+							return [];
+						}
 					}
 				}
 			}	
