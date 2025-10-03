@@ -5,12 +5,11 @@
  * 1. exports.handler: Synchronous endpoint (guaranteed fast, max 3 leads).
  * 2. exports.background: Asynchronous endpoint (runs up to 15 minutes, unlimited leads).
  *
- * CRITICAL FIX APPLIED (ROBUST FALLBACK):
- * 1. NEW Helper Function: Introduced 'getNuclearTerm' to aggressively strip all 
- * parentheses, operators (AND/OR), and quotes from the user's complex 'searchTerm'.
- * 2. GUARANTEED LEVEL 4 FALLBACK: The Level 4 search now uses ONLY this stripped, 
- * clean term (e.g., "local law firms") combined with the location, making this final 
- * search virtually impossible to fail, thereby preventing "No results found" errors.
+ * CRITICAL FIX APPLIED (ROBUST FALLBACK V2):
+ * 1. FIX: The 'getNuclearTerm' function is updated to be hyper-aggressive, 
+ * adding a dedicated step to remove ALL remaining parenthesis characters (stray '(' or ')') 
+ * after cleaning. This prevents subtle syntax errors in the final, guaranteed Level 4 search 
+ * that were causing the "No results found" warning.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -543,11 +542,20 @@ const HOT_INTENT_PHRASES = `"seeking advice on" OR "struggling with" OR "best wa
  * Used exclusively for the Level 4 Nuclear Option search to guarantee a result.
  */
 function getNuclearTerm(targetType) {
-    let cleanedTarget = targetType
-        .replace(/\(.+?\)/g, '') // Remove all content in parentheses
-        .replace(/AND|OR|NOT/gi, '') // Remove boolean operators
-        .replace(/"/g, '') // Remove quotes
+    // 1. Remove content within parentheses (non-greedy)
+    let cleanedTarget = targetType.replace(/\(.+?\)/g, ''); 
+    
+    // 2. Remove ALL remaining parentheses characters (in case of uneven parsing/leftovers)
+    cleanedTarget = cleanedTarget.replace(/[()]/g, ''); 
+    
+    // 3. Remove ALL operators and quotes
+    cleanedTarget = cleanedTarget
+        .replace(/AND|OR|NOT/gi, '') 
+        .replace(/"/g, '') 
         .trim();
+    
+    // 4. Clean up excessive whitespace created by the replacements
+    cleanedTarget = cleanedTarget.replace(/\s+/g, ' ').trim();
 
     // Fallback if cleaning removed everything
     if (cleanedTarget.length < 3) {
