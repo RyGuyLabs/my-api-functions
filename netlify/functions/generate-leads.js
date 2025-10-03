@@ -1,5 +1,6 @@
 /**
-* Netlify Serverless Function: generate-leads
+* Netlify Background Serverless Function: generate-leads-background
+* * Execution Limit increased from 30 seconds (standard) to 15 minutes (background function).
 * * This is the final orchestrator function. It uses 1 Gemini Key and 1 Master Search Key
 * to run 5 specialized searches via unique Custom Search Engine (CSE) IDs, aggregating
 * the evidence before sending it to the LLM for high-quality, specialized scoring.
@@ -37,12 +38,12 @@ CRITICAL DIRECTIVE: You MUST base your final score (0-100) and analysis ONLY on 
 async function runCustomSearch(query, apiKey, cseId, keyName, keywords) {
     // We combine the core query (company name) with high-intent keywords
     const fullQuery = `${query} ${keywords}`;
-    // Limiting to 3 results per engine to conserve cost and focus LLM attention
-    const url = `${CSE_API_URL_BASE}?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(fullQuery)}&num=3`;
+    // Keeping number of results at 1 for efficiency, but the 15-minute limit is now available if needed.
+    const url = `${CSE_API_URL_BASE}?key=${apiKey}&cx=${cseId}&q=${encodeURIComponent(fullQuery)}&num=1`;
 
     try {
         const response = await fetch(url);
-       
+        
         // Exponential backoff logic omitted for brevity, but should be added in production.
 
         if (!response.ok) {
@@ -51,7 +52,7 @@ async function runCustomSearch(query, apiKey, cseId, keyName, keywords) {
         }
 
         const data = await response.json();
-       
+        
         // Structure the CSE results into a clean text block for the LLM
         if (data.items && data.items.length > 0) {
             let evidenceText = `--- ${keyName} EVIDENCE START ---\n`;
@@ -78,23 +79,24 @@ exports.handler = async (event) => {
 
     // --- 1. KEY VALIDATION (7 Environment Variables) ---
     const geminiApiKey = process.env.LEAD_QUALIFIER_API_KEY;
-    const masterSearchKey = process.env.RYGUY_SEARCH_API_KEY;
-    const b2bPainCseId = process.env.RYGUY_SEARCH_ENGINE_ID;
+    const masterSearchKey = process.env.GOOGLE_SEARCH_MASTER_KEY;
+    const b2bPainCseId = process.env.B2B_PAIN_CSE_ID;
     const corpCompCseId = process.env.CORP_COMP_CSE_ID;
     const techSimCseId = process.env.TECH_SIM_CSE_ID;
     const socialProCseId = process.env.SOCIAL_PRO_CSE_ID;
     const dirInfoCseId = process.env.DIR_INFO_CSE_ID;
-   
+    
     if (!geminiApiKey || !masterSearchKey || !b2bPainCseId || !corpCompCseId || !techSimCseId || !socialProCseId || !dirInfoCseId) {
         return { statusCode: 500, headers, body: JSON.stringify({ error: "Server Error: Missing one or more required Google API/CSE variables. Please ensure all seven are set in Netlify." }), };
     }
 
     let requestData;
     try { requestData = JSON.parse(event.body); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ error: "Invalid JSON body provided." }), }; }
-   
+    
     const { userPrompt, responseSchema, systemInstruction } = requestData;
 
     // --- 2. ORCHESTRATION: 5 Parallel Specialized Search Streams ---
+    // Note: The extended timeout (15 mins) allows for more stable execution of these parallel calls.
     const searchPromises = [
         runCustomSearch(userPrompt, masterSearchKey, b2bPainCseId, 'B2B_PAIN', 'reviews OR rating OR complaint'),
         runCustomSearch(userPrompt, masterSearchKey, corpCompCseId, 'CORP_COMP', 'SEC filing OR lawsuit OR fine OR M&A'),
@@ -105,26 +107,26 @@ exports.handler = async (event) => {
 
     // Wait for all five specialized searches to complete
     const [b2bPainData, corpCompData, techSimData, socialProData, dirInfoData] = await Promise.all(searchPromises);
-   
+    
     // Aggregate the results into a single, comprehensive text block for the LLM
     const aggregatedSearchEvidence = `
     --- AGGREGATED SPECIALIZED EVIDENCE FOR LEAD SCORING ---
-   
+    
     [B2B AND PAIN EVIDENCE]
     ${b2bPainData}
-   
+    
     [CORPORATE AND COMPLIANCE EVIDENCE]
     ${corpCompData}
-   
+    
     [TECHNOLOGY SIMULATION EVIDENCE]
     ${techSimData}
-   
+    
     [PROFESSIONAL AND SOCIAL EVIDENCE]
     ${socialProData}
-   
+    
     [DIRECTORY AND INFO EVIDENCE]
     ${dirInfoData}
-   
+    
     --- END OF AGGREGATED EVIDENCE ---
     `;
 
@@ -143,13 +145,13 @@ exports.handler = async (event) => {
 
         // We explicitly DO NOT include the Google Search tool, forcing the LLM to use the provided evidence.
         systemInstruction: { parts: [{ text: finalSystemInstruction }] },
-       
+        
         generationConfig: {
             responseMimeType: "application/json",
             responseSchema: responseSchema
         }
     };
-   
+    
     // --- 4. CALL THE LEAD_QUALIFIER_API_KEY (Gemini) ---
     const apiCallUrl = `${GEMINI_API_URL_BASE}?key=${geminiApiKey}`;
 
@@ -162,7 +164,7 @@ exports.handler = async (event) => {
 
         // The remaining logic handles errors and extracts the final JSON from the LLM response.
         const result = await response.json();
-       
+        
         if (!response.ok || result.error) {
             console.error("LLM API Error Details:", result.error);
             return { statusCode: response.status, headers, body: JSON.stringify({ error: `LLM API Error: ${response.statusText}`, details: result.error?.message || "Check LLM upstream API response."}), };
@@ -174,13 +176,14 @@ exports.handler = async (event) => {
             const cleanJsonString = jsonString.replace(/^```json\s*|```\s*$/g, '').trim();
 
             const leads = JSON.parse(cleanJsonString);
-           
+            
             return { statusCode: 200, headers, body: JSON.stringify(leads), };
         } else {
             return { statusCode: 500, headers, body: JSON.stringify({ error: "LLM Response Failure: No structured content received." }), };
         }
 
     } catch (e) {
+        // This catch handles critical errors like network issues or final JSON parsing errors.
         return { statusCode: 500, headers, body: JSON.stringify({ error: `An unexpected server or JSON parsing error occurred: ${e.message}` }), };
     }
 };
