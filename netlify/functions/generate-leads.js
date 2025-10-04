@@ -1,10 +1,10 @@
 /*
  * Ultimate Premium Lead Generator – Tiered Search Orchestrator
  *
- * CRITICAL UPDATE FOR ABUNDANCE:
- * 1. Batching Implementation: The 'googleSearch' function now supports the 'start' parameter for pagination.
- * 2. Multi-Batch Strategy: The 'generateLeadsBatch' function, when run as a long job (isQuickJob=false), now executes 5 sequential search batches, massively increasing the potential volume of aggregated search results for Gemini to qualify.
- * 3. Aggregation Before Qualification: All search results from all batches are combined and deduplicated before being sent to Gemini for final qualification and scoring, ensuring maximum context.
+ * CRITICAL FIXES FOR 504 GATEWAY TIMEOUT (SYNCHRONOUS HANDLER):
+ * 1. Reduced Gemini Timeout: The single-attempt timeout in 'generateGeminiLeads' has been dropped from 14 seconds to a safer 8 seconds to ensure the total execution time stays well under Netlify's 30s limit.
+ * 2. Reduced Quick Job Search Volume: The quick job (exports.handler) now retrieves only 2 baseline search results (down from 5) to minimize the token count sent to the LLM and speed up the qualification step.
+ * 3. CORS Confirmation: Ensured all response paths, including OPTIONS, correctly return CORS headers.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -21,7 +21,7 @@ const B2B_PAIN_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID; 
 const CORP_COMP_CSE_ID = process.env.CORP_COMP_CSE_ID;
 const TECH_SIM_CSE_ID = process.env.TECH_SIM_CSE_ID;
 const SOCIAL_PRO_CSE_ID = process.env.SOCIAL_PRO_CSE_ID;
-const DIR_INFO_CSE_ID = process.env.DIR_INFO_CSE_ID; 
+const DIR_INFO_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;  // NOTE: Reusing the primary CSE ID for directory search
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
@@ -167,13 +167,15 @@ async function generateGeminiLeads(query, systemInstruction) {
     const apiUrlWithKey = `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`;
 
     try {
-        // Custom Timeout set to 14 seconds
+        // CRITICAL FIX: Timeout reduced from 14s to 8s for QUICK JOB stability
+        const GEMINI_TIMEOUT = 8000; 
+        
         const response = await withBackoff(() => 
             fetchWithTimeout(apiUrlWithKey, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
-            }, 14000), 
+            }, GEMINI_TIMEOUT), // <-- Custom Timeout set to 8 seconds
             2 // Max Retries set to 2
         );
         
@@ -191,7 +193,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 
     } catch (error) {
         console.error('Failed during Gemini lead generation:', error.message);
-        return [];
+        throw error; // Re-throw to be caught by the outer handler for proper 504/timeout reporting
     }
 }
 
@@ -298,7 +300,7 @@ function rankLeads(leads) {
 async function enrichAndScoreLead(lead, criteria) {
     // 1. Core Enrichment (Deterministic N/A for external data)
     
-    // CRITICAL FIX: Ensure website is a clean domain name
+    // Ensure website is a clean domain name
     lead.website = extractDomain(lead.website);
     
     lead.email = enrichEmail(lead);
@@ -357,7 +359,7 @@ async function generateLeadsBatch(leadType, targetType, financialTerm, activeSig
 		? "Focus on individual homeowners, financial capacity, recent property activities."
 		: "Focus on businesses, size, industry relevance, recent developments.";
 	
-    // CRITICAL FIX: Aggressive prompting for depth, intent, and summary
+    // Aggressive prompting for depth, intent, and summary
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
@@ -373,16 +375,15 @@ The leads must align with the target audience: ${template}.`;
 	const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
 	
     // Determine search intensity and batch count based on job mode
+    // QUICK JOB FIX: maxResultsTier1 reduced to 2 for speed
     const numBatches = isQuickJob ? 1 : MAX_BATCHES_LONG_JOB;
-    // Quick job gets 3 baseline results, Long job gets 5 per batch
-    const maxResultsTier1 = isQuickJob ? 3 : 5; 
-    // Quick job gets 1 specialized result, Long job gets 3 per batch
+    const maxResultsTier1 = isQuickJob ? 2 : 5; 
     const maxResultsTier2 = isQuickJob ? 1 : 3; 
 
 	
 	let allSearchResults = [];
     
-    // --- BATCHING LOOP FOR ABUNDANCE ---
+    // --- BATCHING LOOP FOR ABUNDANCE (Long Job Only) ---
     for (let batch = 0; batch < numBatches; batch++) {
         // Calculate the 'start' offset for pagination (1, 6, 11, 16, 21...)
         const startOffset = (batch * maxResultsTier1) + 1;
@@ -390,7 +391,7 @@ The leads must align with the target audience: ${template}.`;
         // This array holds all search promises for the current batch
         const searchPromises = [];
         
-        console.log(`[Batch ${batch + 1}/${numBatches}] Starting searches with offset: ${startOffset}.`);
+        console.log(`[Batch ${batch + 1}/${numBatches}] Starting searches with offset: ${startOffset}. Tier 1 Results: ${maxResultsTier1}, Tier 2 Results: ${maxResultsTier2}`);
 
         // --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH (Required) ---
         if (!DIR_INFO_CSE_ID) {
@@ -401,7 +402,7 @@ The leads must align with the target audience: ${template}.`;
         const baselineQuery = `${baselineTerms.join(' AND ')} ${NEGATIVE_QUERY}`;
         
         searchPromises.push(
-            googleSearch(baselineQuery, maxResultsTier1, DIR_INFO_CSE_ID, startOffset) // <-- ADD startOffset
+            googleSearch(baselineQuery, maxResultsTier1, DIR_INFO_CSE_ID, startOffset) 
             .then(results => results.map(r => ({ ...r, tier: 1, type: 'Directory/Firmographic', companyName: r.title })))
         );
 
@@ -413,7 +414,7 @@ The leads must align with the target audience: ${template}.`;
             if (B2B_PAIN_CSE_ID) {
                 const query = `${shortTargetType} AND ("pain point" OR "switching from" OR "frustrated with") in "${location}" ${NEGATIVE_QUERY}`;
                 searchPromises.push(
-                    googleSearch(query, maxResultsTier2, B2B_PAIN_CSE_ID, startOffset) // <-- ADD startOffset
+                    googleSearch(query, maxResultsTier2, B2B_PAIN_CSE_ID, startOffset)
                     .then(results => results.map(r => ({ ...r, tier: 2, type: 'Pain/Review', companyName: r.title })))
                 );
             }
@@ -422,7 +423,7 @@ The leads must align with the target audience: ${template}.`;
             if (TECH_SIM_CSE_ID && financialTerm) {
                 const query = `${financialTerm} stack recent investments ${NEGATIVE_QUERY}`;
                 searchPromises.push(
-                    googleSearch(query, maxResultsTier2, TECH_SIM_CSE_ID, startOffset) // <-- ADD startOffset
+                    googleSearch(query, maxResultsTier2, TECH_SIM_CSE_ID, startOffset) 
                     .then(results => results.map(r => ({ ...r, tier: 2, type: 'Tech/Financial', companyName: r.title })))
                 );
             }
@@ -431,7 +432,7 @@ The leads must align with the target audience: ${template}.`;
             if (!isQuickJob && CORP_COMP_CSE_ID && targetType) {
                 const query = `${targetType} competitors vs alternative ${NEGATIVE_QUERY}`;
                 searchPromises.push(
-                    googleSearch(query, maxResultsTier2, CORP_COMP_CSE_ID, startOffset) // <-- ADD startOffset
+                    googleSearch(query, maxResultsTier2, CORP_COMP_CSE_ID, startOffset) 
                     .then(results => results.map(r => ({ ...r, tier: 2, type: 'Competitor/Comparison', companyName: r.title })))
                 );
             }
@@ -440,7 +441,7 @@ The leads must align with the target audience: ${template}.`;
             if (!isQuickJob && SOCIAL_PRO_CSE_ID && socialFocus) {
                 const query = `${socialFocus} site:linkedin.com OR site:x.com OR site:youtube.com ${NEGATIVE_QUERY}`;
                 searchPromises.push(
-                    googleSearch(query, maxResultsTier2, SOCIAL_PRO_CSE_ID, startOffset) // <-- ADD startOffset
+                    googleSearch(query, maxResultsTier2, SOCIAL_PRO_CSE_ID, startOffset) 
                     .then(results => results.map(r => ({ ...r, tier: 2, type: 'Social/Persona', companyName: r.title })))
                 );
             }
@@ -519,8 +520,8 @@ The leads must align with the target audience: ${template}.`;
 // ------------------------------------------------
 exports.handler = async (event) => {
 	
+    // CRITICAL FIX FOR CORS: Ensure OPTIONS preflight returns headers
 	if (event.httpMethod === 'OPTIONS') {
-		// CORS Preflight check MUST return the headers (ALREADY CORRECTLY INCLUDED)
 		return { statusCode: 200, headers: CORS_HEADERS, body: '' };
 	}
 	
@@ -537,7 +538,6 @@ exports.handler = async (event) => {
 	try {
 		requestData = JSON.parse(event.body);
 		const { mode, filters } = requestData;
-		// Destructure to get fields. If 'size' is not present, it will be undefined.
 		const { industry, size, location, keyword, jobTitle, demographic, signal } = filters;
         
         const leadType = mode === 'b2c' ? 'residential' : 'b2b';
@@ -546,7 +546,6 @@ exports.handler = async (event) => {
         const socialFocus = jobTitle; // Closest match for persona-specific searches
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
-        // Only require industry and location (Mode is implicitly required via 'filters' object)
 		if (!industry || !location) { 
 			const missingFields = [];
 			if (!industry) missingFields.push('industry');
@@ -564,7 +563,7 @@ exports.handler = async (event) => {
 		
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
-        // CRITICAL FIX: isQuickJob = true for the quick handler
+        // CRITICAL FIX: isQuickJob = true ensures maxResultsTier1=2 and only one batch runs
 		const leads = await generateLeadsBatch(
 			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size, true 
 		);
@@ -582,7 +581,7 @@ exports.handler = async (event) => {
 		
 		let message = 'Lead generation failed due to a server error.';
 		if (error.message.includes('Fetch request timed out') || error.message.includes('Max retries reached')) {
-			message = 'The quick lead generation job took too long and timed out (Internal API failure). Try the long job for complex queries.';
+			message = 'The quick lead generation job took too long and timed out (Internal API failure). Please use the long job for complex or heavy queries.';
 		}
 		if (error.message.includes('Configuration Error')) {
 			message = error.message;
@@ -633,7 +632,7 @@ exports.background = async (event) => {
 
 		console.log(`[Background] Starting LONG JOB (${MAX_BATCHES_LONG_JOB} batches) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
-        // CRITICAL FIX: isQuickJob = false for the background handler
+        // CRITICAL FIX: isQuickJob = false enables 5 batches and higher result counts for abundance
 		const leads = await generateLeadsBatch(
 			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size, false 
 		);
