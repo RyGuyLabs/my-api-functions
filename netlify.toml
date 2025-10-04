@@ -1,17 +1,42 @@
+# netlify.toml
+
 [build]
   functions = "netlify/functions"
-  publish = "." # Assuming your HTML file is in the root directory
+  publish = "." 
 
-# Global functions settings. This will apply to all functions by default.
+# Global functions settings.
 [functions]
   node_bundler = "esbuild"
 
-# Configuration for the vocal-coach function.
-# This ensures it has access to its specific environment variable.
+# Configuration for the vocal-coach function. (PRESERVED)
 [functions.vocal-coach]
   environment = ["FIRST_API_KEY"]
 
-# Configuration for the new lead-qualifier function.
-# This ensures it has access to all three required environment variables.
+# Configuration for the separate Lead Qualifier function. (RESTORED TO ORIGINAL USER INPUT)
 [functions.lead-qualifier]
   environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
+
+# --- NEW: Configuration for the Lead Generator function (The one we are debugging) ---
+# FIX 1: This block now explicitly assigns the 7 required environment variables to the 
+# Lead Generator function, assuming its filename is 'lead-generator.js' or similar.
+[functions.lead-generator]
+  environment = [
+    # These are the 7 variables required by the Lead Generator Orchestrator logic:
+    "LEAD_QUALIFIER_API_KEY", 
+    "RYGUY_SEARCH_API_KEY",   
+    "B2B_PAIN_CSE_ID",        
+    "CORP_COMP_CSE_ID",
+    "TECH_SIM_CSE_ID",
+    "SOCIAL_PRO_CSE_ID",
+    "DIR_INFO_CSE_ID"         
+  ]
+
+# --- FIX 2: CORS HEADER ENFORCEMENT (CRITICAL) ---
+# This block globally applies the Access-Control-Allow-Origin: * header to ALL
+# function responses to resolve cross-origin request errors.
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "POST, GET, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type"
