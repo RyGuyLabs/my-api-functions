@@ -9,6 +9,7 @@
  *
  * CORS CHECK: Access-Control-Allow-Origin: * is explicitly included in all responses. (CONFIRMED)
  * 504 FIX: Reduced number of search results in Tier 1 and Tier 2 to reduce I/O time and Gemini payload size.
+ * MANDATORY FIELD FIX: Only 'industry' and 'location' are now mandatory for baseline search. 'size' is optional.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -226,7 +227,7 @@ async function generatePremiumInsights(lead) {
  */
 function calculateLeadScore(lead, criteria) {
     const textToCheck = `${lead.qualificationSummary || ''} ${lead.painPoint || ''}`.toLowerCase();
-    const baseScore = 50; // Baseline for Tier 1 match (Industry, Size, Location present)
+    const baseScore = 50; // Baseline for Tier 1 match (Industry, Location present)
     let premiumMatchCount = 0;
     
     const premiumCriteria = [
@@ -350,6 +351,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 		throw new Error("Configuration Error: DIR_INFO_CSE_ID is missing, which is required for Tier 1 baseline search (Guaranteed Listing).");
 	}
 
+    // Size is now optional and will only be included if present.
 	const baselineTerms = [industry, size, location].filter(term => term && term.trim().length > 0);
 	const baselineQuery = `${baselineTerms.join(' AND ')} ${NEGATIVE_QUERY}`;
 	console.log(`[Tier 1: Baseline - Directory] Query: ${baselineQuery}`);
@@ -412,7 +414,7 @@ The leads must align with the target audience: ${template}. If data is missing f
         `Title: ${r.title}\nSnippet: ${r.snippet}\nLink: ${r.link}\nSource Type: ${r.type}\n---`
     ).join('\n');
     
-	const geminiQuery = `Generate leads for a ${leadType} audience in the ${industry} sector (${size}). Base your leads STRICTLY on the following AGGREGATED search results from specialized engines, focusing on the company/lead, website, and a strong qualification summary:
+	const geminiQuery = `Generate leads for a ${leadType} audience in the ${industry} sector (${size || 'All Sizes'}). Base your leads STRICTLY on the following AGGREGATED search results from specialized engines, focusing on the company/lead, website, and a strong qualification summary:
     
     SEARCH RESULTS:
     ${searchSnippets}`;
@@ -470,6 +472,7 @@ exports.handler = async (event) => {
 	try {
 		requestData = JSON.parse(event.body);
 		const { mode, filters } = requestData;
+		// Destructure to get fields. If 'size' is not present, it will be undefined.
 		const { industry, size, location, keyword, jobTitle, demographic, signal } = filters;
         
         const leadType = mode === 'b2c' ? 'residential' : 'b2b';
@@ -478,10 +481,10 @@ exports.handler = async (event) => {
         const socialFocus = jobTitle; // Closest match for persona-specific searches
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
-		if (!industry || !size || !location) {
+        // Only require industry and location (Mode is implicitly required via 'filters' object)
+		if (!industry || !location) { 
 			const missingFields = [];
 			if (!industry) missingFields.push('industry');
-			if (!size) missingFields.push('size');
 			if (!location) missingFields.push('location');
 			
 			return {
@@ -494,7 +497,7 @@ exports.handler = async (event) => {
 		
 		const resolvedActiveSignal = signal || "actively seeking solution or new provider";
 		
-		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
+		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
 		const leads = await generateLeadsBatch(
 			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size 
@@ -545,10 +548,10 @@ exports.background = async (event) => {
         const socialFocus = jobTitle;
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
-		if (!industry || !size || !location) {
+        // Only require industry and location (Mode is implicitly required via 'filters' object)
+		if (!industry || !location) {
 			const missingFields = [];
 			if (!industry) missingFields.push('industry');
-			if (!size) missingFields.push('size');
 			if (!location) missingFields.push('location');
 			
 			console.error(`[Background] Missing mandatory baseline fields: ${missingFields.join(', ')}`);
@@ -563,7 +566,7 @@ exports.background = async (event) => {
 
 		const resolvedActiveSignal = signal || "actively seeking solution or new provider";
 
-		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
+		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
 		const leads = await generateLeadsBatch(
 			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size 
