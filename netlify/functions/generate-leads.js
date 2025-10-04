@@ -9,11 +9,15 @@
  *
  * PREVIOUS FIXES:
  * - Netlify Timeout: Increased internal fetch timeout for Gemini API call from 10s to 14s.
- *
- * ***NEW FIXES FOR DATA DEPTH & QUALITY:***
- * - Aggressive Prompting: System instruction now forces LLM to prioritize extracting intent (painPoint) and summary.
- * - Schema Enforcement: painPoint and contactName are now required fields in the JSON schema.
+ * - Data Depth: Aggressive prompting and required fields (painPoint, contactName) added to schema.
  * - Domain Cleanup: Added 'extractDomain' helper to ensure the 'website' field is always a clean domain.
+ *
+ * ***NEW FIX FOR 503 TIMEOUT (EFFICIENCY BOOST):***
+ * - Reduced LLM Workload: The number of search results passed to the Gemini API is now
+ * significantly reduced to prevent the 16+ second processing timeout:
+ * - Tier 1 search results cut from 3 to **2**.
+ * - Tier 2 search count cut from 4 concurrent searches to **2 highest-signal** searches for the 'quick job'.
+ * - Total Max Input Snippets: 4 (down from 7) for faster, reliable qualification.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -204,9 +208,9 @@ async function generateGeminiLeads(query, systemInstruction) {
 }
 
 
-// -------------------------------------------------
-// --- DETERMINISTIC SCORING & ENRICHMENT LOGIC ---
-// -------------------------------------------------
+// --------------------------------------------------------
+// --- DETERMINISTIC SCORING & ENRICHMENT LOGIC & HELPERS ---
+// --------------------------------------------------------
 
 /**
  * Helper function to extract a clean domain name from a URL or string.
@@ -386,7 +390,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 	
 	const searchPromises = [];
 
-	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH (Reduced to 3 results) ---
+	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH (Reduced to 2 results) ---
 	if (!DIR_INFO_CSE_ID) {
 		throw new Error("Configuration Error: DIR_INFO_CSE_ID is missing, which is required for Tier 1 baseline search (Guaranteed Listing).");
 	}
@@ -397,52 +401,47 @@ The leads must align with the target audience: ${template}. If data is missing f
 	console.log(`[Tier 1: Baseline - Directory] Query: ${baselineQuery}`);
 	
 	searchPromises.push(
-		googleSearch(baselineQuery, 3, DIR_INFO_CSE_ID) // Reduced from 5 to 3
+		// EFFICIENCY FIX: Reduced from 3 to 2 results for smaller LLM payload
+		googleSearch(baselineQuery, 2, DIR_INFO_CSE_ID) 
 		.then(results => results.map(r => ({ ...r, tier: 1, type: 'Directory/Firmographic', companyName: r.title })))
 	);
 
 
-	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Aggressively Reduced) ---
+	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Aggressively Reduced for Quick Job) ---
 	if (hasPremiumKeywords) {
 		console.log("[Tier 2: Premium] High-intent keywords detected. Executing specialized searches (max 1 result each).");
 
-		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites)
+		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites) - HIGH PRIORITY SIGNAL
 		if (B2B_PAIN_CSE_ID) {
 			const query = `${shortTargetType} AND ("pain point" OR "switching from" OR "frustrated with") in "${location}" ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 1, B2B_PAIN_CSE_ID) // Reduced from 2 to 1
+				googleSearch(query, 1, B2B_PAIN_CSE_ID) 
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Pain/Review', companyName: r.title })))
 			);
 		}
 		
-		// 2. CORP_COMP_CSE_ID (Competitor Searches)
-		if (CORP_COMP_CSE_ID && targetType) {
-			const query = `${targetType} competitors vs alternatives ${NEGATIVE_QUERY}`;
-			searchPromises.push(
-				googleSearch(query, 1, CORP_COMP_CSE_ID) // Reduced from 2 to 1
-				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Competitor', companyName: r.title })))
-			);
-		}
-		
-		// 3. TECH_SIM_CSE_ID (Tech stack/Similar company searches)
+		// 2. TECH_SIM_CSE_ID (Tech stack/Financial searches) - HIGH PRIORITY SIGNAL
 		if (TECH_SIM_CSE_ID && financialTerm) {
 			const query = `${financialTerm} stack recent investments ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 1, TECH_SIM_CSE_ID) // Kept at 1
+				googleSearch(query, 1, TECH_SIM_CSE_ID)
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Tech/Financial', companyName: r.title })))
 			);
 		}
-		
-		// 4. SOCIAL_PRO_CSE_ID (Job Title / Social Focus) - NEW FIX
-		if (SOCIAL_PRO_CSE_ID && socialFocus) {
-			// Search for the specific role/focus combined with the industry/target for high-intent signals
-			const query = `${socialFocus} AND "${targetType}" AND ("hiring" OR "promotion" OR "career change") in "${location}" ${NEGATIVE_QUERY}`;
-			console.log(`[Tier 2: Social Focus] Query: ${query}`);
-			searchPromises.push(
-				googleSearch(query, 1, SOCIAL_PRO_CSE_ID)
-				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Social/Job Focus', companyName: r.title })))
-			);
+
+		// *** CRITICAL FIX: The following two searches are disabled for the quick job handler
+		// *** to reduce load and prevent the 503 timeout (max 4 snippets total).
+		/*
+		// 3. CORP_COMP_CSE_ID (Competitor Searches) - DISABLED FOR QUICK JOB
+		if (CORP_COMP_CSE_ID && targetType) {
+			...
 		}
+		
+		// 4. SOCIAL_PRO_CSE_ID (Job Title / Social Focus) - DISABLED FOR QUICK JOB
+		if (SOCIAL_PRO_CSE_ID && socialFocus) {
+			...
+		}
+		*/
 		
 	} else {
 		console.log("[Tier 2: Premium] Skipping specialized searches. No high-intent keywords provided.");
@@ -453,7 +452,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 	let allSearchResults = resultsFromSearches.flat();
 	allSearchResults = deduplicateLeads(allSearchResults);
 	
-	console.log(`[Orchestrator] Aggregated ${allSearchResults.length} unique search results from all tiers.`);
+	console.log(`[Orchestrator] Aggregated ${allSearchResults.length} unique search results from all tiers (Max 4 for Quick Job).`);
 
 	if (allSearchResults.length === 0) {
 		console.warn("Aggregated search returned zero unique results. Cannot proceed.");
