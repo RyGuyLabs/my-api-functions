@@ -7,7 +7,8 @@
  * (keyword/demographic, signal/financialTerm, jobTitle/socialFocus) are verifiably
  * present in the LLM-generated qualification data (painPoint, summary).
  *
- * CORS CHECK: Access-Control-Allow-Origin: * is explicitly included in all responses.
+ * CORS CHECK: Access-Control-Allow-Origin: * is explicitly included in all responses. (CONFIRMED)
+ * 504 FIX: Reduced number of search results in Tier 1 and Tier 2 to reduce I/O time and Gemini payload size.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -96,7 +97,10 @@ async function googleSearch(query, numResults = 3, cseId) {
         return [];
     }
     
-    const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_MASTER_KEY}&cx=${cseId}&q=${encodeURIComponent(query)}&num=${numResults}`;
+    // CRITICAL: Ensure numResults is within 1 to 10. Max results reduced for 504 fix.
+    const safeNumResults = Math.max(1, Math.min(10, numResults));
+    
+    const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_MASTER_KEY}&cx=${cseId}&q=${encodeURIComponent(query)}&num=${safeNumResults}`;
 
     try {
         const response = await withBackoff(() => fetchWithTimeout(url));
@@ -226,6 +230,7 @@ function calculateLeadScore(lead, criteria) {
     let premiumMatchCount = 0;
     
     const premiumCriteria = [
+        // CRITICAL FIX: Criteria keys must align with the fullCriteria object created in the handler
         { key: 'targetType', value: criteria.targetType, weight: 15 },
         { key: 'financialTerm', value: criteria.financialTerm, weight: 20 },
         { key: 'socialFocus', value: criteria.socialFocus, weight: 15 },
@@ -340,7 +345,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 	
 	const searchPromises = [];
 
-	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH ---
+	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH (Reduced to 3 results) ---
 	if (!DIR_INFO_CSE_ID) {
 		throw new Error("Configuration Error: DIR_INFO_CSE_ID is missing, which is required for Tier 1 baseline search (Guaranteed Listing).");
 	}
@@ -350,20 +355,20 @@ The leads must align with the target audience: ${template}. If data is missing f
 	console.log(`[Tier 1: Baseline - Directory] Query: ${baselineQuery}`);
 	
 	searchPromises.push(
-		googleSearch(baselineQuery, 5, DIR_INFO_CSE_ID)
+		googleSearch(baselineQuery, 3, DIR_INFO_CSE_ID) // Reduced from 5 to 3
 		.then(results => results.map(r => ({ ...r, tier: 1, type: 'Directory/Firmographic', companyName: r.title })))
 	);
 
 
-	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Conditional) ---
+	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Aggressively Reduced) ---
 	if (hasPremiumKeywords) {
-		console.log("[Tier 2: Premium] High-intent keywords detected. Executing specialized searches.");
+		console.log("[Tier 2: Premium] High-intent keywords detected. Executing specialized searches (max 1 result each).");
 
 		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites)
 		if (B2B_PAIN_CSE_ID) {
 			const query = `${shortTargetType} AND ("pain point" OR "switching from" OR "frustrated with") in "${location}" ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 2, B2B_PAIN_CSE_ID)
+				googleSearch(query, 1, B2B_PAIN_CSE_ID) // Reduced from 2 to 1
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Pain/Review', companyName: r.title })))
 			);
 		}
@@ -372,7 +377,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 		if (CORP_COMP_CSE_ID && targetType) {
 			const query = `${targetType} competitors vs alternatives ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 2, CORP_COMP_CSE_ID)
+				googleSearch(query, 1, CORP_COMP_CSE_ID) // Reduced from 2 to 1
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Competitor', companyName: r.title })))
 			);
 		}
@@ -381,7 +386,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 		if (TECH_SIM_CSE_ID && financialTerm) {
 			const query = `${financialTerm} stack recent investments ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 1, TECH_SIM_CSE_ID)
+				googleSearch(query, 1, TECH_SIM_CSE_ID) // Kept at 1
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Tech/Financial', companyName: r.title })))
 			);
 		}
@@ -448,7 +453,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 exports.handler = async (event) => {
 	
 	if (event.httpMethod === 'OPTIONS') {
-		// CORS Preflight check MUST return the headers
+		// CORS Preflight check MUST return the headers (ALREADY CORRECTLY INCLUDED)
 		return { statusCode: 200, headers: CORS_HEADERS, body: '' };
 	}
 	
@@ -492,7 +497,7 @@ exports.handler = async (event) => {
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
 		const leads = await generateLeadsBatch(
-			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size                
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size 
 		);
 		
 		// 200 Success - MUST include CORS headers
@@ -561,7 +566,7 @@ exports.background = async (event) => {
 		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
 		const leads = await generateLeadsBatch(
-			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size                
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size 
 		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
