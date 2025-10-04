@@ -8,10 +8,12 @@
  * present in the LLM-generated qualification data (painPoint, summary).
  *
  * PREVIOUS FIXES:
- * - CORS: Included Access-Control-Allow-Origin: * in all responses. (CONFIRMED)
- * - 504 Netlify Timeout: Reduced search result count and limited Gemini API retries to 2. (CONFIRMED)
+ * - Netlify Timeout: Increased internal fetch timeout for Gemini API call from 10s to 14s.
  *
- * ***NEW FIX: Increased internal fetch timeout for the Gemini API call from 10s to 14s.***
+ * ***NEW FIXES FOR DATA DEPTH & QUALITY:***
+ * - Aggressive Prompting: System instruction now forces LLM to prioritize extracting intent (painPoint) and summary.
+ * - Schema Enforcement: painPoint and contactName are now required fields in the JSON schema.
+ * - Domain Cleanup: Added 'extractDomain' helper to ensure the 'website' field is always a clean domain.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -27,7 +29,7 @@ const SEARCH_MASTER_KEY = process.env.RYGUY_SEARCH_API_KEY; 
 const B2B_PAIN_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID; 
 const CORP_COMP_CSE_ID = process.env.CORP_COMP_CSE_ID;
 const TECH_SIM_CSE_ID = process.env.TECH_SIM_CSE_ID;
-const SOCIAL_PRO_CSE_ID = process.env.SOCIAL_PRO_CSE_ID; // Now used in Tier 2
+const SOCIAL_PRO_CSE_ID = process.env.SOCIAL_PRO_CSE_ID;
 const DIR_INFO_CSE_ID = process.env.DIR_INFO_CSE_ID; 
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
@@ -138,14 +140,15 @@ const LEAD_GENERATION_SCHEMA = {
         type: "OBJECT",
         properties: {
             companyName: { type: "STRING", description: "The name of the company or lead." },
-            website: { type: "STRING", description: "The primary website or listing URL for the lead." },
-            qualificationSummary: { type: "STRING", description: "A one-sentence summary explaining why this lead is a strong fit based on the search snippets." },
-            painPoint: { type: "STRING", description: "A high-intent pain point or signal identified from the search results. If none, return N/A." },
-            contactName: { type: "STRING", description: "A tentative contact person's name, if available or inferable. If none, return N/A." },
+            website: { type: "STRING", description: "The primary website or listing URL for the lead. MUST be a valid, extractable URL or domain (e.g., example.com)." },
+            qualificationSummary: { type: "STRING", description: "A concise, high-intent summary (1-2 sentences) explaining why this lead is a strong fit based on the search snippets. MUST mention a financial term, signal, or specific need if one is found." },
+            painPoint: { type: "STRING", description: "The single most relevant high-intent pain point, trigger, or signal identified. If none, return N/A." },
+            contactName: { type: "STRING", description: "The most likely contact person's name (e.g., CEO, Director of IT), if available or inferable. If none, return N/A." },
             industry: { type: "STRING", description: "The determined industry of the lead." },
             location: { type: "STRING", description: "The primary location of the lead." }
         },
-        required: ["companyName", "website", "qualificationSummary", "industry"]
+        // CRITICAL FIX: Explicitly requiring these for better depth
+        required: ["companyName", "website", "qualificationSummary", "painPoint", "contactName", "industry"] 
     }
 };
 
@@ -204,6 +207,24 @@ async function generateGeminiLeads(query, systemInstruction) {
 // -------------------------------------------------
 // --- DETERMINISTIC SCORING & ENRICHMENT LOGIC ---
 // -------------------------------------------------
+
+/**
+ * Helper function to extract a clean domain name from a URL or string.
+ */
+function extractDomain(url) {
+    if (!url || url.toLowerCase() === 'n/a') return 'N/A';
+    try {
+        // Try to parse it as a URL
+        const parsedUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
+        // Return the hostname, stripped of 'www.'
+        return parsedUrl.hostname.replace(/^www\./, '');
+    } catch (e) {
+        // If it fails to parse as a URL, assume it might be a valid domain already
+        if (url.includes('.')) return url.toLowerCase().trim();
+        return 'N/A';
+    }
+}
+
 
 /**
  * Enrichment: Returns N/A as email verification requires an external API key.
@@ -289,7 +310,10 @@ function rankLeads(leads) {
  */
 async function enrichAndScoreLead(lead, criteria) {
     // 1. Core Enrichment (Deterministic N/A for external data)
-    lead.website = lead.website || (lead.link ? lead.link.split('/')[2] : 'n/a');
+    
+    // CRITICAL FIX: Ensure website is a clean domain name
+    lead.website = extractDomain(lead.website);
+    
     lead.email = enrichEmail(lead);
     lead.phone = enrichPhoneNumber(lead); 
 
@@ -314,7 +338,9 @@ async function enrichAndScoreLead(lead, criteria) {
 function deduplicateLeads(leads) {
     const uniqueMap = new Map();
     for (const lead of leads) {
-        const key = `${lead.companyName?.toLowerCase()}_${lead.website || lead.link}`;
+        // Use cleaned website (or link if website is not set) for deduplication key
+        const websiteOrLink = extractDomain(lead.website || lead.link) || lead.companyName?.toLowerCase();
+        const key = `${lead.companyName?.toLowerCase()}_${websiteOrLink}`;
         if (!uniqueMap.has(key)) {
             uniqueMap.set(key, lead);
         }
@@ -344,10 +370,14 @@ async function generateLeadsBatch(leadType, targetType, financialTerm, activeSig
 		? "Focus on individual homeowners, financial capacity, recent property activities."
 		: "Focus on businesses, size, industry relevance, recent developments.";
 	
+    // CRITICAL FIX: Aggressive prompting for depth, intent, and summary
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
-The leads must align with the target audience: ${template}. If data is missing for a field, return N/A for that field.`;
+**PRIORITY 1: The 'qualificationSummary' MUST actively look for and reference the core criteria (targetType, financialTerm, or socialFocus) if they are present in the search snippets.**
+**PRIORITY 2: The 'painPoint' field MUST be filled with a high-intent signal (not N/A) if any is found.**
+**PRIORITY 3: The 'website' MUST be extracted as a clean domain or URL.**
+The leads must align with the target audience: ${template}. If data is missing for a required field, return N/A for that field.`;
 
 
 	const isResidential = leadType === 'residential';
