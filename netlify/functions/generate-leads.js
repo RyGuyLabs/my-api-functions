@@ -10,8 +10,9 @@
  * CORS CHECK: Access-Control-Allow-Origin: * is explicitly included in all responses. (CONFIRMED)
  * 504 FIX: Reduced number of search results in Tier 1 and Tier 2 to reduce I/O time and Gemini payload size. (CONFIRMED)
  * MANDATORY FIELD FIX: Only 'industry' and 'location' are now mandatory for baseline search. 'size' is optional. (CONFIRMED)
- *
  * NEW FIX: Added a dedicated Tier 2 search using SOCIAL_PRO_CSE_ID to target the 'socialFocus' premium scoring keyword.
+ *
+ * ***TIMEOUT FIX (CRITICAL): Reduced Gemini API call retries to prevent the Netlify 30-second timeout.***
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -106,6 +107,7 @@ async function googleSearch(query, numResults = 3, cseId) {
     const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_MASTER_KEY}&cx=${cseId}&q=${encodeURIComponent(query)}&num=${safeNumResults}`;
 
     try {
+        // Search uses default maxRetries = 4
         const response = await withBackoff(() => fetchWithTimeout(url));
         const data = await response.json();
 
@@ -166,12 +168,14 @@ async function generateGeminiLeads(query, systemInstruction) {
     const apiUrlWithKey = `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`;
 
     try {
+        // *** TIMEOUT FIX: Reduce retries from 4 to 2 to ensure total time is under 30s. ***
         const response = await withBackoff(() => 
             fetchWithTimeout(apiUrlWithKey, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
-            })
+            }),
+            2 // Max Retries set to 2
         );
         
         const result = await response.json();
