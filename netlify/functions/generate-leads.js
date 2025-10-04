@@ -1,22 +1,10 @@
 /*
  * Ultimate Premium Lead Generator – Tiered Search Orchestrator
  *
- * CRITICAL LOGIC UPDATE: Lead scoring is now a verifiable, layered system.
- * 1. BASELINE: A guaranteed score (50/100) is set by successful Tier 1 search validation.
- * 2. SCALING: The final score is scaled upward based on how many Tier 2 keywords
- * (keyword/demographic, signal/financialTerm, jobTitle/socialFocus) are verifiably
- * present in the LLM-generated qualification data (painPoint, summary).
- *
- * PREVIOUS FIXES:
- * - Netlify Timeout: Increased internal fetch timeout for Gemini API call from 10s to 14s.
- * - Data Depth: Aggressive prompting and required fields (painPoint, contactName) added to schema.
- * - Domain Cleanup: Added 'extractDomain' helper to ensure the 'website' field is always a clean domain.
- * - 503 TIMEOUT FIX: Reduced search results to max 4 snippets for Quick Job to reduce LLM workload.
- *
- * ***NEW FIX FOR INCOMPLETE OUTPUT (MISSING FIELDS):***
- * - Explicit "N/A" Requirement: System instruction and schema descriptions now explicitly mandate
- * the use of the string "N/A" for any required field where data cannot be extracted from the snippets,
- * ensuring the final JSON output is always complete and parsable.
+ * CRITICAL FIX FOR BLANK PAINPOINT/SUMMARY:
+ * 1. LLM System Instruction: Updated to aggressively mandate synthesis and inference for the 'painPoint' and 'qualificationSummary' fields, forcing the model to generate relevant content even from generic snippets.
+ * 2. Search Intensity: The background job now runs all four specialized Tier 2 searches and increases the number of snippets per search (from 1 to 3) to give the LLM richer, higher-intent content to qualify the leads.
+ * 3. Quick Job: Tier 1 baseline search result count increased from 2 to 3 to provide slightly more context while maintaining speed.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -369,7 +357,7 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 // -------------------------
 // Lead Generator Core (TIERED ORCHESTRATOR)
 // -------------------------
-async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, socialFocus, industry, size) {
+async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, socialFocus, industry, size, isQuickJob = true) {
 	
 	const template = leadType === 'residential'
 		? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -379,10 +367,10 @@ async function generateLeadsBatch(leadType, targetType, financialTerm, activeSig
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
-**PRIORITY 1: The 'qualificationSummary' MUST actively look for and reference the core criteria (targetType, financialTerm, or socialFocus) if they are present in the search snippets.**
-**PRIORITY 2: The 'painPoint' field MUST be filled with a high-intent signal (not N/A) if any is found.**
+**PRIORITY 1: The 'qualificationSummary' MUST be a detailed, high-intent narrative (1-2 sentences). It MUST synthesize information from multiple snippets and explicitly reference the core criteria (targetType, financialTerm, or socialFocus) to justify the lead's quality. If content is minimal, infer the highest possible intent.**
+**PRIORITY 2: The 'painPoint' field MUST be filled with the single clearest high-intent signal, trigger, or problem found. If the source material is generic, you MUST infer a likely, specific pain point based on the industry and search query (e.g., 'Outdated ERP System' instead of just 'N/A').**
 **PRIORITY 3: The 'website' MUST be extracted as a clean domain or URL.**
-**PRIORITY 4: If any required field (qualificationSummary, painPoint, contactName, website, industry, location) cannot be extracted from the snippets, its value MUST be the string 'N/A' to ensure schema compliance and proper parsing.**
+**PRIORITY 4: If any required field (contactName, website, industry, location) cannot be extracted, its value MUST be the string 'N/A' to ensure schema compliance and proper parsing. Summary and PainPoint should only be 'N/A' as a last resort.**
 The leads must align with the target audience: ${template}.`;
 
 
@@ -391,8 +379,12 @@ The leads must align with the target audience: ${template}.`;
 	const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
 	
 	const searchPromises = [];
+    
+    // Determine search intensity based on job mode
+    const maxResultsTier1 = isQuickJob ? 3 : 5; // Quick job gets 3 baseline results, Long job gets 5
+    const maxResultsTier2 = isQuickJob ? 1 : 3; // Quick job gets 1 specialized result, Long job gets 3
 
-	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH (Reduced to 2 results) ---
+	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH ---
 	if (!DIR_INFO_CSE_ID) {
 		throw new Error("Configuration Error: DIR_INFO_CSE_ID is missing, which is required for Tier 1 baseline search (Guaranteed Listing).");
 	}
@@ -400,24 +392,23 @@ The leads must align with the target audience: ${template}.`;
     // Size is now optional and will only be included if present.
 	const baselineTerms = [industry, size, location].filter(term => term && term.trim().length > 0);
 	const baselineQuery = `${baselineTerms.join(' AND ')} ${NEGATIVE_QUERY}`;
-	console.log(`[Tier 1: Baseline - Directory] Query: ${baselineQuery}`);
+	console.log(`[Tier 1: Baseline - Directory] Query: ${baselineQuery} (Max ${maxResultsTier1} results)`);
 	
 	searchPromises.push(
-		// EFFICIENCY FIX: Reduced from 3 to 2 results for smaller LLM payload
-		googleSearch(baselineQuery, 2, DIR_INFO_CSE_ID) 
+		googleSearch(baselineQuery, maxResultsTier1, DIR_INFO_CSE_ID) 
 		.then(results => results.map(r => ({ ...r, tier: 1, type: 'Directory/Firmographic', companyName: r.title })))
 	);
 
 
-	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Aggressively Reduced for Quick Job) ---
+	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Intensity determined by isQuickJob) ---
 	if (hasPremiumKeywords) {
-		console.log("[Tier 2: Premium] High-intent keywords detected. Executing specialized searches (max 1 result each).");
+		console.log(`[Tier 2: Premium] High-intent keywords detected. Executing specialized searches (max ${maxResultsTier2} result${maxResultsTier2 > 1 ? 's' : ''} each).`);
 
 		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites) - HIGH PRIORITY SIGNAL
 		if (B2B_PAIN_CSE_ID) {
 			const query = `${shortTargetType} AND ("pain point" OR "switching from" OR "frustrated with") in "${location}" ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 1, B2B_PAIN_CSE_ID) 
+				googleSearch(query, maxResultsTier2, B2B_PAIN_CSE_ID) 
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Pain/Review', companyName: r.title })))
 			);
 		}
@@ -426,24 +417,28 @@ The leads must align with the target audience: ${template}.`;
 		if (TECH_SIM_CSE_ID && financialTerm) {
 			const query = `${financialTerm} stack recent investments ${NEGATIVE_QUERY}`;
 			searchPromises.push(
-				googleSearch(query, 1, TECH_SIM_CSE_ID)
+				googleSearch(query, maxResultsTier2, TECH_SIM_CSE_ID)
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Tech/Financial', companyName: r.title })))
 			);
 		}
 
-		// *** CRITICAL FIX: The following two searches are disabled for the quick job handler
-		// *** to reduce load and prevent the 503 timeout (max 4 snippets total).
-		/*
-		// 3. CORP_COMP_CSE_ID (Competitor Searches) - DISABLED FOR QUICK JOB
-		if (CORP_COMP_CSE_ID && targetType) {
-			...
+		// 3. CORP_COMP_CSE_ID (Competitor Searches) - ONLY ENABLED FOR LONG JOB
+		if (!isQuickJob && CORP_COMP_CSE_ID && targetType) {
+			const query = `${targetType} competitors vs alternative ${NEGATIVE_QUERY}`;
+			searchPromises.push(
+				googleSearch(query, maxResultsTier2, CORP_COMP_CSE_ID) 
+				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Competitor/Comparison', companyName: r.title })))
+			);
 		}
 		
-		// 4. SOCIAL_PRO_CSE_ID (Job Title / Social Focus) - DISABLED FOR QUICK JOB
-		if (SOCIAL_PRO_CSE_ID && socialFocus) {
-			...
+		// 4. SOCIAL_PRO_CSE_ID (Job Title / Social Focus) - ONLY ENABLED FOR LONG JOB
+		if (!isQuickJob && SOCIAL_PRO_CSE_ID && socialFocus) {
+			const query = `${socialFocus} site:linkedin.com OR site:x.com OR site:youtube.com ${NEGATIVE_QUERY}`;
+			searchPromises.push(
+				googleSearch(query, maxResultsTier2, SOCIAL_PRO_CSE_ID) 
+				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Social/Persona', companyName: r.title })))
+			);
 		}
-		*/
 		
 	} else {
 		console.log("[Tier 2: Premium] Skipping specialized searches. No high-intent keywords provided.");
@@ -454,7 +449,7 @@ The leads must align with the target audience: ${template}.`;
 	let allSearchResults = resultsFromSearches.flat();
 	allSearchResults = deduplicateLeads(allSearchResults);
 	
-	console.log(`[Orchestrator] Aggregated ${allSearchResults.length} unique search results from all tiers (Max 4 for Quick Job).`);
+	console.log(`[Orchestrator] Aggregated ${allSearchResults.length} unique search results from all tiers. (Quick Job: Max ~${maxResultsTier1 + 2}, Long Job: Max ~17)`);
 
 	if (allSearchResults.length === 0) {
 		console.warn("Aggregated search returned zero unique results. Cannot proceed.");
@@ -551,8 +546,9 @@ exports.handler = async (event) => {
 		
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
+        // CRITICAL FIX: isQuickJob = true for the quick handler
 		const leads = await generateLeadsBatch(
-			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size 
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size, true 
 		);
 		
 		// 200 Success - MUST include CORS headers
@@ -620,8 +616,9 @@ exports.background = async (event) => {
 
 		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
+        // CRITICAL FIX: isQuickJob = false for the background handler
 		const leads = await generateLeadsBatch(
-			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size 
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size, false 
 		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
