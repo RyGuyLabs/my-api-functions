@@ -8,17 +8,15 @@
 [functions]
   node_bundler = "esbuild"
 
-# Configuration for the vocal-coach function. (PRESERVED)
+# Configuration for the vocal-coach function.
 [functions.vocal-coach]
   environment = ["FIRST_API_KEY"]
 
-# Configuration for the separate Lead Qualifier function. (RESTORED TO ORIGINAL USER INPUT)
+# Configuration for the separate Lead Qualifier function.
 [functions.lead-qualifier]
   environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
 
-# --- NEW: Configuration for the Lead Generator function (The one we are debugging) ---
-# FIX 1: This block now explicitly assigns the 7 required environment variables to the 
-# Lead Generator function, assuming its filename is 'lead-generator.js' or similar.
+# --- Configuration for the Lead Generator function (The one reporting the error) ---
 [functions.lead-generator]
   environment = [
     # These are the 7 variables required by the Lead Generator Orchestrator logic:
@@ -31,9 +29,8 @@
     "DIR_INFO_CSE_ID"         
   ]
 
-# --- FIX 2: CORS HEADER ENFORCEMENT (CRITICAL) ---
-# This block globally applies the Access-Control-Allow-Origin: * header to ALL
-# function responses to resolve cross-origin request errors.
+# --- CRITICAL CORS FIX: Ensures all functions return the required header ---
+# Netlify should apply this automatically to all function paths.
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
