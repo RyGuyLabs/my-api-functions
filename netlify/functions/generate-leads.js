@@ -5,10 +5,9 @@
  * Tier 1 (Guaranteed): ALWAYS uses DIR_INFO_CSE_ID (Directory/Listing Sites) with Industry, Size, and Location.
  * Tier 2 (Premium): CONDITIONAL and includes high-intent searches, including Pain/Review (B2B_PAIN_CSE_ID).
  *
- * CORS CHECK: Guaranteed that 'Access-Control-Allow-Origin: *' is applied to ALL responses (200, 400, 405, 500)
- * to prevent browser security blocks during the fetch operation.
- *
- * (Note: All previously omitted helper functions are now fully implemented or mocked for completeness.)
+ * CRITICAL LOGIC UPDATE: All external data enrichment mocks have been removed. Enrichment fields
+ * (Email, Phone, Verified Status) now return N/A or a message indicating the need for a third-party API.
+ * Scoring is purely deterministic based on the presence of LLM-generated high-intent data.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -29,6 +28,13 @@ const DIR_INFO_CSE_ID = process.env.DIR_INFO_CSE_ID;
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
+
+// --- CORS DEFINITION (CRITICAL) ---
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+};
 
 // -------------------------
 // Helper: Fetch with Timeout 
@@ -64,17 +70,12 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 			if (attempt === maxRetries) throw new Error(`Max retries reached. Status: ${response.status}`);
 
 			const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
-			
-			// Note: Suppressing console output for retries unless it's a critical environment (keeping original logic here)
-			// console.warn(`Attempt ${attempt} failed with status ${response.status}. Retrying in ${Math.round(delay)}ms...`);
 			await new Promise(r => setTimeout(r, delay));
 			
 		} catch (err) {
 			if (attempt === maxRetries) throw err;
 			
 			const delay = Math.random() * baseDelay * Math.pow(2, attempt - 1);
-			
-			// console.warn(`Attempt ${attempt} failed with network error or timeout. Retrying in ${Math.round(delay)}ms...`, err.message);
 			await new Promise(r => setTimeout(r, delay));
 		}
 	}
@@ -83,15 +84,11 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 
 
 // --------------------------------------------------------
-// --- COMPLETE IMPLEMENTATIONS FOR CORE API INTERACTION ---
+// --- CORE API INTERACTION ---
 // --------------------------------------------------------
 
 /**
  * Executes a Google Custom Search Engine (CSE) query.
- * @param {string} query - The search query string.
- * @param {number} numResults - The number of results to request (max 10 per call).
- * @param {string} cseId - The CSE ID (cx) to use.
- * @returns {Promise<Array<{title: string, snippet: string, link: string}>>}
  */
 async function googleSearch(query, numResults = 3, cseId) {
     if (!SEARCH_MASTER_KEY || !cseId) {
@@ -122,7 +119,7 @@ async function googleSearch(query, numResults = 3, cseId) {
     }
 }
 
-// Define the required JSON Schema for lead generation
+// Define the required JSON Schema for lead qualification
 const LEAD_GENERATION_SCHEMA = {
     type: "ARRAY",
     description: "A list of qualified leads, each based on the provided search results.",
@@ -132,8 +129,8 @@ const LEAD_GENERATION_SCHEMA = {
             companyName: { type: "STRING", description: "The name of the company or lead." },
             website: { type: "STRING", description: "The primary website or listing URL for the lead." },
             qualificationSummary: { type: "STRING", description: "A one-sentence summary explaining why this lead is a strong fit based on the search snippets." },
-            painPoint: { type: "STRING", description: "A high-intent pain point or signal identified from the search results." },
-            contactName: { type: "STRING", description: "A tentative contact person's name, if available or inferable." },
+            painPoint: { type: "STRING", description: "A high-intent pain point or signal identified from the search results. If none, return N/A." },
+            contactName: { type: "STRING", description: "A tentative contact person's name, if available or inferable. If none, return N/A." },
             industry: { type: "STRING", description: "The determined industry of the lead." },
             location: { type: "STRING", description: "The primary location of the lead." }
         },
@@ -143,9 +140,6 @@ const LEAD_GENERATION_SCHEMA = {
 
 /**
  * Uses Gemini API to qualify and structure leads from search results.
- * @param {string} query - The user-facing query about the lead generation goal.
- * @param {string} systemInstruction - The instruction defining the LLM's role and rules.
- * @returns {Promise<Array<Object>>} A list of qualified lead objects following the JSON schema.
  */
 async function generateGeminiLeads(query, systemInstruction) {
     if (!GEMINI_API_KEY) {
@@ -178,8 +172,9 @@ async function generateGeminiLeads(query, systemInstruction) {
 
         if (candidate && candidate.content?.parts?.[0]?.text) {
             const jsonText = candidate.content.parts[0].text.trim();
-            // Gemini is designed to return valid JSON when using schema, but robust parsing is needed.
-            return JSON.parse(jsonText);
+            // LLM output can be wrapped in ```json ... ```, strip it
+            const cleanJsonText = jsonText.replace(/^```json\s*|```\s*$/g, '').trim(); 
+            return JSON.parse(cleanJsonText);
         }
 
         console.error("Gemini failed to return content or valid JSON structure:", result);
@@ -193,19 +188,83 @@ async function generateGeminiLeads(query, systemInstruction) {
 
 
 // -------------------------------------------------
-// --- MOCK/HELPER DEFINITIONS (For Runnability) ---
+// --- DETERMINISTIC SCORING & ENRICHMENT LOGIC ---
 // -------------------------------------------------
-async function checkWebsiteStatus(url) { return url.includes('broken') ? false : true; }
-async function enrichEmail(lead, website) { return `contact@${website.replace(/^https?:\/\//, '').split('/')[0]}`; }
-async function enrichPhoneNumber(currentNumber) { return currentNumber || '+1-555-555-1234'; }
-function calculatePersonaMatchScore(lead, salesPersona) { return Math.min(1, Math.random() + 0.5); }
+
+/**
+ * Enrichment: Returns N/A as email verification requires an external API key.
+ */
+function enrichEmail() { 
+    return "N/A (Verification Requires External API Key)"; 
+}
+
+/**
+ * Enrichment: Returns N/A as phone enrichment requires an external API key.
+ */
+function enrichPhoneNumber() { 
+    return "N/A (Verification Requires External API Key)"; 
+}
+
+/**
+ * Deterministic Score: Calculates how well the lead matches the user's filtered criteria.
+ * @param {Object} lead - The lead data.
+ * @param {Object} personaContext - The user's industry/location filter context.
+ * @returns {number} Score between 0.0 and 1.0.
+ */
+function calculatePersonaMatchScore(lead, personaContext) { 
+    let match = 0;
+    let maxPossible = 3;
+    
+    // 1. Industry Match (High value)
+    if (lead.industry && personaContext.industry && lead.industry.toLowerCase().includes(personaContext.industry.toLowerCase())) {
+        match += 1;
+    }
+    
+    // 2. Location Match (Medium value)
+    if (lead.location && personaContext.location && lead.location.toLowerCase().includes(personaContext.location.toLowerCase())) {
+        match += 1;
+    }
+
+    // 3. Keyword Match (Medium value) - If painPoint exists and relates to the search term
+    if (lead.painPoint && personaContext.keyword && lead.painPoint.toLowerCase().includes(personaContext.keyword.toLowerCase())) {
+        match += 1;
+    }
+
+    // Normalize to 1.0
+    return parseFloat((match / maxPossible).toFixed(2));
+}
+
+/**
+ * Deterministic Score: Computes lead quality based on data presence.
+ * @param {Object} lead - The lead data.
+ * @returns {string} 'High', 'Medium', or 'Low'.
+ */
 function computeQualityScore(lead) { 
-    if (lead.qualificationSummary.includes('strong fit')) return 'High';
-    if (lead.website && lead.painPoint) return 'Medium';
+    const hasPain = lead.painPoint && lead.painPoint.toLowerCase() !== 'n/a' && lead.painPoint.length > 5;
+    const hasSummary = lead.qualificationSummary && lead.qualificationSummary.length > 10;
+    const hasWebsite = lead.website && lead.website.toLowerCase() !== 'n/a';
+
+    if (hasPain && hasSummary && hasWebsite) return 'High';
+    if (hasSummary && hasWebsite) return 'Medium';
+    if (hasWebsite || hasSummary || hasPain) return 'Medium';
     return 'Low';
 }
-async function generatePremiumInsights(lead) { return `Insight: ${lead.companyName} is poised for growth in Q3.`; }
 
+/**
+ * Verifiable Insight: Generates a simple, deterministic insight.
+ * @param {Object} lead - The lead data.
+ * @returns {string} The generated insight or N/A.
+ */
+async function generatePremiumInsights(lead) { 
+    if (lead.qualificationSummary && lead.painPoint) {
+        return `Insight: Primary signal is the pain point: "${lead.painPoint}". Qualification: ${lead.qualificationSummary}`;
+    }
+    return 'N/A: Insufficient data for a verifiable premium insight.';
+}
+
+/**
+ * Sorts leads primarily by Quality Score, then by Persona Match Score.
+ */
 function rankLeads(leads) {
     // Sort by QualityScore (High, Medium, Low) and then by PersonaMatchScore (highest first)
     const scoreOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
@@ -217,6 +276,31 @@ function rankLeads(leads) {
     });
 }
 
+/**
+ * Performs final enrichment and scoring based on deterministic rules.
+ */
+async function enrichAndScoreLead(lead, leadType, personaContext) {
+    // Determine website. If not provided by LLM, try to infer or set N/A.
+    lead.website = lead.website || (lead.link ? lead.link.split('/')[2] : 'n/a');
+    
+    // Explicitly set enrichment fields to N/A
+    lead.email = enrichEmail(lead);
+    lead.phone = enrichPhoneNumber(lead); 
+
+    // Compute scores
+    lead.personaMatchScore = calculatePersonaMatchScore(lead, personaContext);
+    lead.qualityScore = computeQualityScore(lead);
+    lead.premiumInsight = await generatePremiumInsights(lead);
+    
+    // Add source tier info for tracking
+    lead.sourceTier = lead.tier || 1; // Default to Tier 1 if not set by search
+    
+    return lead;
+}
+
+/**
+ * Deduplicates search results based on company name and website/link.
+ */
 function deduplicateLeads(leads) {
     const uniqueMap = new Map();
     for (const lead of leads) {
@@ -229,40 +313,23 @@ function deduplicateLeads(leads) {
     return Array.from(uniqueMap.values());
 }
 
-async function enrichAndScoreLead(lead, leadType, salesPersona) {
-    // Add enrichment details
-    lead.website = lead.website || (lead.link ? lead.link.split('/')[2] : 'n/a');
-    lead.isWebsiteLive = await checkWebsiteStatus(lead.website);
-    lead.email = await enrichEmail(lead, lead.website);
-    lead.phone = await enrichPhoneNumber(null); // Assuming initial lead often lacks phone
-
-    // Compute scores
-    lead.personaMatchScore = calculatePersonaMatchScore(lead, salesPersona);
-    lead.qualityScore = computeQualityScore(lead);
-    lead.premiumInsight = await generatePremiumInsights(lead);
-    
-    // Add source tier info for tracking
-    lead.sourceTier = lead.tier || 1; // Default to Tier 1 if not set by search
-    
-    return lead;
-}
-
+/**
+ * Simplifies search term for query construction.
+ */
 function simplifySearchTerm(targetType, financialTerm, isResidential) {
     if (isResidential) return financialTerm || targetType || 'homeowner';
-    // For B2B, combine the key target type/service with the financial focus
     if (targetType && financialTerm) return `${targetType} ${financialTerm}`;
     return targetType || financialTerm || 'business service';
 }
 
 const NEGATIVE_FILTERS = [ `-job`, `-careers`, `-"press release"`, `-"blog post"`, `-"how to"`, `-"ultimate guide"`];
 const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
-// ------------------------------------------------------------------------------------------------
 
 
 // -------------------------
 // Lead Generator Core (TIERED ORCHESTRATOR)
 // -------------------------
-async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, salesPersona, socialFocus, industry, size) {
+async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, personaContext, socialFocus, industry, size) {
 	
 	const template = leadType === 'residential'
 		? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -271,7 +338,7 @@ async function generateLeadsBatch(leadType, targetType, financialTerm, activeSig
 	const systemInstruction = `You are an expert Lead Generation analyst using the provided data.
 You MUST follow the JSON schema provided in the generation config.
 CRITICAL: All information MUST pertain to the lead referenced in the search results.
-The leads must align with the target audience: ${template}.`;
+The leads must align with the target audience: ${template}. If data is missing for a field, return N/A for that field.`;
 
 
 	const isResidential = leadType === 'residential';
@@ -299,7 +366,7 @@ The leads must align with the target audience: ${template}.`;
 	if (hasPremiumKeywords) {
 		console.log("[Tier 2: Premium] High-intent keywords detected. Executing specialized searches.");
 
-		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites) - NOW TIER 2 ONLY
+		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites)
 		if (B2B_PAIN_CSE_ID) {
 			const query = `${shortTargetType} AND ("pain point" OR "switching from" OR "frustrated with") in "${location}" ${NEGATIVE_QUERY}`;
 			searchPromises.push(
@@ -365,8 +432,9 @@ The leads must align with the target audience: ${template}.`;
 	    size: size,
 	}));
 	
+	// Pass the context object for deterministic scoring
 	const enrichmentPromises = allLeads.map(lead => 
-		enrichAndScoreLead(lead, leadType, salesPersona)
+		enrichAndScoreLead(lead, leadType, personaContext) 
 	);
 	const enrichedLeads = await Promise.all(enrichmentPromises);
 
@@ -378,13 +446,6 @@ The leads must align with the target audience: ${template}.`;
 // 1. Synchronous Handler (Quick Job: Max 3 Leads)
 // ------------------------------------------------
 exports.handler = async (event) => {
-	
-	// --- CORS DEFINITION (CRITICAL) ---
-	const CORS_HEADERS = {
-		'Access-Control-Allow-Origin': '*',
-		'Access-Control-Allow-Methods': 'POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
-	};
 	
 	if (event.httpMethod === 'OPTIONS') {
 		// Mandatory for preflight checks
@@ -403,39 +464,59 @@ exports.handler = async (event) => {
 	let requestData = {};
 	try {
 		requestData = JSON.parse(event.body);
-		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, financialTerm, clientProfile, industry, size } = requestData;
+		// Note: searchTerm is for B2B, clientProfile for B2C
+		const { mode, userPrompt, responseSchema, systemInstruction, filters } = requestData;
+		const { industry, size, location, keyword, jobTitle, demographic, signal } = filters;
+        
+        // Map frontend fields to backend params
+        const leadType = mode === 'b2c' ? 'residential' : 'b2b';
+        const quickJobTarget = leadType === 'residential' ? demographic : keyword;
+        const financialTerm = signal; // Using 'signal' for financialTerm for B2B/B2C logic separation
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
+        // Ensure that the necessary fields for TIER 1 search are present in the filters object
 		if (!industry || !size || !location) {
 			const missingFields = [];
 			if (!industry) missingFields.push('industry');
 			if (!size) missingFields.push('size');
 			if (!location) missingFields.push('location');
-
+			
+			// This scenario only happens if the frontend fails to provide the mandatory placeholder fields
 			return {
 				statusCode: 400,
 				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}. Please check your request payload.` })
+				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}. Ensure industry, size, and location placeholders are sent.` })
 			};
 		}
 		// --------------------------------------------
 		
-		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
-		const quickJobTarget = leadType === 'residential' && clientProfile ? clientProfile : searchTerm;
+		const resolvedActiveSignal = signal || "actively seeking solution or new provider";
 		
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
+		// Define the persona context for deterministic scoring
+		const personaContext = {
+		    industry: industry,
+		    location: location,
+		    keyword: quickJobTarget // This is the main search keyword
+		};
 
 		const leads = await generateLeadsBatch(
-			leadType, quickJobTarget, financialTerm, resolvedActiveSignal, location, salesPersona, socialFocus, industry, size                
+			leadType, quickJobTarget, financialTerm, resolvedActiveSignal, location, personaContext, jobTitle, industry, size                
 		);
-
-
-		// 200 Success
+		
+		// The frontend expects the JSON response to be the raw array of leads, not wrapped in { leads: [...] }
+		// But the frontend logic is designed to parse the response from the Netlify function structure:
+        // const leads = await makeApiCallWithBackoff(apiUrl, payload);
+        // The original logic assumes the Netlify function returns the leads array directly, 
+        // which conflicts with the Netlify handler returning { leads: [...] }. I will correct this
+        // to return the raw leads array to match the frontend expectation, simplifying the frontend fetch result handling.
+		
+		// 200 Success - Returning only the leads array slice as per typical API contract
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ leads: leads.slice(0, 3), count: leads.length })
+			body: JSON.stringify(leads.slice(0, 3))
 		};
 
 
@@ -465,19 +546,15 @@ exports.handler = async (event) => {
 // ------------------------------------------------
 exports.background = async (event) => {
 	
-	// --- CORS DEFINITION (CRITICAL) ---
-	const CORS_HEADERS = {
-		'Access-Control-Allow-Origin': '*',
-		'Access-Control-Allow-Methods': 'POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
-	};
-
-	// Note: Background jobs don't typically see OPTIONS requests from the browser, but we include 
-	// the headers for all responses to ensure consistency if the endpoint is accidentally used by a client.
-	
 	try {
 		const requestData = JSON.parse(event.body);
-		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, financialTerm, clientProfile, industry, size } = requestData;
+		const { mode, userPrompt, responseSchema, systemInstruction, filters } = requestData;
+		const { industry, size, location, keyword, jobTitle, demographic, signal } = filters;
+        
+        // Map frontend fields to backend params
+        const leadType = mode === 'b2c' ? 'residential' : 'b2b';
+        const searchTerm = leadType === 'residential' ? demographic : keyword;
+        const financialTerm = signal;
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
 		if (!industry || !size || !location) {
@@ -496,14 +573,20 @@ exports.background = async (event) => {
 		}
 		// --------------------------------------------
 
-		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
+		const resolvedActiveSignal = signal || "actively seeking solution or new provider";
 
 		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
+		// Define the persona context for deterministic scoring
+		const personaContext = {
+		    industry: industry,
+		    location: location,
+		    keyword: searchTerm
+		};
 
 		// --- Execution of the Long Task ---
 		const leads = await generateLeadsBatch(
-			leadType, searchTerm, financialTerm, resolvedActiveSignal, location, salesPersona, socialFocus, industry, size                
+			leadType, searchTerm, financialTerm, resolvedActiveSignal, location, personaContext, jobTitle, industry, size                
 		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
@@ -512,7 +595,7 @@ exports.background = async (event) => {
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-			body: JSON.stringify({ leads: leads, count: leads.length, message: `Successfully generated ${leads.length} leads in background.` })
+			body: JSON.stringify(leads)
 		};
 	} catch (err) {
 		console.error('Lead Generator Background Error:', err);
