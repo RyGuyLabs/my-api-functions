@@ -7,12 +7,11 @@
  * (keyword/demographic, signal/financialTerm, jobTitle/socialFocus) are verifiably
  * present in the LLM-generated qualification data (painPoint, summary).
  *
- * CORS CHECK: Access-Control-Allow-Origin: * is explicitly included in all responses. (CONFIRMED)
- * 504 FIX: Reduced number of search results in Tier 1 and Tier 2 to reduce I/O time and Gemini payload size. (CONFIRMED)
- * MANDATORY FIELD FIX: Only 'industry' and 'location' are now mandatory for baseline search. 'size' is optional. (CONFIRMED)
- * NEW FIX: Added a dedicated Tier 2 search using SOCIAL_PRO_CSE_ID to target the 'socialFocus' premium scoring keyword.
+ * PREVIOUS FIXES:
+ * - CORS: Included Access-Control-Allow-Origin: * in all responses. (CONFIRMED)
+ * - 504 Netlify Timeout: Reduced search result count and limited Gemini API retries to 2. (CONFIRMED)
  *
- * ***TIMEOUT FIX (CRITICAL): Reduced Gemini API call retries to prevent the Netlify 30-second timeout.***
+ * ***NEW FIX: Increased internal fetch timeout for the Gemini API call from 10s to 14s.***
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -45,10 +44,12 @@ const CORS_HEADERS = {
 // Helper: Fetch with Timeout 
 // -------------------------
 const fetchWithTimeout = (url, options, timeout = 10000) => {
+	// If no timeout is passed, default to 10 seconds.
+	const finalTimeout = timeout || 10000;
 	return Promise.race([
 		fetch(url, options),
 		new Promise((_, reject) =>
-			setTimeout(() => reject(new Error('Fetch request timed out')), timeout)
+			setTimeout(() => reject(new Error('Fetch request timed out')), finalTimeout)
 		)
 	]);
 };
@@ -59,6 +60,7 @@ const fetchWithTimeout = (url, options, timeout = 10000) => {
 const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 	for (let attempt = 1; attempt <= maxRetries; attempt++) {
 		try {
+			// fn() is expected to be a function returning a fetch promise.
 			const response = await fn(); 
 			if (response.ok) return response;
 
@@ -168,13 +170,15 @@ async function generateGeminiLeads(query, systemInstruction) {
     const apiUrlWithKey = `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`;
 
     try {
-        // *** TIMEOUT FIX: Reduce retries from 4 to 2 to ensure total time is under 30s. ***
+        // TIMEOUT FIX: Explicitly increase single-attempt timeout to 14 seconds to allow
+        // complex Gemini structured generation to complete, while retaining 2 retries
+        // to stay safely under the Netlify 30s limit (14s + 14s + delay < 30s).
         const response = await withBackoff(() => 
             fetchWithTimeout(apiUrlWithKey, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
-            }),
+            }, 14000), // <-- Custom Timeout set to 14 seconds
             2 // Max Retries set to 2
         );
         
@@ -533,7 +537,7 @@ exports.handler = async (event) => {
 		
 		let message = 'Lead generation failed due to a server error.';
 		if (error.message.includes('Fetch request timed out') || error.message.includes('Max retries reached')) {
-			message = 'The quick lead generation job took too long and timed out (Netlify limit exceeded). Try the long job for complex queries.';
+			message = 'The quick lead generation job took too long and timed out (Internal API failure). Try the long job for complex queries.';
 		}
 		if (error.message.includes('Configuration Error')) {
 			message = error.message;
