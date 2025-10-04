@@ -1,18 +1,18 @@
 /*
  * Ultimate Premium Lead Generator – Tiered Search Orchestrator
  *
- * This refactored version implements a **Tiered Search Strategy**:
- * Tier 1 (Baseline): Always runs using Industry, Size, and Location for guaranteed leads.
- * Tier 2 (Premium): Only runs if specific target keywords are provided, adding high-intent results.
+ * This version implements a dedicated **Tier 1 Guaranteed Baseline**:
+ * Tier 1 (Guaranteed): ALWAYS uses DIR_INFO_CSE_ID (Directory/Listing Sites) with Industry, Size, and Location.
+ * Tier 2 (Premium): CONDITIONAL and includes high-intent searches, including Pain/Review (B2B_PAIN_CSE_ID).
  *
  * ENVIRONMENT VARIABLES STATUS:
  * 1. LEAD_QUALIFIER_API_KEY (Gemini Key) - MANDATORY
  * 2. RYGUY_SEARCH_API_KEY (Master Search Key for all CSE calls) - MANDATORY
- * 3. RYGUY_SEARCH_ENGINE_ID (CSE ID for B2B Pain/Fallback) - REQUIRED FOR TIER 1 BASELINE
- * 4. CORP_COMP_CSE_ID (CSE ID for Legal/Compliance Sites) - OPTIONAL for Tier 2
- * 5. TECH_SIM_CSE_ID (CSE ID for Technology Stack Sites) - OPTIONAL for Tier 2
- * 6. SOCIAL_PRO_CSE_ID (CSE ID for Social/Professional Sites) - OPTIONAL for Tier 2
- * 7. DIR_INFO_CSE_ID (CSE ID for Directory/Firmographic Sites) - OPTIONAL for Tier 2
+ * 3. DIR_INFO_CSE_ID (CSE ID for Directory/Firmographic Sites) - NOW MANDATORY FOR TIER 1 BASELINE
+ * 4. B2B_PAIN_CSE_ID (CSE ID for B2B Pain/Fallback) - NOW OPTIONAL (TIER 2 ONLY)
+ * 5. CORP_COMP_CSE_ID (CSE ID for Legal/Compliance Sites) - OPTIONAL for Tier 2
+ * 6. TECH_SIM_CSE_ID (CSE ID for Technology Stack Sites) - OPTIONAL for Tier 2
+ * 7. SOCIAL_PRO_CSE_ID (CSE ID for Social/Professional Sites) - OPTIONAL for Tier 2
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -29,7 +29,7 @@ const B2B_PAIN_CSE_ID = process.env.RYGUY_SEARCH_ENGINE_ID;
 const CORP_COMP_CSE_ID = process.env.CORP_COMP_CSE_ID;
 const TECH_SIM_CSE_ID = process.env.TECH_SIM_CSE_ID;
 const SOCIAL_PRO_CSE_ID = process.env.SOCIAL_PRO_CSE_ID;
-const DIR_INFO_CSE_ID = process.env.DIR_INFO_CSE_ID;
+const DIR_INFO_CSE_ID = process.env.DIR_INFO_CSE_ID; // Used for Tier 1
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
 const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
@@ -87,7 +87,7 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = 500) => {
 
 
 // -------------------------
-// Enrichment & Quality Helpers (Not modified for brevity)
+// Enrichment & Quality Helpers 
 // -------------------------
 const PLACEHOLDER_DOMAINS = ['example.com', 'placeholder.net', 'null.com', 'test.com'];
 
@@ -136,46 +136,24 @@ async function enrichPhoneNumber(currentNumber) {
 	return null;	
 }
 
-// ... (Other scoring and enrichment helpers remain the same)
-// NOTE: PERSONA_KEYWORDS, COMMERCIAL_ENHANCERS, NEGATIVE_FILTERS are assumed to be defined as before.
 
-const PERSONA_KEYWORDS = {
-	// ... (content of PERSONA_KEYWORDS)
-	"real_estate": [
-		`"closing soon" OR "pre-approval granted" OR "final walk-through"`, 
-		`"new construction" OR "single-family home" AND "immediate move"`, 
-		`"building permit" OR "major home renovation project" AND "budget finalized"`, 
-		`"distressed property listing" AND "cash offer"`, 
-		`"recent move" OR "new job in area" AND "needs services"` 
-	],
-	// ... (rest of PERSONA_KEYWORDS)
-	"default": [
-		`"urgent event venue booking" OR "last-minute service needed"`,	
-		`"moving company quotes" AND "move date confirmed"`,	
-		`"recent college graduate" AND "seeking investment advice"`,	
-		`"small business startup help" AND "funding secured"`
-	]
-};
-const NEGATIVE_FILTERS = [
-	`-job`,	
-	`-careers`,	
-	`-"press release"`,	
-	`-"blog post"`,	
-	`-"how to"`,	
-	`-"ultimate guide"`
-];
-const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
-
-
+// --- Placeholder Definitions ---
 function calculatePersonaMatchScore(lead, salesPersona) { /* ... same as before */ return 1; }
 function computeQualityScore(lead) { /* ... same as before */ return 'Medium'; }
 async function generatePremiumInsights(lead) { /* ... same as before */ return 'Placeholder Insight'; }
 function rankLeads(leads) { /* ... same as before */ return leads; }
-function deduplicateLeads(leads) { /* ... same as before */ return leads; }
+
+function deduplicateLeads(leads) {
+	const seen = new Set();
+	return leads.filter(l => {
+		const key = `${l.name}-${l.website}-${l.contactName || ''}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
 
 async function enrichAndScoreLead(lead, leadType, salesPersona) {
-	// ... (content of enrichAndScoreLead)
-	// Placeholder implementation for the sake of the orchestrator logic
 	lead.leadType = leadType;	
 	lead.salesPersona = salesPersona;
 
@@ -205,11 +183,6 @@ async function enrichAndScoreLead(lead, leadType, salesPersona) {
 	return lead;
 }
 
-
-/**
- * Aggressively simplifies a complex, descriptive target term into core search keywords.
- * (Used for Tier 2 Premium Search)
- */
 function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	if (!isResidential) {
 		let coreTerms = [`(${targetType})`]; 
@@ -231,6 +204,18 @@ function simplifySearchTerm(targetType, financialTerm, isResidential) {
 	return targetType.split(/\s+/).slice(0, 4).join(' ');
 }
 
+// Global negative filters (needs to be defined for search to run)
+const NEGATIVE_FILTERS = [
+	`-job`,	
+	`-careers`,	
+	`-"press release"`,	
+	`-"blog post"`,	
+	`-"how to"`,	
+	`-"ultimate guide"`
+];
+const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
+// --- End Placeholder Definitions ---
+
 
 // -------------------------
 // Google Custom Search (UPDATED to accept cseId and use MASTER KEY)
@@ -250,7 +235,6 @@ async function googleSearch(query, numResults = 3, cseId) {
 	console.log(`[Google Search] Sending Query to CSE ID: ${cseId}`);	
 	
 	try {
-		// Max retries set to 1 (meaning no retries) to enforce fail-fast within 10 seconds.
 		const response = await withBackoff(() => fetchWithTimeout(url, {}), 1, 500);	
 		const data = await response.json();
 		
@@ -364,34 +348,38 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 
 	const isResidential = leadType === 'residential';
 	
-	// Check if the user provided specific high-intent search terms
 	const hasPremiumKeywords = (targetType && targetType.length > 0) || (financialTerm && financialTerm.length > 0);
 	const shortTargetType = simplifySearchTerm(targetType, financialTerm, isResidential);
 	
-	// Array to hold all search promises
 	const searchPromises = [];
 
-	// --- TIER 1: BASELINE FIRMOGRAPHIC SEARCH (Guaranteed Results) ---
-	// This runs unconditionally using the required general CSE ID.
-	if (!B2B_PAIN_CSE_ID) {
-		throw new Error("Configuration Error: RYGUY_SEARCH_ENGINE_ID (B2B_PAIN_CSE_ID) is missing, which is required for Tier 1 baseline search.");
+	// --- TIER 1: GUARANTEED BASELINE FIRMOGRAPHIC SEARCH ---
+	// MUST use the directory CSE for guaranteed basic listings.
+	if (!DIR_INFO_CSE_ID) {
+		throw new Error("Configuration Error: DIR_INFO_CSE_ID is missing, which is required for Tier 1 baseline search (Guaranteed Listing).");
 	}
 
-	// Baseline Query: Industry, Size, and Location only.
-	const baselineQuery = `${industry} AND ${size} AND ${location} ${NEGATIVE_QUERY}`;
-	console.log(`[Tier 1: Baseline] Query: ${baselineQuery}`);
+	const baselineTerms = [industry, size, location].filter(term => term && term.trim().length > 0);
+	
+	// This error should be caught by the handler validation, but we keep this log for safety
+	if (baselineTerms.length < 3) {
+		console.error("Baseline query missing critical terms, but proceeding with available ones.");
+	}
+
+	const baselineQuery = `${baselineTerms.join(' AND ')} ${NEGATIVE_QUERY}`;
+	console.log(`[Tier 1: Baseline - Directory] Query: ${baselineQuery}`);
 	
 	searchPromises.push(
-		googleSearch(baselineQuery, 5, B2B_PAIN_CSE_ID)
-		.then(results => results.map(r => ({ ...r, tier: 1, type: 'Baseline' })))
+		googleSearch(baselineQuery, 5, DIR_INFO_CSE_ID)
+		.then(results => results.map(r => ({ ...r, tier: 1, type: 'Directory/Firmographic' })))
 	);
 
 
 	// --- TIER 2: PREMIUM HIGH-INTENT SEARCHES (Conditional) ---
 	if (hasPremiumKeywords) {
-		console.log("[Tier 2: Premium] High-intent keywords detected. Executing 5 specialized searches.");
+		console.log("[Tier 2: Premium] High-intent keywords detected. Executing specialized searches.");
 
-		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites) - Using high-intent keywords
+		// 1. B2B_PAIN_CSE_ID (Review/Pain Sites) - NOW TIER 2 ONLY
 		if (B2B_PAIN_CSE_ID) {
 			const query = `${shortTargetType} AND ("pain point" OR "switching from" OR "frustrated with") in "${location}" ${NEGATIVE_QUERY}`;
 			searchPromises.push(
@@ -426,15 +414,8 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Social' })))
 			);
 		}
-
-		// 5. DIR_INFO_CSE_ID (Directory/Firmographic Sites) - Optional
-		if (DIR_INFO_CSE_ID) {
-			const query = `${shortTargetType} AND ("recent funding" OR "new office" OR "expansion news") in "${location}" ${NEGATIVE_QUERY}`;
-			searchPromises.push(
-				googleSearch(query, 3, DIR_INFO_CSE_ID)
-				.then(results => results.map(r => ({ ...r, tier: 2, type: 'Directory' })))
-			);
-		}
+		
+		// Note: DIR_INFO_CSE_ID is only used in Tier 1 for baseline listing, not repeated here.
 	} else {
 		console.log("[Tier 2: Premium] Skipping specialized searches. No high-intent keywords provided.");
 	}
@@ -443,7 +424,6 @@ Geographical Detail: Based on the search snippet and the known location, you MUS
 	const resultsFromSearches = await Promise.all(searchPromises);
 	let allSearchResults = resultsFromSearches.flat();
 	
-	// Deduplicate the combined search results before sending to Gemini
 	allSearchResults = deduplicateLeads(allSearchResults);
 	
 	console.log(`[Orchestrator] Aggregated ${allSearchResults.length} unique search results from all tiers.`);
@@ -502,28 +482,41 @@ exports.handler = async (event) => {
 	try {
 		requestData = JSON.parse(event.body);
 
-		// NEW: Destructure industry and size along with existing fields
 		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, financialTerm, clientProfile, industry, size } = requestData;
+
+		// --- STRICT VALIDATION FOR BASELINE FIELDS ---
+		if (!industry || !size || !location) {
+			const missingFields = [];
+			if (!industry) missingFields.push('industry');
+			if (!size) missingFields.push('size');
+			if (!location) missingFields.push('location');
+
+			console.error(`[Handler] Missing mandatory baseline fields: ${missingFields.join(', ')}`);
+
+			return {
+				statusCode: 400,
+				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}. Please check your request payload.` })
+			};
+		}
+		// -----------------------------------------------------
 		
 		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
-		
-		// Use the precise clientProfile for the Quick Job's primary target argument for B2C
 		const quickJobTarget = leadType === 'residential' && clientProfile ? clientProfile : searchTerm;
 		
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
 
-		// CRITICAL FIX: Ensure correct arguments are passed according to function signature, including new industry/size
 		const leads = await generateLeadsBatch(
-			leadType, 			// 1. leadType
-			quickJobTarget, 	// 2. targetType (Premium Keywords)
-			financialTerm, 		// 3. financialTerm (Premium Keywords)
-			resolvedActiveSignal, 	// 4. activeSignal
-			location, 			// 5. location
-			salesPersona, 		// 6. salesPersona
-			socialFocus, 		// 7. socialFocus
-			industry,           // 8. industry (Tier 1 Baseline)
-			size                // 9. size (Tier 1 Baseline)
+			leadType, 			
+			quickJobTarget, 	
+			financialTerm, 		
+			resolvedActiveSignal, 	
+			location, 			
+			salesPersona, 		
+			socialFocus, 		
+			industry,           
+			size                
 		);
 
 
@@ -542,7 +535,6 @@ exports.handler = async (event) => {
 		if (error.message.includes('Fetch request timed out') || error.message.includes('Max retries reached')) {
 			message = 'The quick lead generation job took too long and timed out (Netlify limit exceeded). Try the long job for complex queries.';
 		}
-
 
 		return {
 			statusCode: 500,
@@ -566,28 +558,41 @@ exports.background = async (event) => {
 	
 	try {
 		const requestData = JSON.parse(event.body);
-		// NEW: Destructure industry and size along with existing fields
 		const { leadType, searchTerm, activeSignal, location, salesPersona, socialFocus, financialTerm, clientProfile, industry, size, totalLeads } = requestData;
 
+		// --- STRICT VALIDATION FOR BASELINE FIELDS ---
+		if (!industry || !size || !location) {
+			const missingFields = [];
+			if (!industry) missingFields.push('industry');
+			if (!size) missingFields.push('size');
+			if (!location) missingFields.push('location');
+			
+			console.error(`[Background] Missing mandatory baseline fields: ${missingFields.join(', ')}`);
+
+			return {
+				statusCode: 400,
+				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}. Please check your request payload.` })
+			};
+		}
+		// -----------------------------------------------------
 
 		const resolvedActiveSignal = activeSignal || "actively seeking solution or new provider";
-
 
 		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
 
 		// --- Execution of the Long Task ---
-		// The long job still uses the full, complex 'searchTerm' as targetType for comprehensive search variety
 		const leads = await generateLeadsBatch(
-			leadType, 			// 1. leadType
-			searchTerm, 		// 2. targetType (Premium Keywords)
-			financialTerm, 		// 3. financialTerm (Premium Keywords)
-			resolvedActiveSignal, 	// 4. activeSignal
-			location, 			// 5. location
-			salesPersona, 		// 6. salesPersona
-			socialFocus, 		// 7. socialFocus
-			industry,           // 8. industry (Tier 1 Baseline)
-			size                // 9. size (Tier 1 Baseline)
+			leadType, 			
+			searchTerm, 		
+			financialTerm, 		
+			resolvedActiveSignal, 	
+			location, 			
+			salesPersona, 		
+			socialFocus, 		
+			industry,           
+			size                
 		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
