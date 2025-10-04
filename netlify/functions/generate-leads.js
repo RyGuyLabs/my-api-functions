@@ -6,6 +6,8 @@
  * 2. SCALING: The final score is scaled upward based on how many Tier 2 keywords
  * (keyword/demographic, signal/financialTerm, jobTitle/socialFocus) are verifiably
  * present in the LLM-generated qualification data (painPoint, summary).
+ *
+ * CORS CHECK: Access-Control-Allow-Origin: * is explicitly included in all responses.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -320,7 +322,7 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 // -------------------------
 // Lead Generator Core (TIERED ORCHESTRATOR)
 // -------------------------
-async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, criteria, socialFocus, industry, size) {
+async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, socialFocus, industry, size) {
 	
 	const template = leadType === 'residential'
 		? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -446,6 +448,7 @@ The leads must align with the target audience: ${template}. If data is missing f
 exports.handler = async (event) => {
 	
 	if (event.httpMethod === 'OPTIONS') {
+		// CORS Preflight check MUST return the headers
 		return { statusCode: 200, headers: CORS_HEADERS, body: '' };
 	}
 	
@@ -489,9 +492,10 @@ exports.handler = async (event) => {
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
 		const leads = await generateLeadsBatch(
-			leadType, targetType, financialTerm, resolvedActiveSignal, location, null, socialFocus, industry, size                
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size                
 		);
 		
+		// 200 Success - MUST include CORS headers
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -510,6 +514,7 @@ exports.handler = async (event) => {
 			message = error.message;
 		}
 
+		// 500 Server Error - MUST include CORS headers
 		return {
 			statusCode: 500,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -556,11 +561,12 @@ exports.background = async (event) => {
 		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
 		const leads = await generateLeadsBatch(
-			leadType, targetType, financialTerm, resolvedActiveSignal, location, null, socialFocus, industry, size                
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size                
 		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
 		
+		// 200 Success - MUST include CORS headers
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -574,6 +580,7 @@ exports.background = async (event) => {
 			message = err.message;
 		}
 		
+		// 500 Server Error - MUST include CORS headers
 		return {	
 			statusCode: 500,	
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
