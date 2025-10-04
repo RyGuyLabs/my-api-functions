@@ -2,9 +2,10 @@
  * Ultimate Premium Lead Generator – Tiered Search Orchestrator
  *
  * CRITICAL FIXES FOR 504 GATEWAY TIMEOUT (SYNCHRONOUS HANDLER):
- * 1. Reduced Gemini Timeout: The single-attempt timeout in 'generateGeminiLeads' has been dropped from 14 seconds to a safer 8 seconds to ensure the total execution time stays well under Netlify's 30s limit.
- * 2. Reduced Quick Job Search Volume: The quick job (exports.handler) now retrieves only 2 baseline search results (down from 5) to minimize the token count sent to the LLM and speed up the qualification step.
- * 3. CORS Confirmation: Ensured all response paths, including OPTIONS, correctly return CORS headers.
+ * 1. CONDITIONAL RETRIES: The 'generateGeminiLeads' function now dynamically sets the number of retries:
+ * - Quick Job (isQuickJob = true): Max 1 attempt (no retries) to ensure completion under 10 seconds.
+ * - Long Job (isQuickJob = false): Max 3 retries for maximum reliability and lead abundance.
+ * 2. Reduced Quick Job Search Volume: Remains at 2 baseline results to minimize token count and speed up the qualification step.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -148,12 +149,18 @@ const LEAD_GENERATION_SCHEMA = {
 
 /**
  * Uses Gemini API to qualify and structure leads from search results.
+ * @param {boolean} isQuickJob - Determines if the call is part of the synchronous quick job.
  */
-async function generateGeminiLeads(query, systemInstruction) {
+async function generateGeminiLeads(query, systemInstruction, isQuickJob) {
     if (!GEMINI_API_KEY) {
         console.error("Missing Gemini API Key.");
         return [];
     }
+
+    // Conditional retry logic for stability vs. speed
+    // Quick job needs max speed, so 1 attempt (0 retries)
+    // Long job needs max reliability, so 4 attempts (3 retries)
+    const MAX_API_RETRIES = isQuickJob ? 1 : 3; 
 
     const payload = {
         contents: [{ parts: [{ text: query }] }],
@@ -167,7 +174,7 @@ async function generateGeminiLeads(query, systemInstruction) {
     const apiUrlWithKey = `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`;
 
     try {
-        // CRITICAL FIX: Timeout reduced from 14s to 8s for QUICK JOB stability
+        // Timeout set to 8s for both job types to prevent excessive single-call latency
         const GEMINI_TIMEOUT = 8000; 
         
         const response = await withBackoff(() => 
@@ -175,8 +182,8 @@ async function generateGeminiLeads(query, systemInstruction) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
-            }, GEMINI_TIMEOUT), // <-- Custom Timeout set to 8 seconds
-            2 // Max Retries set to 2
+            }, GEMINI_TIMEOUT),
+            MAX_API_RETRIES // <-- Dynamically set retries here
         );
         
         const result = await response.json();
@@ -485,7 +492,7 @@ The leads must align with the target audience: ${template}.`;
     SEARCH RESULTS:
     ${searchSnippets}`;
 
-	const geminiLeads = await generateGeminiLeads(geminiQuery, systemInstruction);
+	const geminiLeads = await generateGeminiLeads(geminiQuery, systemInstruction, isQuickJob); // <-- Pass isQuickJob
 	
 	// 5. Final Enrichment and Ranking (Concurrent)
 	let allLeads = deduplicateLeads(geminiLeads);
@@ -563,7 +570,7 @@ exports.handler = async (event) => {
 		
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
-        // CRITICAL FIX: isQuickJob = true ensures maxResultsTier1=2 and only one batch runs
+        // isQuickJob = true ensures min results (2) and only 1 Gemini attempt (no retries)
 		const leads = await generateLeadsBatch(
 			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size, true 
 		);
@@ -632,7 +639,7 @@ exports.background = async (event) => {
 
 		console.log(`[Background] Starting LONG JOB (${MAX_BATCHES_LONG_JOB} batches) for: ${industry}, ${size || 'All Sizes'}, ${location}.`);
 
-        // CRITICAL FIX: isQuickJob = false enables 5 batches and higher result counts for abundance
+        // isQuickJob = false enables 5 batches and 3 Gemini retries for max abundance and reliability
 		const leads = await generateLeadsBatch(
 			leadType, targetType, financialTerm, resolvedActiveSignal, location, socialFocus, industry, size, false 
 		);
