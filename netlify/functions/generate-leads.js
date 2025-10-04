@@ -11,13 +11,12 @@
  * - Netlify Timeout: Increased internal fetch timeout for Gemini API call from 10s to 14s.
  * - Data Depth: Aggressive prompting and required fields (painPoint, contactName) added to schema.
  * - Domain Cleanup: Added 'extractDomain' helper to ensure the 'website' field is always a clean domain.
+ * - 503 TIMEOUT FIX: Reduced search results to max 4 snippets for Quick Job to reduce LLM workload.
  *
- * ***NEW FIX FOR 503 TIMEOUT (EFFICIENCY BOOST):***
- * - Reduced LLM Workload: The number of search results passed to the Gemini API is now
- * significantly reduced to prevent the 16+ second processing timeout:
- * - Tier 1 search results cut from 3 to **2**.
- * - Tier 2 search count cut from 4 concurrent searches to **2 highest-signal** searches for the 'quick job'.
- * - Total Max Input Snippets: 4 (down from 7) for faster, reliable qualification.
+ * ***NEW FIX FOR INCOMPLETE OUTPUT (MISSING FIELDS):***
+ * - Explicit "N/A" Requirement: System instruction and schema descriptions now explicitly mandate
+ * the use of the string "N/A" for any required field where data cannot be extracted from the snippets,
+ * ensuring the final JSON output is always complete and parsable.
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -144,10 +143,14 @@ const LEAD_GENERATION_SCHEMA = {
         type: "OBJECT",
         properties: {
             companyName: { type: "STRING", description: "The name of the company or lead." },
-            website: { type: "STRING", description: "The primary website or listing URL for the lead. MUST be a valid, extractable URL or domain (e.g., example.com)." },
-            qualificationSummary: { type: "STRING", description: "A concise, high-intent summary (1-2 sentences) explaining why this lead is a strong fit based on the search snippets. MUST mention a financial term, signal, or specific need if one is found." },
-            painPoint: { type: "STRING", description: "The single most relevant high-intent pain point, trigger, or signal identified. If none, return N/A." },
-            contactName: { type: "STRING", description: "The most likely contact person's name (e.g., CEO, Director of IT), if available or inferable. If none, return N/A." },
+            // UPDATED: Explicitly state N/A requirement
+            website: { type: "STRING", description: "The primary website or listing URL for the lead. MUST be a valid, extractable URL or domain (e.g., example.com). Use 'N/A' if not found." },
+            // UPDATED: Explicitly state N/A requirement
+            qualificationSummary: { type: "STRING", description: "A concise, high-intent summary (1-2 sentences) explaining why this lead is a strong fit based on the search snippets. MUST mention a financial term, signal, or specific need if one is found. Use 'N/A' if summary cannot be written." },
+            // UPDATED: Explicitly state N/A requirement
+            painPoint: { type: "STRING", description: "The single most relevant high-intent pain point, trigger, or signal identified. If none, return 'N/A'." },
+            // UPDATED: Explicitly state N/A requirement
+            contactName: { type: "STRING", description: "The most likely contact person's name (e.g., CEO, Director of IT), if available or inferable. If none, return 'N/A'." },
             industry: { type: "STRING", description: "The determined industry of the lead." },
             location: { type: "STRING", description: "The primary location of the lead." }
         },
@@ -177,9 +180,7 @@ async function generateGeminiLeads(query, systemInstruction) {
     const apiUrlWithKey = `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`;
 
     try {
-        // TIMEOUT FIX: Explicitly increase single-attempt timeout to 14 seconds to allow
-        // complex Gemini structured generation to complete, while retaining 2 retries
-        // to stay safely under the Netlify 30s limit (14s + 14s + delay < 30s).
+        // TIMEOUT FIX: Explicitly increase single-attempt timeout to 14 seconds
         const response = await withBackoff(() => 
             fetchWithTimeout(apiUrlWithKey, {
                 method: 'POST',
@@ -381,7 +382,8 @@ CRITICAL: All information MUST pertain to the lead referenced in the search resu
 **PRIORITY 1: The 'qualificationSummary' MUST actively look for and reference the core criteria (targetType, financialTerm, or socialFocus) if they are present in the search snippets.**
 **PRIORITY 2: The 'painPoint' field MUST be filled with a high-intent signal (not N/A) if any is found.**
 **PRIORITY 3: The 'website' MUST be extracted as a clean domain or URL.**
-The leads must align with the target audience: ${template}. If data is missing for a required field, return N/A for that field.`;
+**PRIORITY 4: If any required field (qualificationSummary, painPoint, contactName, website, industry, location) cannot be extracted from the snippets, its value MUST be the string 'N/A' to ensure schema compliance and proper parsing.**
+The leads must align with the target audience: ${template}.`;
 
 
 	const isResidential = leadType === 'residential';
