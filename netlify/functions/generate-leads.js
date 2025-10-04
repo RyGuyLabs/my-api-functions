@@ -1,13 +1,11 @@
 /*
  * Ultimate Premium Lead Generator – Tiered Search Orchestrator
  *
- * This version implements a dedicated **Tier 1 Guaranteed Baseline**:
- * Tier 1 (Guaranteed): ALWAYS uses DIR_INFO_CSE_ID (Directory/Listing Sites) with Industry, Size, and Location.
- * Tier 2 (Premium): CONDITIONAL and includes high-intent searches, including Pain/Review (B2B_PAIN_CSE_ID).
- *
- * CRITICAL LOGIC UPDATE: All external data enrichment mocks have been removed. Enrichment fields
- * (Email, Phone, Verified Status) now return N/A or a message indicating the need for a third-party API.
- * Scoring is purely deterministic based on the presence of LLM-generated high-intent data.
+ * CRITICAL LOGIC UPDATE: Lead scoring is now a verifiable, layered system.
+ * 1. BASELINE: A guaranteed score (50/100) is set by successful Tier 1 search validation.
+ * 2. SCALING: The final score is scaled upward based on how many Tier 2 keywords
+ * (keyword/demographic, signal/financialTerm, jobTitle/socialFocus) are verifiably
+ * present in the LLM-generated qualification data (painPoint, summary).
  */
 
 const nodeFetch = require('node-fetch'); 
@@ -172,7 +170,6 @@ async function generateGeminiLeads(query, systemInstruction) {
 
         if (candidate && candidate.content?.parts?.[0]?.text) {
             const jsonText = candidate.content.parts[0].text.trim();
-            // LLM output can be wrapped in ```json ... ```, strip it
             const cleanJsonText = jsonText.replace(/^```json\s*|```\s*$/g, '').trim(); 
             return JSON.parse(cleanJsonText);
         }
@@ -206,94 +203,89 @@ function enrichPhoneNumber() {
 }
 
 /**
- * Deterministic Score: Calculates how well the lead matches the user's filtered criteria.
- * @param {Object} lead - The lead data.
- * @param {Object} personaContext - The user's industry/location filter context.
- * @returns {number} Score between 0.0 and 1.0.
- */
-function calculatePersonaMatchScore(lead, personaContext) { 
-    let match = 0;
-    let maxPossible = 3;
-    
-    // 1. Industry Match (High value)
-    if (lead.industry && personaContext.industry && lead.industry.toLowerCase().includes(personaContext.industry.toLowerCase())) {
-        match += 1;
-    }
-    
-    // 2. Location Match (Medium value)
-    if (lead.location && personaContext.location && lead.location.toLowerCase().includes(personaContext.location.toLowerCase())) {
-        match += 1;
-    }
-
-    // 3. Keyword Match (Medium value) - If painPoint exists and relates to the search term
-    if (lead.painPoint && personaContext.keyword && lead.painPoint.toLowerCase().includes(personaContext.keyword.toLowerCase())) {
-        match += 1;
-    }
-
-    // Normalize to 1.0
-    return parseFloat((match / maxPossible).toFixed(2));
-}
-
-/**
- * Deterministic Score: Computes lead quality based on data presence.
- * @param {Object} lead - The lead data.
- * @returns {string} 'High', 'Medium', or 'Low'.
- */
-function computeQualityScore(lead) { 
-    const hasPain = lead.painPoint && lead.painPoint.toLowerCase() !== 'n/a' && lead.painPoint.length > 5;
-    const hasSummary = lead.qualificationSummary && lead.qualificationSummary.length > 10;
-    const hasWebsite = lead.website && lead.website.toLowerCase() !== 'n/a';
-
-    if (hasPain && hasSummary && hasWebsite) return 'High';
-    if (hasSummary && hasWebsite) return 'Medium';
-    if (hasWebsite || hasSummary || hasPain) return 'Medium';
-    return 'Low';
-}
-
-/**
  * Verifiable Insight: Generates a simple, deterministic insight.
- * @param {Object} lead - The lead data.
- * @returns {string} The generated insight or N/A.
  */
 async function generatePremiumInsights(lead) { 
-    if (lead.qualificationSummary && lead.painPoint) {
+    if (lead.qualificationSummary && lead.painPoint && lead.painPoint.toLowerCase() !== 'n/a') {
         return `Insight: Primary signal is the pain point: "${lead.painPoint}". Qualification: ${lead.qualificationSummary}`;
     }
     return 'N/A: Insufficient data for a verifiable premium insight.';
 }
 
 /**
- * Sorts leads primarily by Quality Score, then by Persona Match Score.
+ * Verifiable Scoring: Calculates the lead score based on the success of the tiered search criteria.
+ * @param {Object} lead - The lead object output from Gemini.
+ * @param {Object} criteria - The original search criteria from the user request.
+ * @returns {{score: number, qualityBand: string}} The final score and band.
  */
-function rankLeads(leads) {
-    // Sort by QualityScore (High, Medium, Low) and then by PersonaMatchScore (highest first)
-    const scoreOrder = { 'High': 3, 'Medium': 2, 'Low': 1 };
-    return leads.sort((a, b) => {
-        const scoreA = scoreOrder[a.qualityScore] || 0;
-        const scoreB = scoreOrder[b.qualityScore] || 0;
-        if (scoreA !== scoreB) return scoreB - scoreA;
-        return (b.personaMatchScore || 0) - (a.personaMatchScore || 0);
-    });
+function calculateLeadScore(lead, criteria) {
+    const textToCheck = `${lead.qualificationSummary || ''} ${lead.painPoint || ''}`.toLowerCase();
+    const baseScore = 50; // Baseline for Tier 1 match (Industry, Size, Location present)
+    let premiumMatchCount = 0;
+    
+    const premiumCriteria = [
+        { key: 'targetType', value: criteria.targetType, weight: 15 },
+        { key: 'financialTerm', value: criteria.financialTerm, weight: 20 },
+        { key: 'socialFocus', value: criteria.socialFocus, weight: 15 },
+    ];
+    
+    let totalPremiumPoints = 0;
+
+    for (const item of premiumCriteria) {
+        if (item.value && item.value.trim() !== '') {
+            // Check if the LLM output contains the core keyword
+            if (textToCheck.includes(item.value.toLowerCase())) {
+                totalPremiumPoints += item.weight;
+                premiumMatchCount++;
+            }
+        }
+    }
+
+    let finalScore = Math.min(100, baseScore + totalPremiumPoints);
+
+    let qualityBand;
+    if (finalScore >= 80) {
+        qualityBand = 'High';
+    } else if (finalScore >= 65) {
+        qualityBand = 'Medium';
+    } else {
+        qualityBand = 'Low';
+    }
+
+    return { 
+        score: Math.round(finalScore), 
+        qualityBand: qualityBand, 
+        premiumMatchCount: premiumMatchCount 
+    };
 }
 
 /**
- * Performs final enrichment and scoring based on deterministic rules.
+ * Sorts leads primarily by Lead Score (0-100), descending.
  */
-async function enrichAndScoreLead(lead, leadType, personaContext) {
-    // Determine website. If not provided by LLM, try to infer or set N/A.
+function rankLeads(leads) {
+    return leads.sort((a, b) => (b.leadScore || 0) - (a.leadScore || 0));
+}
+
+/**
+ * Performs final enrichment and scoring based on deterministic rules and user criteria.
+ */
+async function enrichAndScoreLead(lead, criteria) {
+    // 1. Core Enrichment (Deterministic N/A for external data)
     lead.website = lead.website || (lead.link ? lead.link.split('/')[2] : 'n/a');
-    
-    // Explicitly set enrichment fields to N/A
     lead.email = enrichEmail(lead);
     lead.phone = enrichPhoneNumber(lead); 
 
-    // Compute scores
-    lead.personaMatchScore = calculatePersonaMatchScore(lead, personaContext);
-    lead.qualityScore = computeQualityScore(lead);
+    // 2. Compute Layered Lead Score
+    const scoreResults = calculateLeadScore(lead, criteria);
+    lead.leadScore = scoreResults.score;
+    lead.qualityBand = scoreResults.qualityBand;
+    lead.verifiableMatches = scoreResults.premiumMatchCount;
+
+    // 3. Generate Insight
     lead.premiumInsight = await generatePremiumInsights(lead);
     
     // Add source tier info for tracking
-    lead.sourceTier = lead.tier || 1; // Default to Tier 1 if not set by search
+    lead.sourceTier = lead.tier || 1; 
     
     return lead;
 }
@@ -304,7 +296,6 @@ async function enrichAndScoreLead(lead, leadType, personaContext) {
 function deduplicateLeads(leads) {
     const uniqueMap = new Map();
     for (const lead of leads) {
-        // Use a combination of name and website/link for deduplication
         const key = `${lead.companyName?.toLowerCase()}_${lead.website || lead.link}`;
         if (!uniqueMap.has(key)) {
             uniqueMap.set(key, lead);
@@ -329,7 +320,7 @@ const NEGATIVE_QUERY = NEGATIVE_FILTERS.join(' ');
 // -------------------------
 // Lead Generator Core (TIERED ORCHESTRATOR)
 // -------------------------
-async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, personaContext, socialFocus, industry, size) {
+async function generateLeadsBatch(leadType, targetType, financialTerm, activeSignal, location, criteria, socialFocus, industry, size) {
 	
 	const template = leadType === 'residential'
 		? "Focus on individual homeowners, financial capacity, recent property activities."
@@ -424,6 +415,14 @@ The leads must align with the target audience: ${template}. If data is missing f
 	// 4. Final Enrichment and Ranking (Concurrent)
 	let allLeads = deduplicateLeads(geminiLeads);
 	
+	// Combine all necessary criteria into a single object for the scoring function
+    const fullCriteria = {
+        industry, size, location,
+        targetType, // keyword/demographic
+        financialTerm, // signal
+        socialFocus // jobTitle
+    };
+	
 	// Add firmographic data back to the leads from the request payload
 	allLeads = allLeads.map(lead => ({
 	    ...lead,
@@ -432,9 +431,8 @@ The leads must align with the target audience: ${template}. If data is missing f
 	    size: size,
 	}));
 	
-	// Pass the context object for deterministic scoring
 	const enrichmentPromises = allLeads.map(lead => 
-		enrichAndScoreLead(lead, leadType, personaContext) 
+		enrichAndScoreLead(lead, fullCriteria) 
 	);
 	const enrichedLeads = await Promise.all(enrichmentPromises);
 
@@ -448,7 +446,6 @@ The leads must align with the target audience: ${template}. If data is missing f
 exports.handler = async (event) => {
 	
 	if (event.httpMethod === 'OPTIONS') {
-		// Mandatory for preflight checks
 		return { statusCode: 200, headers: CORS_HEADERS, body: '' };
 	}
 	
@@ -464,28 +461,25 @@ exports.handler = async (event) => {
 	let requestData = {};
 	try {
 		requestData = JSON.parse(event.body);
-		// Note: searchTerm is for B2B, clientProfile for B2C
-		const { mode, userPrompt, responseSchema, systemInstruction, filters } = requestData;
+		const { mode, filters } = requestData;
 		const { industry, size, location, keyword, jobTitle, demographic, signal } = filters;
         
-        // Map frontend fields to backend params
         const leadType = mode === 'b2c' ? 'residential' : 'b2b';
-        const quickJobTarget = leadType === 'residential' ? demographic : keyword;
-        const financialTerm = signal; // Using 'signal' for financialTerm for B2B/B2C logic separation
+        const targetType = leadType === 'residential' ? demographic : keyword;
+        const financialTerm = signal; // Active signal / Financial term
+        const socialFocus = jobTitle; // Closest match for persona-specific searches
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
-        // Ensure that the necessary fields for TIER 1 search are present in the filters object
 		if (!industry || !size || !location) {
 			const missingFields = [];
 			if (!industry) missingFields.push('industry');
 			if (!size) missingFields.push('size');
 			if (!location) missingFields.push('location');
 			
-			// This scenario only happens if the frontend fails to provide the mandatory placeholder fields
 			return {
 				statusCode: 400,
 				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}. Ensure industry, size, and location placeholders are sent.` })
+				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}.` })
 			};
 		}
 		// --------------------------------------------
@@ -494,25 +488,10 @@ exports.handler = async (event) => {
 		
 		console.log(`[Handler] Running QUICK JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
-		// Define the persona context for deterministic scoring
-		const personaContext = {
-		    industry: industry,
-		    location: location,
-		    keyword: quickJobTarget // This is the main search keyword
-		};
-
 		const leads = await generateLeadsBatch(
-			leadType, quickJobTarget, financialTerm, resolvedActiveSignal, location, personaContext, jobTitle, industry, size                
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, null, socialFocus, industry, size                
 		);
 		
-		// The frontend expects the JSON response to be the raw array of leads, not wrapped in { leads: [...] }
-		// But the frontend logic is designed to parse the response from the Netlify function structure:
-        // const leads = await makeApiCallWithBackoff(apiUrl, payload);
-        // The original logic assumes the Netlify function returns the leads array directly, 
-        // which conflicts with the Netlify handler returning { leads: [...] }. I will correct this
-        // to return the raw leads array to match the frontend expectation, simplifying the frontend fetch result handling.
-		
-		// 200 Success - Returning only the leads array slice as per typical API contract
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -531,7 +510,6 @@ exports.handler = async (event) => {
 			message = error.message;
 		}
 
-		// 500 Server Error
 		return {
 			statusCode: 500,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -548,13 +526,13 @@ exports.background = async (event) => {
 	
 	try {
 		const requestData = JSON.parse(event.body);
-		const { mode, userPrompt, responseSchema, systemInstruction, filters } = requestData;
+		const { mode, filters } = requestData;
 		const { industry, size, location, keyword, jobTitle, demographic, signal } = filters;
         
-        // Map frontend fields to backend params
         const leadType = mode === 'b2c' ? 'residential' : 'b2b';
-        const searchTerm = leadType === 'residential' ? demographic : keyword;
+        const targetType = leadType === 'residential' ? demographic : keyword;
         const financialTerm = signal;
+        const socialFocus = jobTitle;
 
 		// --- STRICT VALIDATION (400 Bad Request) ---
 		if (!industry || !size || !location) {
@@ -568,7 +546,7 @@ exports.background = async (event) => {
 			return {
 				statusCode: 400,
 				headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}. Please check your request payload.` })
+				body: JSON.stringify({ error: `Bad Request: Missing mandatory baseline fields for Tier 1 search: ${missingFields.join(', ')}.` })
 			};
 		}
 		// --------------------------------------------
@@ -577,21 +555,12 @@ exports.background = async (event) => {
 
 		console.log(`[Background] Starting LONG JOB (Tiered Orchestrator) for: ${industry}, ${size}, ${location}.`);
 
-		// Define the persona context for deterministic scoring
-		const personaContext = {
-		    industry: industry,
-		    location: location,
-		    keyword: searchTerm
-		};
-
-		// --- Execution of the Long Task ---
 		const leads = await generateLeadsBatch(
-			leadType, searchTerm, financialTerm, resolvedActiveSignal, location, personaContext, jobTitle, industry, size                
+			leadType, targetType, financialTerm, resolvedActiveSignal, location, null, socialFocus, industry, size                
 		);
 		
 		console.log(`[Background] Job finished successfully. Generated ${leads.length} high-quality leads.`);
 		
-		// 200 Success
 		return {
 			statusCode: 200,
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
@@ -605,7 +574,6 @@ exports.background = async (event) => {
 			message = err.message;
 		}
 		
-		// 500 Server Error
 		return {	
 			statusCode: 500,	
 			headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
