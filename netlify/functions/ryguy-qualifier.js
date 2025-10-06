@@ -37,7 +37,7 @@ exports.handler = async function(event) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     let prompt = '';
 
