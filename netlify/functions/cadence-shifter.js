@@ -70,7 +70,7 @@ exports.handler = async function(event, context) {
 
     const genAI = new GoogleGenerativeAI(API_KEY);
     // Use the correct model ID for Gemini 1.5 Flash.
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-preview-0520" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-0520" });
 
     try {
         const result = await model.generateContent([
