@@ -171,7 +171,8 @@ async function generateGeminiLeads(query, systemInstruction) {
 		systemInstruction: { parts: [{ text: systemInstruction }] },
 		generationConfig: {
 			temperature: 0.2,
-			maxOutputTokens: 1024,
+			// *** FIX: Increased token limit from 1024 to 4096 to prevent MAX_TOKENS cutoff ***
+			maxOutputTokens: 4096, 
 			responseMimeType: "application/json",
 			responseSchema: responseSchema
 		}
@@ -258,7 +259,7 @@ async function runLeadGenerationJob(requestBody) {
         // Use "employees" to make the size range clearer for Google Search
         filters.size ? `${filters.size} employees` : '', 
         filters.location,
-        // Use the signal type as a key search term (e.g., "Funding" or "Hiring")
+        // Use the signal type as a key search term (e.g., "Funding)
         filters.signal
     ].filter(Boolean).join(' ');
 
