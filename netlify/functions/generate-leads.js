@@ -284,12 +284,30 @@ async function runLeadGenerationJob(requestBody) {
     // 5. Generate Leads with Gemini
     let leads = await generateGeminiLeads(geminiQuery, systemInstruction);
     
-    // --- POST-PROCESSING: Convert qualityScore string to number for client-side consumption ---
-    // The front-end is likely expecting a number for sorting/validation.
+    // --- POST-PROCESSING: Convert qualityScore string to number and ensure required fields are present/non-null for client-side consumption ---
+    // The front-end expects numbers for sorting (qualityScore) and non-null arrays for mapping (socialMediaLinks).
     leads = leads.map(lead => ({
         ...lead,
-        // Convert the string-based score (e.g., "92") to a number (e.g., 92)
+        // Ensure qualityScore is an integer (default 0)
         qualityScore: parseInt(lead.qualityScore, 10) || 0,
+        
+        // Ensure socialMediaLinks is always an array to prevent client-side .map() crashes
+        socialMediaLinks: Array.isArray(lead.socialMediaLinks) ? lead.socialMediaLinks : [],
+
+        // Ensure critical string fields are never null/undefined, which can break front-end rendering
+        contactName: lead.contactName || "N/A",
+        email: lead.email || "N/A",
+        phoneNumber: lead.phoneNumber || "N/A",
+        website: lead.website || "",
+        transactionStage: lead.transactionStage || "N/A",
+        geoDetail: lead.geoDetail || "N/A",
+        // Other descriptive fields
+        description: lead.description || "",
+        insights: lead.insights || "",
+        suggestedAction: lead.suggestedAction || "",
+        draftPitch: lead.draftPitch || "",
+        socialSignal: lead.socialSignal || "",
+        keyPainPoint: lead.keyPainPoint || "",
     }));
     // ------------------------------------------------------------------------------------------
     
