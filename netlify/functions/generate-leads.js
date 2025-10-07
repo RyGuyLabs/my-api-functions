@@ -189,6 +189,9 @@ async function generateGeminiLeads(query, systemInstruction) {
 
 	let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
 
+    // *** NEW DEBUG LOG: Log raw output before parsing ***
+    console.error("Gemini RAW Output (Pre-parse):", raw);
+
 	// --- PREMIUM UPGRADE --- Robust JSON recovery & sanitization
 	try {
 		// Basic attempt
@@ -206,12 +209,32 @@ async function generateGeminiLeads(query, systemInstruction) {
 		return parsed;
 	} catch (e) {
 		// Attempt to clean common wrappers and escape problems
+        // *** ENHANCED RECOVERY LOGIC: Strip Markdown fences and re-attempt parsing ***
 		try {
-			// This part was cut off in your provided snippet, assuming it handles JSON recovery
-            console.error("Gemini raw response was invalid JSON. Attempting recovery...");
-            return [];
+            console.error("Gemini raw response was invalid JSON. Attempting recovery by stripping wrappers...");
+            // Remove markdown wrappers (e.g., ```json\n[\n...) and attempt parsing again
+            let cleanedRaw = raw
+                .replace(/^```json\s*/, '') // Remove starting ```json
+                .replace(/```\s*$/, '')      // Remove trailing ```
+                .trim();
+                
+            let parsed = JSON.parse(cleanedRaw);
+            
+            // Ensure array 
+            if (!Array.isArray(parsed)) parsed = [parsed];
+            
+            // Sanitization pass (trim strings)
+            parsed = parsed.map(item => {
+                if (!item || typeof item !== 'object') return {};
+                return Object.keys(item).reduce((acc, k) => {
+                    acc[k] = (typeof item[k] === 'string') ? item[k].trim().replace(/\s{2,}/g, ' ') : item[k];
+                    return acc;
+                }, {});
+            });
+            return parsed;
+
 		} catch (e) {
-            console.error("Failed to parse and clean Gemini response:", e.message);
+            console.error("Failed to parse and clean Gemini response, even after stripping wrappers:", e.message);
 			return [];
 		}
 	}
