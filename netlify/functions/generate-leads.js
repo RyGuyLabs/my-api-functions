@@ -187,9 +187,12 @@ async function generateGeminiLeads(query, systemInstruction) {
 	);
 	const result = await response.json();
 
+    // *** NEW CRITICAL DEBUG LOG: Log the full JSON response from the API ***
+    console.error("Gemini FULL Response:", JSON.stringify(result, null, 2));
+
 	let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
 
-    // *** NEW DEBUG LOG: Log raw output before parsing ***
+    // *** EXISTING DEBUG LOG: Log raw output before parsing ***
     console.error("Gemini RAW Output (Pre-parse):", raw);
 
 	// --- PREMIUM UPGRADE --- Robust JSON recovery & sanitization
@@ -269,7 +272,7 @@ async function runLeadGenerationJob(requestBody) {
     // 4. Prepare the Grounded Prompt for Gemini
     const searchContext = searchResults.map(item => 
         `{Name: ${item.name}, Website: ${item.website}, Context: ${item.description}}`
-    ).join('\n---\n');
+    ).join('\n-\n'); // Changed separator for prompt clarity
 
     const geminiQuery = 
         `Analyze the following context snippets for highly-qualified B2B leads, or generate similar leads if the context is insufficient. ` +
