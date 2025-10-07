@@ -382,7 +382,8 @@ exports.background = async (event, context) => {
         console.error("Error in background handler:", error);
         return {
             statusCode: 500,
+            // FIX: Removed the extra closing parenthesis ')' after JSON.stringify
             body: JSON.stringify({ error: `Background job failed: ${error.message}` })
-        });
+        };
     }
 };
