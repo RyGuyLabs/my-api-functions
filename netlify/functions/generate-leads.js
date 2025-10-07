@@ -32,7 +32,7 @@ const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 // --- PREMIUM UPGRADE --- Feature toggles & env-friendly settings
 const IS_TEST_MODE = process.env.TEST_MODE === 'true';
 const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
-// ALLOWED_ORIGIN MUST be set to the CLIENT'S domain (e.g., 'https://www.ryguylabs.com').
+// ALLOWED_ORIGIN MUST be set to the CLIENT'S domain (e.g., 'https://www.ryguylabs.com' or 'https://my-squarespace-site.squarespace.com').
 // It must NOT be set to the function URL itself. Set to '*' for all origins (less secure).
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const QUICK_JOB_TIMEOUT_MS = 10000; // keep fail-fast for sync handler (10s)
@@ -217,21 +217,51 @@ async function generateGeminiLeads(query, systemInstruction) {
 	}
 }
 
-// Placeholder for your main lead generation logic (assuming it was cut off)
+// Replaced placeholder with actual lead generation flow
 async function runLeadGenerationJob(requestBody) {
-    // In a real implementation, this would orchestrate the googleSearch and generateGeminiLeads calls
-    // based on the query parameters in requestBody.
+    
+    // 1. Extract necessary data from the request body
+    const { userPrompt, systemInstruction, filters } = requestBody;
     
     // *** NEW LOGGING: CONFIRM WE REACHED THE SLOW EXECUTION PART ***
     console.log("[LeadJob] Starting network calls for leads. Expected long duration (>100ms). Body:", requestBody);
 
-    debugLog("Running simulated lead generation job with body:", requestBody);
+    // 2. Construct a Search Query based on the filters
+    const searchTerms = [
+        filters.industry,
+        // Use "employees" to make the size range clearer for Google Search
+        filters.size ? `${filters.size} employees` : '', 
+        filters.location,
+        // Use the signal type as a key search term (e.g., "Funding" or "Hiring")
+        filters.signal
+    ].filter(Boolean).join(' ');
 
-    // Mock successful lead generation results
-    return [
-        { name: "Global Marketing Co.", website: "https://global.com", qualityScore: "A", suggestedAction: "Pitch SEO" },
-        { name: "Local Builders LLC", website: "https://builders.com", qualityScore: "B", suggestedAction: "Offer Adwords" },
-    ];
+    // 3. Run Google Search for grounding (Max 3 results for sync handler)
+    const searchResults = await googleSearch(searchTerms, 3); 
+
+    if (searchResults.length === 0) {
+        console.warn(`[LeadJob] No initial search results found for query: "${searchTerms}". Asking Gemini for general leads.`);
+    }
+
+    // 4. Prepare the Grounded Prompt for Gemini
+    const searchContext = searchResults.map(item => 
+        `{Name: ${item.name}, Website: ${item.website}, Context: ${item.description}}`
+    ).join('\n---\n');
+
+    const geminiQuery = 
+        `Analyze the following context snippets for highly-qualified B2B leads, or generate similar leads if the context is insufficient. ` +
+        `Ensure the final list strictly follows the required JSON schema, is qualified based on the provided intent filters, and contains exactly 3 leads. ` +
+        `The output must ONLY be the JSON array.\n\n` +
+        `SEARCH CONTEXT:\n${searchContext}\n\n` +
+        `Original User Request: ${userPrompt}`;
+        
+    // 5. Generate Leads with Gemini
+    const leads = await generateGeminiLeads(geminiQuery, systemInstruction);
+    
+    console.log(`[LeadJob] Successfully generated ${leads.length} leads.`);
+    
+    // 6. Return the generated leads
+    return leads;
 }
 
 
