@@ -32,7 +32,7 @@ const GOOGLE_SEARCH_URL = 'https://www.googleapis.com/customsearch/v1';
 // --- PREMIUM UPGRADE --- Feature toggles & env-friendly settings
 const IS_TEST_MODE = process.env.TEST_MODE === 'true';
 const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
-// ALLOWED_ORIGIN MUST be set to the CLIENT'S domain (e.g., 'https://www.ryguylabs.com' or 'https://my-squarespace-site.squarespace.com').
+// ALLOWED_ORIGIN MUST be set to the CLIENT'S domain (e.g., 'https://www.ryguylabs.com').
 // It must NOT be set to the function URL itself. Set to '*' for all origins (less secure).
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const QUICK_JOB_TIMEOUT_MS = 10000; // keep fail-fast for sync handler (10s)
@@ -221,6 +221,10 @@ async function generateGeminiLeads(query, systemInstruction) {
 async function runLeadGenerationJob(requestBody) {
     // In a real implementation, this would orchestrate the googleSearch and generateGeminiLeads calls
     // based on the query parameters in requestBody.
+    
+    // *** NEW LOGGING: CONFIRM WE REACHED THE SLOW EXECUTION PART ***
+    console.log("[LeadJob] Starting network calls for leads. Expected long duration (>100ms). Body:", requestBody);
+
     debugLog("Running simulated lead generation job with body:", requestBody);
 
     // Mock successful lead generation results
@@ -255,7 +259,10 @@ exports.handler = async (event, context) => {
             body: JSON.stringify({ error: 'Method Not Allowed. Only POST requests accepted.' })
         };
     }
-    
+
+    // *** NEW LOGGING: CONFIRM WE ARE PAST THE OPTIONS/METHOD CHECKS ***
+    debugLog("[Handler] Processing POST request. Parsing body...");
+
     let requestBody;
     try {
         requestBody = JSON.parse(event.body);
