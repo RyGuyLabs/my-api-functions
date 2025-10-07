@@ -188,8 +188,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 	);
 	const result = await response.json();
 
-    // *** NEW CRITICAL DEBUG LOG: Log the full JSON response from the API ***
-    console.error("Gemini FULL Response:", JSON.stringify(result, null, 2));
+    // REMOVED: Gemini FULL Response log which served its debugging purpose
 
 	let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
 
@@ -283,7 +282,16 @@ async function runLeadGenerationJob(requestBody) {
         `Original User Request: ${userPrompt}`;
         
     // 5. Generate Leads with Gemini
-    const leads = await generateGeminiLeads(geminiQuery, systemInstruction);
+    let leads = await generateGeminiLeads(geminiQuery, systemInstruction);
+    
+    // --- POST-PROCESSING: Convert qualityScore string to number for client-side consumption ---
+    // The front-end is likely expecting a number for sorting/validation.
+    leads = leads.map(lead => ({
+        ...lead,
+        // Convert the string-based score (e.g., "92") to a number (e.g., 92)
+        qualityScore: parseInt(lead.qualityScore, 10) || 0,
+    }));
+    // ------------------------------------------------------------------------------------------
     
     console.log(`[LeadJob] Successfully generated ${leads.length} leads.`);
     
@@ -375,6 +383,6 @@ exports.background = async (event, context) => {
         return {
             statusCode: 500,
             body: JSON.stringify({ error: `Background job failed: ${error.message}` })
-        };
+        });
     }
 };
