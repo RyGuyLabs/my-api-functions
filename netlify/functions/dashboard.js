@@ -87,7 +87,7 @@ ${goalsText}
 
     // Use native `fetch` which is available in Netlify's Node.js environment
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${process.env.FIRST_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-latest:generateContent?key=${process.env.FIRST_API_KEY}`,
       {
         method: "POST",
         headers: {
