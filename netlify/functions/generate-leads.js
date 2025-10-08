@@ -312,6 +312,11 @@ async function runLeadGenerationJob(requestBody) {
 	}));
 	// ------------------------------------------------------------------------------------------
 
+    // --- ADDED: Check for Zero Leads and Throw Specific Error for Client Feedback ---
+    if (leads.length === 0) {
+        throw new Error(`Gemini failed to generate any qualified leads based on the provided criteria. Search terms used: "${searchTerms}". Please broaden your criteria or try different keywords.`);
+    }
+
 	console.log(`[LeadJob] Successfully generated ${leads.length} leads.`);
 
 	// 6. Return the generated leads
