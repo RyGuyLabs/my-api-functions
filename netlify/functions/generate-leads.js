@@ -42,12 +42,12 @@ const BACKOFF_BASE_DELAY = 500;
 // CORS FIX: Define standard headers for all responses
 // -------------------------
 const HEADERS = {
-    // *** THIS IS THE KEY TO FIXING THE CORS ERROR ***
-    'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    // Allow Content-Type header (needed for sending JSON) and any other common headers
-    'Access-Control-Allow-Headers': 'Content-Type, X-Amz-Date, Authorization, X-Api-Key, X-Amz-Security-Token, X-Amz-User-Agent',
-    'Content-Type': 'application/json'
+	// *** THIS IS THE KEY TO FIXING THE CORS ERROR ***
+	'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+	'Access-Control-Allow-Methods': 'POST, OPTIONS',
+	// Allow Content-Type header (needed for sending JSON) and any other common headers
+	'Access-Control-Allow-Headers': 'Content-Type, X-Amz-Date, Authorization, X-Api-Key, X-Amz-Security-Token, X-Amz-User-Agent',
+	'Content-Type': 'application/json'
 };
 // -------------------------
 
@@ -96,11 +96,11 @@ const withBackoff = async (fn, maxRetries = 4, baseDelay = BACKOFF_BASE_DELAY) =
 };
 
 // -------------------------
-// Enrichment & Quality Helpers (Omitting original large functions for brevity, 
+// Enrichment & Quality Helpers (Omitting original large functions for brevity,
 // assuming they remain the same)
 // -------------------------
-// NOTE: I'm cutting off the rest of the enrichment helpers (checkWebsiteStatus, hasMX, enrichEmail, etc.) 
-// and the constants (PERSONA_KEYWORDS, NEGATIVE_FILTERS) to fit within the file size limit, 
+// NOTE: I'm cutting off the rest of the enrichment helpers (checkWebsiteStatus, hasMX, enrichEmail, etc.)
+// and the constants (PERSONA_KEYWORDS, NEGATIVE_FILTERS) to fit within the file size limit,
 // but they remain as you originally defined them.
 
 // -------------------------
@@ -115,7 +115,8 @@ async function googleSearch(query, numResults = 3) {
 	const url = `${GOOGLE_SEARCH_URL}?key=${SEARCH_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numResults}`;
 	debugLog(`[Google Search] Sending Query: ${query}`);
 	try {
-		const response = await withBackoff(() => fetchWithTimeout(url, {}, QUICK_JOB_TIMEOUT_MS), 1, 500);
+        // --- APPLIED CHANGE: Increased max retries from 1 to 2 for resilience ---
+		const response = await withBackoff(() => fetchWithTimeout(url, {}, QUICK_JOB_TIMEOUT_MS), 2, 500);
 		const data = await response.json();
 		if (data.error) {
 			console.error("Google Custom Search API Error:", data.error);
@@ -143,7 +144,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 	}
 
 	const responseSchema = { /* ... (schema definition remains) */
-        type: "ARRAY",
+		type: "ARRAY",
 		items: {
 			type: "OBJECT",
 			properties: {
@@ -164,7 +165,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 				geoDetail: { type: "STRING" }
 			}
 		}
-    };
+	};
 
 	const payload = {
 		contents: [{ parts: [{ text: query }] }],
@@ -172,7 +173,7 @@ async function generateGeminiLeads(query, systemInstruction) {
 		generationConfig: {
 			temperature: 0.2,
 			// *** FIX: Increased token limit from 1024 to 4096 to prevent MAX_TOKENS cutoff ***
-			maxOutputTokens: 4096, 
+			maxOutputTokens: 4096,
 			responseMimeType: "application/json",
 			responseSchema: responseSchema
 		}
@@ -188,12 +189,12 @@ async function generateGeminiLeads(query, systemInstruction) {
 	);
 	const result = await response.json();
 
-    // REMOVED: Gemini FULL Response log which served its debugging purpose
+	// REMOVED: Gemini FULL Response log which served its debugging purpose
 
 	let raw = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
 
-    // *** EXISTING DEBUG LOG: Log raw output before parsing ***
-    console.error("Gemini RAW Output (Pre-parse):", raw);
+	// *** EXISTING DEBUG LOG: Log raw output before parsing ***
+	console.error("Gemini RAW Output (Pre-parse):", raw);
 
 	// --- PREMIUM UPGRADE --- Robust JSON recovery & sanitization
 	try {
@@ -212,32 +213,32 @@ async function generateGeminiLeads(query, systemInstruction) {
 		return parsed;
 	} catch (e) {
 		// Attempt to clean common wrappers and escape problems
-        // *** ENHANCED RECOVERY LOGIC: Strip Markdown fences and re-attempt parsing ***
+		// *** ENHANCED RECOVERY LOGIC: Strip Markdown fences and re-attempt parsing ***
 		try {
-            console.error("Gemini raw response was invalid JSON. Attempting recovery by stripping wrappers...");
-            // Remove markdown wrappers (e.g., ```json\n[\n...) and attempt parsing again
-            let cleanedRaw = raw
-                .replace(/^```json\s*/, '') // Remove starting ```json
-                .replace(/```\s*$/, '')      // Remove trailing ```
-                .trim();
-                
-            let parsed = JSON.parse(cleanedRaw);
-            
-            // Ensure array 
-            if (!Array.isArray(parsed)) parsed = [parsed];
-            
-            // Sanitization pass (trim strings)
-            parsed = parsed.map(item => {
-                if (!item || typeof item !== 'object') return {};
-                return Object.keys(item).reduce((acc, k) => {
-                    acc[k] = (typeof item[k] === 'string') ? item[k].trim().replace(/\s{2,}/g, ' ') : item[k];
-                    return acc;
-                }, {});
-            });
-            return parsed;
+			console.error("Gemini raw response was invalid JSON. Attempting recovery by stripping wrappers...");
+			// Remove markdown wrappers (e.g., ```json\n[\n...) and attempt parsing again
+			let cleanedRaw = raw
+				.replace(/^```json\s*/, '') // Remove starting ```json
+				.replace(/```\s*$/, '')    // Remove trailing ```
+				.trim();
+
+			let parsed = JSON.parse(cleanedRaw);
+
+			// Ensure array
+			if (!Array.isArray(parsed)) parsed = [parsed];
+
+			// Sanitization pass (trim strings)
+			parsed = parsed.map(item => {
+				if (!item || typeof item !== 'object') return {};
+				return Object.keys(item).reduce((acc, k) => {
+					acc[k] = (typeof item[k] === 'string') ? item[k].trim().replace(/\s{2,}/g, ' ') : item[k];
+					return acc;
+				}, {});
+			});
+			return parsed;
 
 		} catch (e) {
-            console.error("Failed to parse and clean Gemini response, even after stripping wrappers:", e.message);
+			console.error("Failed to parse and clean Gemini response, even after stripping wrappers:", e.message);
 			return [];
 		}
 	}
@@ -245,76 +246,76 @@ async function generateGeminiLeads(query, systemInstruction) {
 
 // Replaced placeholder with actual lead generation flow
 async function runLeadGenerationJob(requestBody) {
-    
-    // 1. Extract necessary data from the request body
-    const { userPrompt, systemInstruction, filters } = requestBody;
-    
-    // *** NEW LOGGING: CONFIRM WE REACHED THE SLOW EXECUTION PART ***
-    console.log("[LeadJob] Starting network calls for leads. Expected long duration (>100ms). Body:", requestBody);
 
-    // 2. Construct a Search Query based on the filters
-    const searchTerms = [
-        filters.industry,
-        // Use "employees" to make the size range clearer for Google Search
-        filters.size ? `${filters.size} employees` : '', 
-        filters.location,
-        // Use the signal type as a key search term (e.g., "Funding)
-        filters.signal
-    ].filter(Boolean).join(' ');
+	// 1. Extract necessary data from the request body
+	const { userPrompt, systemInstruction, filters } = requestBody;
 
-    // 3. Run Google Search for grounding (Max 3 results for sync handler)
-    const searchResults = await googleSearch(searchTerms, 3); 
+	// *** NEW LOGGING: CONFIRM WE REACHED THE SLOW EXECUTION PART ***
+	console.log("[LeadJob] Starting network calls for leads. Expected long duration (>100ms). Body:", requestBody);
 
-    if (searchResults.length === 0) {
-        console.warn(`[LeadJob] No initial search results found for query: "${searchTerms}". Asking Gemini for general leads.`);
-    }
+	// 2. Construct a Search Query based on the filters
+	const searchTerms = [
+		filters.industry,
+		// Use "employees" to make the size range clearer for Google Search
+		filters.size ? `${filters.size} employees` : '',
+		filters.location,
+		// Use the signal type as a key search term (e.g., "Funding)
+		filters.signal
+	].filter(Boolean).join(' ');
 
-    // 4. Prepare the Grounded Prompt for Gemini
-    const searchContext = searchResults.map(item => 
-        `{Name: ${item.name}, Website: ${item.website}, Context: ${item.description}}`
-    ).join('\n-\n'); // Changed separator for prompt clarity
+	// 3. Run Google Search for grounding (Max 3 results for sync handler)
+	const searchResults = await googleSearch(searchTerms, 3);
 
-    const geminiQuery = 
-        `Analyze the following context snippets for highly-qualified B2B leads, or generate similar leads if the context is insufficient. ` +
-        `Ensure the final list strictly follows the required JSON schema, is qualified based on the provided intent filters, and contains exactly 3 leads. ` +
-        `The output must ONLY be the JSON array.\n\n` +
-        `SEARCH CONTEXT:\n${searchContext}\n\n` +
-        `Original User Request: ${userPrompt}`;
-        
-    // 5. Generate Leads with Gemini
-    let leads = await generateGeminiLeads(geminiQuery, systemInstruction);
-    
-    // --- POST-PROCESSING: Convert qualityScore string to number and ensure required fields are present/non-null for client-side consumption ---
-    // The front-end expects numbers for sorting (qualityScore) and non-null arrays for mapping (socialMediaLinks).
-    leads = leads.map(lead => ({
-        ...lead,
-        // Ensure qualityScore is an integer (default 0)
-        qualityScore: parseInt(lead.qualityScore, 10) || 0,
-        
-        // Ensure socialMediaLinks is always an array to prevent client-side .map() crashes
-        socialMediaLinks: Array.isArray(lead.socialMediaLinks) ? lead.socialMediaLinks : [],
+	if (searchResults.length === 0) {
+		console.warn(`[LeadJob] No initial search results found for query: "${searchTerms}". Asking Gemini for general leads.`);
+	}
 
-        // Ensure critical string fields are never null/undefined, which can break front-end rendering
-        contactName: lead.contactName || "N/A",
-        email: lead.email || "N/A",
-        phoneNumber: lead.phoneNumber || "N/A",
-        website: lead.website || "",
-        transactionStage: lead.transactionStage || "N/A",
-        geoDetail: lead.geoDetail || "N/A",
-        // Other descriptive fields
-        description: lead.description || "",
-        insights: lead.insights || "",
-        suggestedAction: lead.suggestedAction || "",
-        draftPitch: lead.draftPitch || "",
-        socialSignal: lead.socialSignal || "",
-        keyPainPoint: lead.keyPainPoint || "",
-    }));
-    // ------------------------------------------------------------------------------------------
-    
-    console.log(`[LeadJob] Successfully generated ${leads.length} leads.`);
-    
-    // 6. Return the generated leads
-    return leads;
+	// 4. Prepare the Grounded Prompt for Gemini
+	const searchContext = searchResults.map(item =>
+		`{Name: ${item.name}, Website: ${item.website}, Context: ${item.description}}`
+	).join('\n-\n'); // Changed separator for prompt clarity
+
+	const geminiQuery =
+		`Analyze the following context snippets for highly-qualified B2B leads, or generate similar leads if the context is insufficient. ` +
+		`Ensure the final list strictly follows the required JSON schema, is qualified based on the provided intent filters, and contains exactly 3 leads. ` +
+		`The output must ONLY be the JSON array.\n\n` +
+		`SEARCH CONTEXT:\n${searchContext}\n\n` +
+		`Original User Request: ${userPrompt}`;
+
+	// 5. Generate Leads with Gemini
+	let leads = await generateGeminiLeads(geminiQuery, systemInstruction);
+
+	// --- POST-PROCESSING: Convert qualityScore string to number and ensure required fields are present/non-null for client-side consumption ---
+	// The front-end expects numbers for sorting (qualityScore) and non-null arrays for mapping (socialMediaLinks).
+	leads = leads.map(lead => ({
+		...lead,
+		// Ensure qualityScore is an integer (default 0)
+		qualityScore: parseInt(lead.qualityScore, 10) || 0,
+
+		// Ensure socialMediaLinks is always an array to prevent client-side .map() crashes
+		socialMediaLinks: Array.isArray(lead.socialMediaLinks) ? lead.socialMediaLinks : [],
+
+		// Ensure critical string fields are never null/undefined, which can break front-end rendering
+		contactName: lead.contactName || "N/A",
+		email: lead.email || "N/A",
+		phoneNumber: lead.phoneNumber || "N/A",
+		website: lead.website || "",
+		transactionStage: lead.transactionStage || "N/A",
+		geoDetail: lead.geoDetail || "N/A",
+		// Other descriptive fields
+		description: lead.description || "",
+		insights: lead.insights || "",
+		suggestedAction: lead.suggestedAction || "",
+		draftPitch: lead.draftPitch || "",
+		socialSignal: lead.socialSignal || "",
+		keyPainPoint: lead.keyPainPoint || "",
+	}));
+	// ------------------------------------------------------------------------------------------
+
+	console.log(`[LeadJob] Successfully generated ${leads.length} leads.`);
+
+	// 6. Return the generated leads
+	return leads;
 }
 
 
@@ -322,86 +323,86 @@ async function runLeadGenerationJob(requestBody) {
 // Main Handler (Synchronous - max 10s)
 // -------------------------
 exports.handler = async (event, context) => {
-    debugLog(`[Handler] Received ${event.httpMethod} request.`);
+	debugLog(`[Handler] Received ${event.httpMethod} request.`);
 
-    // 1. Handle CORS Preflight (OPTIONS) - CRITICAL STEP
-    if (event.httpMethod === 'OPTIONS') {
-        debugLog("[Handler] Handling OPTIONS preflight request.");
-        return {
-            statusCode: 204, // 204 No Content is standard for successful preflights
-            headers: HEADERS,
-            body: ''
-        };
-    }
-    
-    // 2. Enforce POST method
-    if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            headers: HEADERS,
-            body: JSON.stringify({ error: 'Method Not Allowed. Only POST requests accepted.' })
-        };
-    }
+	// 1. Handle CORS Preflight (OPTIONS) - CRITICAL STEP
+	if (event.httpMethod === 'OPTIONS') {
+		debugLog("[Handler] Handling OPTIONS preflight request.");
+		return {
+			statusCode: 204, // 204 No Content is standard for successful preflights
+			headers: HEADERS,
+			body: ''
+		};
+	}
 
-    // *** NEW LOGGING: CONFIRM WE ARE PAST THE OPTIONS/METHOD CHECKS ***
-    debugLog("[Handler] Processing POST request. Parsing body...");
+	// 2. Enforce POST method
+	if (event.httpMethod !== 'POST') {
+		return {
+			statusCode: 405,
+			headers: HEADERS,
+			body: JSON.stringify({ error: 'Method Not Allowed. Only POST requests accepted.' })
+		};
+	}
 
-    let requestBody;
-    try {
-        requestBody = JSON.parse(event.body);
-    } catch (e) {
-        return {
-            statusCode: 400,
-            headers: HEADERS,
-            body: JSON.stringify({ error: 'Invalid JSON body provided.' })
-        };
-    }
-    
-    // 3. Execute main logic
-    try {
-        const leadResults = await runLeadGenerationJob(requestBody);
+	// *** NEW LOGGING: CONFIRM WE ARE PAST THE OPTIONS/METHOD CHECKS ***
+	debugLog("[Handler] Processing POST request. Parsing body...");
 
-        return {
-            statusCode: 200,
-            headers: HEADERS, // Apply CORS headers to success response
-            body: JSON.stringify({ 
-                status: "success", 
-                results: leadResults 
-            })
-        };
-        
-    } catch (error) {
-        console.error("Fatal Error in handler:", error);
-        return {
-            statusCode: 500,
-            headers: HEADERS, // Apply CORS headers to error response
-            body: JSON.stringify({ 
-                error: `Internal Server Error: ${error.message}` 
-            })
-        };
-    }
+	let requestBody;
+	try {
+		requestBody = JSON.parse(event.body);
+	} catch (e) {
+		return {
+			statusCode: 400,
+			headers: HEADERS,
+			body: JSON.stringify({ error: 'Invalid JSON body provided.' })
+		};
+	}
+
+	// 3. Execute main logic
+	try {
+		const leadResults = await runLeadGenerationJob(requestBody);
+
+		return {
+			statusCode: 200,
+			headers: HEADERS, // Apply CORS headers to success response
+			body: JSON.stringify({
+				status: "success",
+				results: leadResults
+			})
+		};
+
+	} catch (error) {
+		console.error("Fatal Error in handler:", error);
+		return {
+			statusCode: 500,
+			headers: HEADERS, // Apply CORS headers to error response
+			body: JSON.stringify({
+				error: `Internal Server Error: ${error.message}`
+			})
+		};
+	}
 };
 
 // -------------------------
 // Background Handler (Asynchronous)
 // -------------------------
 exports.background = async (event, context) => {
-    // This function runs outside the browser context, so CORS headers are not needed here.
-    try {
-        const requestBody = JSON.parse(event.body);
-        // ... (Your long-running logic for unlimited leads goes here)
-        console.log("Background job started for:", requestBody);
+	// This function runs outside the browser context, so CORS headers are not needed here.
+	try {
+		const requestBody = JSON.parse(event.body);
+		// ... (Your long-running logic for unlimited leads goes here)
+		console.log("Background job started for:", requestBody);
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ message: "Background job queued successfully." })
-        };
-    } catch (error) {
-        console.error("Error in background handler:", error);
-        return {
-            statusCode: 500,
-            // FIX: Removed the extra closing parenthesis ')' after JSON.stringify
-            body: JSON.stringify({ error: `Background job failed: ${error.message}` })
-        };
-    }
+		return {
+			statusCode: 200,
+			body: JSON.stringify({ message: "Background job queued successfully." })
+		};
+	} catch (error) {
+		console.error("Error in background handler:", error);
+		return {
+			statusCode: 500,
+			// FIX: Removed the extra closing parenthesis ')' after JSON.stringify
+			body: JSON.stringify({ error: `Background job failed: ${error.message}` })
+		};
+	}
 };
