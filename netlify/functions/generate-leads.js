@@ -91,9 +91,10 @@ exports.handler = async (event) => {
     // Using '*' here ensures the header is definitely returned, overriding potential
     // Netlify environment/caching issues with specific domains.
     const headers = {
-        'Access-Control-Allow-Origin': '*', // FIXED: Using wildcard as the last resort to ensure the header is returned
+        'Access-Control-Allow-Origin': '*', 
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        // EXPANDED HEADERS: Added Authorization and X-Requested-With to fix stubborn CORS preflight errors
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With', 
         'Access-Control-Max-Age': '86400', 
         'Content-Type': 'application/json',
     };
