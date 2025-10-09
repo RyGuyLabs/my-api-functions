@@ -87,12 +87,14 @@ function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
  * The main handler for the Netlify Function.
  */
 exports.handler = async (event) => {
-    // 1. Basic CORS headers for external access (Squarespace)
+    // 1. Basic CORS headers for external access (SQUARESACE/ANY ORIGIN)
+    // Using '*' here ensures the header is definitely returned, overriding potential
+    // Netlify environment/caching issues with specific domains.
     const headers = {
-        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', // FIXED: Explicitly allow the Squarespace domain for security
+        'Access-Control-Allow-Origin': '*', // FIXED: Using wildcard as the last resort to ensure the header is returned
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Max-Age': '86400', // Added: Caches preflight request for 24 hours to improve performance
+        'Access-Control-Max-Age': '86400', 
         'Content-Type': 'application/json',
     };
 
