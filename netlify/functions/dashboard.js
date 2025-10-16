@@ -1,3 +1,4 @@
+// Force deploy change
 // This is the main handler for your Netlify function.
 export async function handler(event, context) {
     // Handle CORS preflight requests
