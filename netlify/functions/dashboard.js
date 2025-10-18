@@ -1,7 +1,15 @@
-// Force deploy change
+import { GoogleGenAI } from "@google/genai";
+
+// Initialize the GoogleGenAI SDK.
+// It automatically uses the GEMINI_API_KEY environment variable.
+// Since you are using FIRST_API_KEY, we will pass it directly.
+const ai = new GoogleGenAI({ apiKey: process.env.FIRST_API_KEY });
+
 // This is the main handler for your Netlify function.
 export async function handler(event, context) {
-    // Handle CORS preflight requests
+    // -----------------------------------------------------
+    // 1. CORS Preflight Handling (Kept as is)
+    // -----------------------------------------------------
     if (event.httpMethod === "OPTIONS") {
         return {
             statusCode: 200,
@@ -14,8 +22,19 @@ export async function handler(event, context) {
         };
     }
 
-    // Parse the incoming request body
-    const { feature, data } = JSON.parse(event.body || "{}");
+    // -----------------------------------------------------
+    // 2. Parse Request and Map Prompts (Kept as is)
+    // -----------------------------------------------------
+    if (event.httpMethod !== "POST" || !event.body) {
+        return { statusCode: 405, body: "Method Not Allowed or Missing Body" };
+    }
+    
+    let feature, data;
+    try {
+        ({ feature, data } = JSON.parse(event.body));
+    } catch (e) {
+        return { statusCode: 400, body: "Invalid JSON in request body" };
+    }
 
     // This object maps the 'feature' name from Squarespace to the correct AI prompt
     const promptMap = {
@@ -86,67 +105,47 @@ ${goalsText}
     try {
         const apiPrompt = promptMap[feature](data);
 
-        // *** ABSOLUTE NECESSARY REVISION HERE ***
-        // Changed the model from `gemini-1.5-pro-latest` (or the initial `2.5-pro-latest`)
-        // to the stable, highly available `gemini-2.5-flash`.
-        const response = await fetch(
-            // Use `gemini-2.5-flash` for high availability and text generation
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.FIRST_API_KEY}`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
+        // -----------------------------------------------------
+        // 3. REVISED AI API CALL USING THE GOOGLE GENAI SDK
+        // -----------------------------------------------------
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash", // Using the approved model
+            contents: [
+                {
+                    role: "user",
+                    parts: [{ text: apiPrompt }],
                 },
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            parts: [
-                                {
-                                    text: apiPrompt,
-                                },
-                            ],
-                        },
-                    ],
-                    generationConfig: {
-                        maxOutputTokens: 600,
-                        temperature: 0.9,
-                    },
-                }),
-            }
-        );
+            ],
+            config: {
+                maxOutputTokens: 600,
+                temperature: 0.9,
+            },
+        });
 
-        // Check for a successful response from the Gemini API
-        if (!response.ok) {
-            const errorData = await response.text();
-            console.error("Gemini API Error:", errorData);
-            return {
-                statusCode: response.status,
-                headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-                body: JSON.stringify({ text: `Gemini API Error: ${errorData}` }),
-            };
-        }
+        // Extract the text using the SDK's safe response structure
+        const aiText = response.text;
 
-        const json = await response.json();
-
-        // Extract the text from the API response
-        const aiText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-
+        // -----------------------------------------------------
+        // 4. Return Success Response
+        // -----------------------------------------------------
         return {
             statusCode: 200,
             headers: {
+                // Ensure all CORS headers are present on success
                 "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
                 "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
             },
             body: JSON.stringify({
                 text: aiText || "No response received from AI.",
             }),
         };
     } catch (e) {
-        console.error("Server error:", e);
+        console.error("Server or AI SDK Error:", e);
         return {
             statusCode: 500,
             headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-            body: JSON.stringify({ text: "Server error: " + e.message }),
+            body: JSON.stringify({ text: "Server error: " + (e.message || "An unknown error occurred.") }),
         };
     }
 }
