@@ -37,6 +37,10 @@ exports.handler = async (event, context) => {
     
     // Ensure the API Key is set in Netlify environment variables
     const apiKey = process.env.FIRST_API_KEY; 
+    
+    // LOGGING ADDED: Check if the key was loaded. (The actual key is intentionally masked here)
+    console.log(`API Key status: ${apiKey ? 'Loaded' : 'MISSING'}. Length: ${apiKey ? apiKey.length : 0}`);
+
     if (!apiKey) {
         console.error("FIRST_API_KEY environment variable is not set.");
         return {
@@ -45,7 +49,8 @@ exports.handler = async (event, context) => {
         };
     }
 
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    // Use the stable GA model for Gemini 2.5 Flash
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     try {
         const { query, taskMode } = JSON.parse(event.body);
