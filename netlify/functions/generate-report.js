@@ -1,157 +1,164 @@
-/**
- * Serverless function to handle content generation using the Gemini API.
- * It dynamically configures the request based on the user's selected 'taskMode'.
- * This file is intended to be deployed as a Netlify Function or similar serverless environment.
- */
-// In a real environment, the API key should be loaded from secure environment variables.
-// The Canvas environment automatically provides the API key to the fetch call, so we leave it as an empty string.
-const API_KEY = ""; 
-const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
-const MAX_RETRIES = 5;
+// Netlify Function to securely proxy the request to the Gemini API
+const fetch = require('node-fetch');
 
-// --- Helper Functions ---
-
-// Exponential backoff retry for API call
-const fetchWithRetry = async (url, options) => {
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        try {
-            const response = await fetch(url, options);
-            if (response.ok) {
-                return response;
-            }
-            // If the response is not OK (e.g., 500, 429), retry with delay
-            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            await new Promise(resolve => setTimeout(resolve, delay));
-        } catch (error) {
-            // For network errors, retry with delay
-            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            if (i < MAX_RETRIES - 1) {
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                // On the last attempt, re-throw the error
-                throw new Error('Gemini API request failed after multiple retries.');
-            }
-        }
-    }
-    throw new Error('Gemini API request failed due to unknown persistent error.');
-};
-
-// Function to configure the model based on the user's selected task mode
-const getModelConfig = (taskMode) => {
-    const config = {
-        tools: [],
-        systemInstruction: ""
-    };
+// This function determines the system prompt and temperature based on the client's selected mode
+function getApiConfig(taskMode) {
+    let systemPrompt = "";
+    let temperature = 0.2; // Default for factual, grounded reports
 
     switch (taskMode) {
-        case 'report':
-            config.systemInstruction = "Act as a professional, factual, and detailed research analyst. Generate a comprehensive report based on the user query.";
-            config.tools = [{ "google_search": {} }]; // Use Search Grounding
-            break;
         case 'summary':
-            config.systemInstruction = "Act as a concise and precise executive summary writer. Extract only the key findings and deliver them in a structured, easy-to-read list format, followed by a brief overall conclusion.";
-            config.tools = [{ "google_search": {} }]; // Use Search Grounding
+            systemPrompt = "You are a senior executive assistant. Summarize the user's query into 3-5 high-impact, bulleted key points for a leadership audience. Be succinct and professional.";
+            temperature = 0.1; // Very low for strict, factual summarization
             break;
         case 'brainstorm':
-            config.systemInstruction = "Act as a creative and imaginative ideation specialist. Generate innovative concepts and ideas in a freeform, engaging manner. Do not use external search tools.";
-            // tools remain empty, disabling search grounding
+            systemPrompt = "You are a creative strategist. Generate multiple, diverse, and innovative ideas or solutions for the user's query. Use an encouraging and expansive tone.";
+            temperature = 0.9; // High for creativity
             break;
+        case 'report': // Default case
         default:
-            // Default safe mode if taskMode is unrecognized
-            config.systemInstruction = "You are a helpful and detailed assistant. Provide a clear response.";
-            config.tools = [{ "google_search": {} }];
+            systemPrompt = "You are a concise, insightful data analyst providing grounded reports based on the latest available information.";
+            temperature = 0.2;
             break;
     }
 
-    // Tools property should only be included if it has contents
-    if (config.tools.length === 0) {
-        delete config.tools;
+    return { systemPrompt, temperature };
+}
+
+// Helper function to implement exponential backoff and retry for fetch requests
+async function fetchWithRetry(url, options, maxRetries = 5) {
+    for (let i = 0; i < maxRetries; i++) {
+        // Calculate delay: 1s, 2s, 4s, 8s, 16s...
+        const delay = Math.pow(2, i) * 1000; 
+        
+        try {
+            const response = await fetch(url, options);
+
+            // Retry on 429 (Too Many Requests) or 5xx status codes
+            if (response.status === 429 || response.status >= 500) {
+                console.warn(`API request failed with status ${response.status}. Retrying in ${delay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+            }
+            
+            // For 2xx and 4xx status codes (like the 403), return the response immediately for error processing
+            return response;
+
+        } catch (error) {
+            console.error(`Fetch attempt ${i + 1} failed due to network error:`, error);
+            if (i < maxRetries - 1) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                // If it was a network error and we hit max retries, re-throw the error
+                throw new Error("Maximum retries reached for network request.");
+            }
+        }
     }
-    
-    return config;
-};
+    // This line should technically be unreachable
+    throw new Error("Exited retry loop unexpectedly.");
+}
 
-// --- Main Handler Function ---
 
-/**
- * Netlify Function handler.
- * @param {object} event - The event object from the serverless environment.
- */
-exports.handler = async (event) => {
+// Main handler for the Netlify Function
+exports.handler = async (event, context) => {
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
+        return {
+            statusCode: 405,
+            body: JSON.stringify({ message: "Method Not Allowed. Use POST." })
+        };
+    }
+    
+    // Ensure the API Key is set in Netlify environment variables
+    const apiKey = process.env.FIRST_API_KEY; 
+    
+    // LOGGING ADDED: Check if the key was loaded. (The actual key is intentionally masked here)
+    console.log(`API Key status: ${apiKey ? 'Loaded' : 'MISSING'}. Length: ${apiKey ? apiKey.length : 0}. If 403 persists, check key validity/restrictions.`);
+
+    if (!apiKey) {
+        console.error("FIRST_API_KEY environment variable is not set.");
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ message: "Server configuration error: API Key missing. Please set FIRST_API_KEY in Netlify environment variables." })
+        };
     }
 
-    let body;
+    // Use the stable GA model for Gemini 2.5 Flash
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
     try {
-        body = JSON.parse(event.body);
-    } catch (e) {
-        return { statusCode: 400, body: JSON.stringify({ message: 'Invalid JSON body' }) };
-    }
+        const { query, taskMode } = JSON.parse(event.body);
 
-    const { query, taskMode } = body;
-
-    if (!query) {
-        return { statusCode: 400, body: JSON.stringify({ message: 'Query parameter is missing' }) };
-    }
-
-    const modelConfig = getModelConfig(taskMode);
-
-    const payload = {
-        contents: [{ parts: [{ text: query }] }],
-        ...modelConfig // Spreads systemInstruction and optionally tools
-    };
-
-    try {
-        const response = await fetchWithRetry(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-        const candidate = result.candidates?.[0];
-
-        if (candidate && candidate.content?.parts?.[0]?.text) {
-            const text = candidate.content.parts[0].text;
-            let sources = [];
-            
-            // Extract grounding sources if available
-            const groundingMetadata = candidate.groundingMetadata;
-            if (groundingMetadata && groundingMetadata.groundingAttributions) {
-                sources = groundingMetadata.groundingAttributions
-                    .map(attribution => ({
-                        uri: attribution.web?.uri,
-                        title: attribution.web?.title,
-                    }))
-                    .filter(source => source.uri && source.title);
-            }
-
-            // Return success response to the client
+        if (!query) {
             return {
-                statusCode: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, sources })
-            };
-        } else {
-            // Handle cases where the API call succeeded but returned no text content
-            const errorMessage = "Gemini returned a response, but it contained no text.";
-            console.error(errorMessage, result);
-            return {
-                statusCode: 500,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: errorMessage })
+                statusCode: 400,
+                body: JSON.stringify({ message: "Missing required 'query' parameter." })
             };
         }
 
+        const { systemPrompt, temperature } = getApiConfig(taskMode);
+
+        // Construct the full Gemini API payload (including tools for grounding)
+        const geminiPayload = {
+            contents: [{ parts: [{ text: query }] }],
+            tools: [{ "google_search": {} }],
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+            generationConfig: {
+                temperature: temperature, 
+            }
+        };
+
+        // Call the Gemini API securely from the backend using retry logic
+        const geminiResponse = await fetchWithRetry(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiPayload)
+        });
+
+        const result = await geminiResponse.json();
+        const candidate = result.candidates?.[0];
+
+        if (!geminiResponse.ok || !candidate) {
+             console.error("Gemini API Error:", result);
+             return {
+                 statusCode: geminiResponse.status || 500,
+                 body: JSON.stringify({ 
+                    message: "Gemini API call failed.", 
+                    details: result.error?.message || "Check function logs." 
+                 })
+             };
+        }
+
+        const text = candidate.content.parts[0].text;
+        let sources = [];
+
+        // Extract and format grounding sources for the frontend
+        const groundingMetadata = candidate.groundingMetadata;
+        if (groundingMetadata && groundingMetadata.groundingAttributions) {
+            sources = groundingMetadata.groundingAttributions
+                .map(attribution => ({
+                    uri: attribution.web?.uri,
+                    title: attribution.web?.title,
+                }))
+                .filter(source => source.uri && source.title); 
+        }
+
+        // Send the final result back to the frontend
+        return {
+            statusCode: 200,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, sources })
+        };
+
     } catch (error) {
-        console.error("Gemini API Error:", error.message);
+        console.error('Netlify Function execution error:', error);
         return {
             statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: `Failed to communicate with the Gemini API: ${error.message}` })
+            body: JSON.stringify({ message: 'Internal Server Error processing request.' })
         };
     }
 };
