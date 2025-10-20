@@ -27,12 +27,23 @@ function getApiConfig(taskMode) {
 
 // Helper function to implement exponential backoff and retry for fetch requests
 async function fetchWithRetry(url, options, maxRetries = 5) {
+    const TIMEOUT_MS = 25000; // Hard timeout of 25 seconds for each attempt
+
     for (let i = 0; i < maxRetries; i++) {
+        // Create an AbortController for the current fetch attempt
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, TIMEOUT_MS);
+
         // Calculate delay: 1s, 2s, 4s, 8s, 16s...
         const delay = Math.pow(2, i) * 1000; 
         
         try {
-            const response = await fetch(url, options);
+            // Include the signal from the AbortController in the fetch options
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            
+            clearTimeout(timeoutId); // Clear the timeout if the request succeeds
 
             // Retry on 429 (Too Many Requests) or 5xx status codes
             if (response.status === 429 || response.status >= 500) {
@@ -43,15 +54,23 @@ async function fetchWithRetry(url, options, maxRetries = 5) {
                 }
             }
             
-            // For 2xx and 4xx status codes (like the 403), return the response immediately for error processing
+            // For 2xx and 4xx status codes, return the response immediately for error processing
             return response;
 
         } catch (error) {
-            console.error(`Fetch attempt ${i + 1} failed due to network error:`, error);
+            clearTimeout(timeoutId); // Clear the timeout on any error/abort
+            
+            // Check if the error was due to the explicit timeout abort
+            if (error.name === 'AbortError') {
+                console.error(`Fetch attempt ${i + 1} aborted after ${TIMEOUT_MS / 1000}s timeout. Retrying...`);
+            } else {
+                console.error(`Fetch attempt ${i + 1} failed due to network error:`, error);
+            }
+            
             if (i < maxRetries - 1) {
                 await new Promise(resolve => setTimeout(resolve, delay));
             } else {
-                // If it was a network error and we hit max retries, re-throw the error
+                // If it was a network error/timeout and we hit max retries, re-throw the error
                 throw new Error("Maximum retries reached for network request.");
             }
         }
