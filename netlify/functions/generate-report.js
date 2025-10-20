@@ -38,10 +38,10 @@ exports.handler = async (event, context) => {
     // Ensure the API Key is set in Netlify environment variables
     const apiKey = process.env.FIRST_API_KEY; 
     if (!apiKey) {
-        console.error("GEMINI_API_KEY environment variable is not set.");
+        console.error("FIRST_API_KEY environment variable is not set.");
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: "Server configuration error: API Key missing." })
+            body: JSON.stringify({ message: "Server configuration error: API Key missing. Please set FIRST_API_KEY in Netlify environment variables." })
         };
     }
 
