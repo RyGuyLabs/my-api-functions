@@ -1,19 +1,59 @@
-// Netlify Function to securely proxy the request to the Gemini API
 const fetch = require('node-fetch');
 
-// This function determines the system prompt and temperature based on the client's selected mode
-function getApiConfig(taskMode) {
+// This function acts as a secure proxy to the Gemini API,
+// keeping the API key hidden in Netlify environment variables.
+// The client passes 'query' and 'taskMode', and this serverless function
+// handles the authentication and dynamic prompt construction.
+exports.handler = async (event, context) => {
+    // 1. Get the API Key from Netlify Environment Variables
+    const apiKey = process.env.FIRST_API_KEY; 
+
+    if (!apiKey) {
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ message: "Server configuration error: FIRST_API_KEY environment variable is not set." }),
+        };
+    }
+
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            body: JSON.stringify({ message: "Method Not Allowed" }),
+        };
+    }
+
+    let body;
+    try {
+        body = JSON.parse(event.body);
+    } catch (e) {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ message: "Invalid JSON body provided." }),
+        };
+    }
+
+    const { query, taskMode } = body;
+
+    if (!query) {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ message: "Missing required field: query." }),
+        };
+    }
+
+    // --- 2. Dynamic Model Configuration based on taskMode ---
     let systemPrompt = "";
-    let temperature = 0.2; // Default for factual, grounded reports
+    let temperature = 0.2; 
+    const model = "gemini-2.5-flash-preview-09-2025";
 
     switch (taskMode) {
         case 'summary':
             systemPrompt = "You are a senior executive assistant. Summarize the user's query into 3-5 high-impact, bulleted key points for a leadership audience. Be succinct and professional.";
-            temperature = 0.1; // Very low for strict, factual summarization
+            temperature = 0.1;
             break;
         case 'brainstorm':
             systemPrompt = "You are a creative strategist. Generate multiple, diverse, and innovative ideas or solutions for the user's query. Use an encouraging and expansive tone.";
-            temperature = 0.9; // High for creativity
+            temperature = 0.9;
             break;
         case 'report': // Default case
         default:
@@ -21,141 +61,76 @@ function getApiConfig(taskMode) {
             temperature = 0.2;
             break;
     }
+    // ---------------------------------------------------------
 
-    return { systemPrompt, temperature };
-}
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-// Helper function to implement exponential backoff and retry for fetch requests
-async function fetchWithRetry(url, options, maxRetries = 5) {
-    const TIMEOUT_MS = 25000; // Hard timeout of 25 seconds for each attempt
+    const payload = {
+        contents: [{ parts: [{ text: query }] }],
+        // CRITICAL: Enabling Google Search grounding
+        tools: [{ "google_search": {} }],
+        systemInstruction: {
+            parts: [{ text: systemPrompt }]
+        },
+        generationConfig: {
+            temperature: temperature,
+        }
+    };
+    
+    // --- 3. Call the Gemini API with Internal Retry Logic ---
+    const maxRetries = 5;
+    let response;
 
     for (let i = 0; i < maxRetries; i++) {
-        // Create an AbortController for the current fetch attempt
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-        }, TIMEOUT_MS);
-
-        // Calculate delay: 1s, 2s, 4s, 8s, 16s...
-        const delay = Math.pow(2, i) * 1000; 
-        
         try {
-            // Include the signal from the AbortController in the fetch options
-            const response = await fetch(url, { ...options, signal: controller.signal });
-            
-            clearTimeout(timeoutId); // Clear the timeout if the request succeeds
+            response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-            // Retry on 429 (Too Many Requests) or 5xx status codes
-            if (response.status === 429 || response.status >= 500) {
-                console.warn(`API request failed with status ${response.status}. Retrying in ${delay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
-                if (i < maxRetries - 1) {
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    continue;
-                }
+            // If we get an OK or an error that isn't a rate limit, stop retrying
+            if (response.ok || response.status !== 429) {
+                break; 
             }
-            
-            // For 2xx and 4xx status codes, return the response immediately for error processing
-            return response;
 
+            // Handle rate limiting (429)
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            console.warn(`Gemini API rate limit hit. Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
         } catch (error) {
-            clearTimeout(timeoutId); // Clear the timeout on any error/abort
-            
-            // Check if the error was due to the explicit timeout abort
-            if (error.name === 'AbortError') {
-                console.error(`Fetch attempt ${i + 1} aborted after ${TIMEOUT_MS / 1000}s timeout. Retrying...`);
-            } else {
-                console.error(`Fetch attempt ${i + 1} failed due to network error:`, error);
+            // Log network error and continue to retry if not last attempt
+            console.error(`Attempt ${i + 1} failed (Network Error):`, error.message);
+            if (i === maxRetries - 1) {
+                throw new Error("Gemini API call failed after multiple retries due to persistent network issues.");
             }
-            
-            if (i < maxRetries - 1) {
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                // If it was a network error/timeout and we hit max retries, re-throw the error
-                throw new Error("Maximum retries reached for network request.");
-            }
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
-    }
-    // This line should technically be unreachable
-    throw new Error("Exited retry loop unexpectedly.");
-}
-
-
-// Main handler for the Netlify Function
-exports.handler = async (event, context) => {
-    // Only allow POST requests
-    if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            body: JSON.stringify({ message: "Method Not Allowed. Use POST." })
-        };
     }
     
-    // Ensure the API Key is set in Netlify environment variables
-    const apiKey = process.env.FIRST_API_KEY; 
-    
-    // LOGGING ADDED: Check if the key was loaded. (The actual key is intentionally masked here)
-    console.log(`API Key status: ${apiKey ? 'Loaded' : 'MISSING'}. Length: ${apiKey ? apiKey.length : 0}. If 403 persists, check key validity/restrictions.`);
-
-    if (!apiKey) {
-        console.error("FIRST_API_KEY environment variable is not set.");
+    if (!response || !response.ok) {
+        // Handle final failure response from the Gemini API
+        const errorBody = await response.json().catch(() => ({}));
+        const status = response ? response.status : 503;
+        const message = errorBody.error?.message || "Internal server error during API call.";
+        
         return {
-            statusCode: 500,
-            body: JSON.stringify({ message: "Server configuration error: API Key missing. Please set FIRST_API_KEY in Netlify environment variables." })
+            statusCode: status,
+            body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` }),
         };
     }
 
-    // Use the stable GA model for Gemini 2.5 Flash
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // --- 4. Process the successful Gemini Response ---
+    const result = await response.json();
+    const candidate = result.candidates?.[0];
 
-    try {
-        const { query, taskMode } = JSON.parse(event.body);
-
-        if (!query) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ message: "Missing required 'query' parameter." })
-            };
-        }
-
-        const { systemPrompt, temperature } = getApiConfig(taskMode);
-
-        // Construct the full Gemini API payload (including tools for grounding)
-        const geminiPayload = {
-            contents: [{ parts: [{ text: query }] }],
-            tools: [{ "google_search": {} }],
-            systemInstruction: {
-                parts: [{ text: systemPrompt }]
-            },
-            generationConfig: {
-                temperature: temperature, 
-            }
-        };
-
-        // Call the Gemini API securely from the backend using retry logic
-        const geminiResponse = await fetchWithRetry(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(geminiPayload)
-        });
-
-        const result = await geminiResponse.json();
-        const candidate = result.candidates?.[0];
-
-        if (!geminiResponse.ok || !candidate) {
-             console.error("Gemini API Error:", result);
-             return {
-                 statusCode: geminiResponse.status || 500,
-                 body: JSON.stringify({ 
-                    message: "Gemini API call failed.", 
-                    details: result.error?.message || "Check function logs." 
-                 })
-             };
-        }
-
+    if (candidate && candidate.content?.parts?.[0]?.text) {
         const text = candidate.content.parts[0].text;
+        
+        // Extract grounding sources
         let sources = [];
-
-        // Extract and format grounding sources for the frontend
         const groundingMetadata = candidate.groundingMetadata;
         if (groundingMetadata && groundingMetadata.groundingAttributions) {
             sources = groundingMetadata.groundingAttributions
@@ -166,18 +141,16 @@ exports.handler = async (event, context) => {
                 .filter(source => source.uri && source.title); 
         }
 
-        // Send the final result back to the frontend
+        // Return the clean, structured data to the frontend
         return {
             statusCode: 200,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text, sources })
+            body: JSON.stringify({ text, sources }),
         };
 
-    } catch (error) {
-        console.error('Netlify Function execution error:', error);
+    } else {
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: 'Internal Server Error processing request.' })
+            body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." }),
         };
     }
 };
