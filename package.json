@@ -7,8 +7,8 @@
     "marked": "^4.3.0",
     "node-fetch": "^3.3.2",
     "uuid": "^11.1.0",
-    "@google/generative-ai": "^0.24.1", // <-- RESTORED: For older functions like api-proxy.js
-    "@google/genai": "^1.0.0"          // <-- KEPT: For your new dashboard function
+    "@google/generative-ai": "^0.24.1",
+    "@google/genai": "^1.0.0"
   },
   "scripts": {
     "test": "jest"
