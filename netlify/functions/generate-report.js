@@ -44,7 +44,8 @@ exports.handler = async (event, context) => {
     // --- 2. Dynamic Model Configuration based on taskMode ---
     let systemPrompt = "";
     let temperature = 0.2; 
-    const model = "gemini-2.5-flash-preview-09-2025";
+    // CHANGED MODEL: Reverting to the generally available 'gemini-pro' model for testing key permissions.
+    const model = "gemini-pro";
 
     switch (taskMode) {
         case 'summary':
