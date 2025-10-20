@@ -25,6 +25,42 @@ function getApiConfig(taskMode) {
     return { systemPrompt, temperature };
 }
 
+// Helper function to implement exponential backoff and retry for fetch requests
+async function fetchWithRetry(url, options, maxRetries = 5) {
+    for (let i = 0; i < maxRetries; i++) {
+        // Calculate delay: 1s, 2s, 4s, 8s, 16s...
+        const delay = Math.pow(2, i) * 1000; 
+        
+        try {
+            const response = await fetch(url, options);
+
+            // Retry on 429 (Too Many Requests) or 5xx status codes
+            if (response.status === 429 || response.status >= 500) {
+                console.warn(`API request failed with status ${response.status}. Retrying in ${delay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+            }
+            
+            // For 2xx and 4xx status codes (like the 403), return the response immediately for error processing
+            return response;
+
+        } catch (error) {
+            console.error(`Fetch attempt ${i + 1} failed due to network error:`, error);
+            if (i < maxRetries - 1) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                // If it was a network error and we hit max retries, re-throw the error
+                throw new Error("Maximum retries reached for network request.");
+            }
+        }
+    }
+    // This line should technically be unreachable
+    throw new Error("Exited retry loop unexpectedly.");
+}
+
+
 // Main handler for the Netlify Function
 exports.handler = async (event, context) => {
     // Only allow POST requests
@@ -39,7 +75,7 @@ exports.handler = async (event, context) => {
     const apiKey = process.env.FIRST_API_KEY; 
     
     // LOGGING ADDED: Check if the key was loaded. (The actual key is intentionally masked here)
-    console.log(`API Key status: ${apiKey ? 'Loaded' : 'MISSING'}. Length: ${apiKey ? apiKey.length : 0}`);
+    console.log(`API Key status: ${apiKey ? 'Loaded' : 'MISSING'}. Length: ${apiKey ? apiKey.length : 0}. If 403 persists, check key validity/restrictions.`);
 
     if (!apiKey) {
         console.error("FIRST_API_KEY environment variable is not set.");
@@ -76,8 +112,8 @@ exports.handler = async (event, context) => {
             }
         };
 
-        // Call the Gemini API securely from the backend
-        const geminiResponse = await fetch(API_URL, {
+        // Call the Gemini API securely from the backend using retry logic
+        const geminiResponse = await fetchWithRetry(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(geminiPayload)
