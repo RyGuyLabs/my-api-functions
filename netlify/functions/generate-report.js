@@ -1,4 +1,5 @@
-const fetch = require('node-fetch');
+// Removed: const fetch = require('node-fetch'); 
+// Node.js environments (like Netlify functions) now support native 'fetch' globally.
 
 // Define CORS headers once for use in all responses (success and error)
 // This explicitly allows requests from your frontend domain.
@@ -105,6 +106,7 @@ exports.handler = async (event, context) => {
 
     for (let i = 0; i < maxRetries; i++) {
         try {
+            // Using native global fetch()
             response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
