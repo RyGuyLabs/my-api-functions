@@ -1,16 +1,35 @@
 const fetch = require('node-fetch');
 
+// Define CORS headers once for use in all responses (success and error)
+// This explicitly allows requests from your frontend domain.
+const CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "https://www.ryguylabs.com", // <-- FIX: Specify the exact allowed origin
+    "Access-Control-Allow-Methods": "POST, OPTIONS", // Allow POST and the preflight OPTIONS
+    "Access-Control-Allow-Headers": "Content-Type",
+};
+
 // This function acts as a secure proxy to the Gemini API,
 // keeping the API key hidden in Netlify environment variables.
 // The client passes 'query' and 'taskMode', and this serverless function
 // handles the authentication and dynamic prompt construction.
 exports.handler = async (event, context) => {
-    // 1. Get the API Key from Netlify Environment Variables
+
+    // 1. Handle Preflight OPTIONS request (REQUIRED for CORS)
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 204, // 204 No Content for a successful preflight
+            headers: CORS_HEADERS,
+            body: "",
+        };
+    }
+
+    // 2. Get the API Key from Netlify Environment Variables
     const apiKey = process.env.FIRST_API_KEY; 
 
     if (!apiKey) {
         return {
             statusCode: 500,
+            headers: CORS_HEADERS, // Include headers even on server error
             body: JSON.stringify({ message: "Server configuration error: FIRST_API_KEY environment variable is not set." }),
         };
     }
@@ -18,6 +37,7 @@ exports.handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
+            headers: CORS_HEADERS,
             body: JSON.stringify({ message: "Method Not Allowed" }),
         };
     }
@@ -28,6 +48,7 @@ exports.handler = async (event, context) => {
     } catch (e) {
         return {
             statusCode: 400,
+            headers: CORS_HEADERS,
             body: JSON.stringify({ message: "Invalid JSON body provided." }),
         };
     }
@@ -37,14 +58,14 @@ exports.handler = async (event, context) => {
     if (!query) {
         return {
             statusCode: 400,
+            headers: CORS_HEADERS,
             body: JSON.stringify({ message: "Missing required field: query." }),
         };
     }
 
-    // --- 2. Dynamic Model Configuration based on taskMode ---
+    // --- 3. Dynamic Model Configuration based on taskMode ---
     let systemPrompt = "";
     let temperature = 0.2; 
-    // CHANGED MODEL: Reverting to the generally available 'gemini-pro' model for testing key permissions.
     const model = "gemini-pro";
 
     switch (taskMode) {
@@ -78,7 +99,7 @@ exports.handler = async (event, context) => {
         }
     };
     
-    // --- 3. Call the Gemini API with Internal Retry Logic ---
+    // --- 4. Call the Gemini API with Internal Retry Logic ---
     const maxRetries = 5;
     let response;
 
@@ -119,11 +140,12 @@ exports.handler = async (event, context) => {
         
         return {
             statusCode: status,
+            headers: CORS_HEADERS, // Include headers on failure
             body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` }),
         };
     }
 
-    // --- 4. Process the successful Gemini Response ---
+    // --- 5. Process the successful Gemini Response ---
     const result = await response.json();
     const candidate = result.candidates?.[0];
 
@@ -145,12 +167,14 @@ exports.handler = async (event, context) => {
         // Return the clean, structured data to the frontend
         return {
             statusCode: 200,
+            headers: CORS_HEADERS, // <-- FIX: Include CORS headers on success
             body: JSON.stringify({ text, sources }),
         };
 
     } else {
         return {
             statusCode: 500,
+            headers: CORS_HEADERS,
             body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." }),
         };
     }
