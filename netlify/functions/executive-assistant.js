@@ -80,23 +80,30 @@ exports.handler = async (event) => {
         console.log("Incoming request body (parsed):", body);
         // --------------------------------------------------------------------------
         
-        const { model, payload } = body;
+        // FIX: Extract fields directly from the root of the body, as shown in the logs.
+        // If 'model' is missing (which the logs suggest), we use a strong default.
+        const { contents, tools, systemInstruction, generationConfig, model } = body;
+        
+        // Use the model from the body if present, otherwise use the stable default
+        const actualModel = model || 'gemini-2.5-flash-preview-09-2025';
 
-        if (!model || !payload || !payload.contents) {
+
+        // New validation check based on the actual request structure
+        if (!contents || !Array.isArray(contents) || contents.length === 0) {
             return {
                 statusCode: 400,
                 headers: CORS_HEADERS, // Include CORS headers
-                body: JSON.stringify({ error: "Missing required fields: model or payload (including contents)." }),
+                body: JSON.stringify({ error: "Missing required field: contents array in request body." }),
             };
         }
         
         // This is the call that uses the SDK which was initialized with the apiKey
         const response = await ai.models.generateContent({
-            model: model,
-            contents: payload.contents,
-            config: payload.generationConfig,
-            tools: payload.tools,
-            systemInstruction: payload.systemInstruction
+            model: actualModel, // Use the provided or default model
+            contents: contents,
+            config: generationConfig, // Now correctly pulling from root
+            tools: tools,
+            systemInstruction: systemInstruction // Now correctly pulling from root
         });
 
         // --- 4. Success Response: Merge Content-Type and CORS Headers ---
