@@ -74,7 +74,13 @@ exports.handler = async (event) => {
 
 
     try {
-        const { model, payload } = JSON.parse(event.body);
+        const body = JSON.parse(event.body);
+        
+        // --- DEBUGGING ADDITION: Log the incoming request body to Netlify logs ---
+        console.log("Incoming request body (parsed):", body);
+        // --------------------------------------------------------------------------
+        
+        const { model, payload } = body;
 
         if (!model || !payload || !payload.contents) {
             return {
