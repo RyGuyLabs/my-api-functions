@@ -11,9 +11,8 @@ exports.handler = async (event) => {
     // --- 1. Define Global CORS Headers ---
     // These headers must be included in ALL responses (OPTIONS, POST, and errors).
     const CORS_HEADERS = {
-        // Allowing '*' is the simplest way to solve this. For stricter security,
-        // replace '*' with 'https://www.ryguylabs.com'.
-        'Access-Control-Allow-Origin': '*',
+        // FIX: Replacing the wildcard '*' with the specific origin URL for stricter security.
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         // Critical: Allow the Content-Type and any custom headers (like X-Gemini-Model).
         'Access-Control-Allow-Headers': 'Content-Type, X-Gemini-Model',
