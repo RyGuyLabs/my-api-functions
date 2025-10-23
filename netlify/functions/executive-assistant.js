@@ -6,7 +6,8 @@ const { GoogleGenAI } = require('@google/genai');
 // The API Key MUST be set as a Netlify Environment Variable named FIRST_API_KEY
 const apiKey = process.env.FIRST_API_KEY;
 
-// Initialize the GoogleGenAI client (this is the recommended way to use the API in Node.js environments)
+// Initialize the GoogleGenAI client (note: this will fail if apiKey is undefined, 
+// but we handle that immediately below)
 const ai = new GoogleGenAI(apiKey);
 
 exports.handler = async (event) => {
@@ -18,11 +19,20 @@ exports.handler = async (event) => {
         };
     }
 
-    if (!apiKey) {
-        console.error("FIRST_API_KEY environment variable is not set.");
+    // --- CRITICAL DEBUGGING CHECK ---
+    if (!apiKey || apiKey.trim() === '') {
+        const errorMsg = "CRITICAL: The FIRST_API_KEY environment variable is missing or empty in Netlify settings.";
+        console.error(errorMsg);
+        
+        // Return a specific 500 status to the client
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "Server Configuration Error: API key (FIRST_API_KEY) is missing." }),
+            body: JSON.stringify({ 
+                error: "Server Configuration Error: API key is missing.",
+                log_message: errorMsg,
+                // Include this hint for the client
+                hint: "Please check your Netlify environment variables for FIRST_API_KEY." 
+            }),
         };
     }
 
@@ -36,10 +46,7 @@ exports.handler = async (event) => {
             };
         }
         
-        // Use the appropriate API method based on the model.
-        // gemini-2.5-flash-preview-tts needs generateContent
-        // The text models also use generateContent
-        
+        // This is the call that uses the SDK which was initialized with the apiKey
         const response = await ai.models.generateContent({
             model: model,
             contents: payload.contents,
@@ -61,7 +68,7 @@ exports.handler = async (event) => {
         return {
             statusCode: 500,
             body: JSON.stringify({ 
-                error: "Internal API Error", 
+                error: "Internal Gemini API Error", 
                 message: error.message 
             }),
         };
