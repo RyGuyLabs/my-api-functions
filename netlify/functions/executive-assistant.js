@@ -6,9 +6,9 @@ const { GoogleGenAI } = require('@google/genai');
 // The API Key MUST be set as a Netlify Environment Variable named FIRST_API_KEY
 const apiKey = process.env.FIRST_API_KEY;
 
-// Initialize the GoogleGenAI client (note: this will fail if apiKey is undefined, 
-// but we handle that immediately below)
-const ai = new GoogleGenAI(apiKey);
+// NOTE: We no longer initialize GoogleGenAI globally. It is now initialized inside
+// the handler to ensure the apiKey check runs first.
+// const ai = new GoogleGenAI(apiKey); // <-- Removed this line
 
 exports.handler = async (event) => {
     // Only allow POST requests
@@ -20,6 +20,7 @@ exports.handler = async (event) => {
     }
 
     // --- CRITICAL DEBUGGING CHECK ---
+    // If the API key is missing, return a detailed error.
     if (!apiKey || apiKey.trim() === '') {
         const errorMsg = "CRITICAL: The FIRST_API_KEY environment variable is missing or empty in Netlify settings.";
         console.error(errorMsg);
@@ -35,6 +36,22 @@ exports.handler = async (event) => {
             }),
         };
     }
+
+    // Initialize the GoogleGenAI client here, ensuring we have a valid apiKey.
+    let ai;
+    try {
+        ai = new GoogleGenAI(apiKey);
+    } catch (sdkError) {
+        console.error("Failed to initialize GoogleGenAI SDK:", sdkError);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: "SDK Initialization Failure.", 
+                message: sdkError.message 
+            }),
+        };
+    }
+
 
     try {
         const { model, payload } = JSON.parse(event.body);
