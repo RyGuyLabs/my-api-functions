@@ -59,7 +59,10 @@ exports.handler = async (event) => {
     // Initialize the GoogleGenAI client here, ensuring we have a valid apiKey.
     let ai;
     try {
-        ai = new GoogleGenAI(apiKey);
+        // FIX APPLIED: The SDK was mistakenly attempting to load Google Cloud credentials 
+        // (getApplicationDefaultAsync) because the API key was not passed in the 
+        // explicit configuration object. This change forces it to use the provided key.
+        ai = new GoogleGenAI({ apiKey: apiKey });
     } catch (sdkError) {
         console.error("Failed to initialize GoogleGenAI SDK:", sdkError);
         return {
