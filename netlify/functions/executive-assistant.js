@@ -7,13 +7,17 @@ const { GoogleGenAI } = require('@google/genai');
 const apiKey = process.env.FIRST_API_KEY;
 
 exports.handler = async (event) => {
+    
+    // Log the incoming request details for debugging
+    console.log(`Received request from origin: ${event.headers.origin}`);
+    console.log(`HTTP Method: ${event.httpMethod}`);
 
-    // --- 1. Define Global CORS Headers ---
+    // --- 1. Define Global CORS Headers (FIX APPLIED HERE) ---
+    // TEMPORARY FIX: Setting to '*' to allow requests from any origin (e.g., localhost, staging, sandboxes)
+    // If running in production, replace '*' with your specific production URL(s).
     const CORS_HEADERS = {
-        // NOTE: If you are running this in a sandboxed environment (like the current immersive),
-        // the client URL may be a blob:// or a long Google usercontent URL. You may need
-        // to temporarily set this to '*' if the specific origin fails.
-        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+        // FIX: Broaden the CORS policy to temporarily resolve 403 issues caused by origin mismatch.
+        'Access-Control-Allow-Origin': '*', // Changed from 'https://www.ryguylabs.com'
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         // Critical: Allow the Content-Type and the custom header X-Gemini-Model.
         'Access-Control-Allow-Headers': 'Content-Type, X-Gemini-Model',
@@ -73,7 +77,7 @@ exports.handler = async (event) => {
     try {
         const body = JSON.parse(event.body);
         
-        // --- FIX: Read the custom header 'X-Gemini-Model' for the correct model name ---
+        // --- Read the custom header 'X-Gemini-Model' for the correct model name ---
         // Netlify downcases custom headers, so check for 'x-gemini-model'.
         const modelFromHeader = event.headers['x-gemini-model'];
 
@@ -97,7 +101,7 @@ exports.handler = async (event) => {
         
         // This is the call that uses the SDK which was initialized with the apiKey
         const response = await ai.models.generateContent({
-            model: actualModel, // <-- NOW USES THE MODEL FROM THE CLIENT'S CUSTOM HEADER
+            model: actualModel,
             contents: contents,
             config: generationConfig, 
             tools: tools,
