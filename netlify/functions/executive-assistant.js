@@ -9,17 +9,17 @@ const apiKey = process.env.FIRST_API_KEY;
 exports.handler = async (event) => {
 
     // --- 1. Define Global CORS Headers ---
-    // These headers must be included in ALL responses (OPTIONS, POST, and errors).
     const CORS_HEADERS = {
-        // FIX: Replacing the wildcard '*' with the specific origin URL for stricter security.
+        // NOTE: If you are running this in a sandboxed environment (like the current immersive),
+        // the client URL may be a blob:// or a long Google usercontent URL. You may need
+        // to temporarily set this to '*' if the specific origin fails.
         'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        // Critical: Allow the Content-Type and any custom headers (like X-Gemini-Model).
+        // Critical: Allow the Content-Type and the custom header X-Gemini-Model.
         'Access-Control-Allow-Headers': 'Content-Type, X-Gemini-Model',
     };
 
     // --- 2. Handle the OPTIONS Preflight Request ---
-    // The browser sends this first to check permissions. We must respond with 200 OK.
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -28,16 +28,14 @@ exports.handler = async (event) => {
         };
     }
 
-    // --- 3. Enforce POST Method (Now handles everything else) ---
+    // --- 3. Enforce POST Method ---
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: CORS_HEADERS, // Include CORS headers even on error responses
+            headers: CORS_HEADERS,
             body: JSON.stringify({ error: "Method Not Allowed. Use POST." }),
         };
     }
-    
-    // The remaining logic only runs for POST requests
     
     // --- CRITICAL DEBUGGING CHECK ---
     if (!apiKey || apiKey.trim() === '') {
@@ -46,7 +44,7 @@ exports.handler = async (event) => {
         
         return {
             statusCode: 500,
-            headers: CORS_HEADERS, // Include CORS headers
+            headers: CORS_HEADERS,
             body: JSON.stringify({ 
                 error: "Server Configuration Error: API key is missing.",
                 log_message: errorMsg,
@@ -55,18 +53,15 @@ exports.handler = async (event) => {
         };
     }
 
-    // Initialize the GoogleGenAI client here, ensuring we have a valid apiKey.
+    // Initialize the GoogleGenAI client
     let ai;
     try {
-        // FIX APPLIED: The SDK was mistakenly attempting to load Google Cloud credentials 
-        // (getApplicationDefaultAsync) because the API key was not passed in the 
-        // explicit configuration object. This change forces it to use the provided key.
         ai = new GoogleGenAI({ apiKey: apiKey });
     } catch (sdkError) {
         console.error("Failed to initialize GoogleGenAI SDK:", sdkError);
         return {
             statusCode: 500,
-            headers: CORS_HEADERS, // Include CORS headers
+            headers: CORS_HEADERS,
             body: JSON.stringify({ 
                 error: "SDK Initialization Failure.", 
                 message: sdkError.message 
@@ -78,34 +73,35 @@ exports.handler = async (event) => {
     try {
         const body = JSON.parse(event.body);
         
-        // --- DEBUGGING ADDITION: Log the incoming request body to Netlify logs ---
+        // --- FIX: Read the custom header 'X-Gemini-Model' for the correct model name ---
+        // Netlify downcases custom headers, so check for 'x-gemini-model'.
+        const modelFromHeader = event.headers['x-gemini-model'];
+
+        // Determine the actual model name. Use the header value first, then fallback to body.model (if present), then default.
+        const actualModel = modelFromHeader || body.model || 'gemini-2.5-flash-preview-09-2025';
+
+        // Destructure the rest of the configuration from the body.
+        const { contents, tools, systemInstruction, generationConfig } = body;
+        
+        console.log(`Using model: ${actualModel}`);
         console.log("Incoming request body (parsed):", body);
-        // --------------------------------------------------------------------------
         
-        // FIX: Extract fields directly from the root of the body, as shown in the logs.
-        // If 'model' is missing (which the logs suggest), we use a strong default.
-        const { contents, tools, systemInstruction, generationConfig, model } = body;
-        
-        // Use the model from the body if present, otherwise use the stable default
-        const actualModel = model || 'gemini-2.5-flash-preview-09-2025';
-
-
-        // New validation check based on the actual request structure
+        // New validation check
         if (!contents || !Array.isArray(contents) || contents.length === 0) {
             return {
                 statusCode: 400,
-                headers: CORS_HEADERS, // Include CORS headers
+                headers: CORS_HEADERS,
                 body: JSON.stringify({ error: "Missing required field: contents array in request body." }),
             };
         }
         
         // This is the call that uses the SDK which was initialized with the apiKey
         const response = await ai.models.generateContent({
-            model: actualModel, // Use the provided or default model
+            model: actualModel, // <-- NOW USES THE MODEL FROM THE CLIENT'S CUSTOM HEADER
             contents: contents,
-            config: generationConfig, // Now correctly pulling from root
+            config: generationConfig, 
             tools: tools,
-            systemInstruction: systemInstruction // Now correctly pulling from root
+            systemInstruction: systemInstruction
         });
 
         // --- 4. Success Response: Merge Content-Type and CORS Headers ---
@@ -113,16 +109,17 @@ exports.handler = async (event) => {
             statusCode: 200,
             headers: { 
                 "Content-Type": "application/json",
-                ...CORS_HEADERS // Merge the CORS headers here
+                ...CORS_HEADERS
             },
             body: JSON.stringify(response),
         };
 
     } catch (error) {
         console.error("Gemini API Call Failed:", error);
+        // Include the error from the Google API or other internal crashes
         return {
             statusCode: 500,
-            headers: CORS_HEADERS, // Include CORS headers
+            headers: CORS_HEADERS,
             body: JSON.stringify({ 
                 error: "Internal Gemini API Error", 
                 message: error.message 
