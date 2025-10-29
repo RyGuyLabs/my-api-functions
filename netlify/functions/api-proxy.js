@@ -123,7 +123,7 @@ exports.handler = async function(event) {
                     statusCode: 400,
                     headers: CORS_HEADERS,
                     body: JSON.stringify({ message: 'Missing required text data for TTS.' })
-                });
+                }; // FIX APPLIED: Corrected syntax error here (removed extra ')' and ensured it closes the object).
             }
 
             const TTS_MODEL = "gemini-2.5-flash-preview-tts";
