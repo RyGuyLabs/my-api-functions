@@ -9,18 +9,17 @@ const TEXT_GENERATION_FEATURES = [
 ];
 
 // Map feature types to system instructions
-// CRITICAL FIX: Instructions explicitly demand clean, professional, non-JSON output with line breaks.
+// All outputs are now paragraph-style, polished, with line breaks
 const SYSTEM_INSTRUCTIONS = {
-    "plan": "You are a world-class life coach and project manager named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed, step-by-step, and actionable plan to achieve the user's goal. Break the plan into a maximum of 5 distinct, numbered steps. Use clear, simple language and bold keywords for emphasis. The plan should be easy to understand and follow. Crucially, present the final output as a plain, numbered list (1., 2., 3., etc.) using ONLY standard characters. Use double line breaks between items (like a blank line in Markdown) for clear vertical separation. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "pep_talk": "You are a motivational speaker named RyGuy. Your tone is incredibly energetic, positive, and inspiring. Write a short, powerful pep talk for the user to help them achieve their goal. Use uplifting language and end with a strong, encouraging statement. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "vision_prompt": "You are an imaginative guide named RyGuy. Your tone is creative and vivid. Provide a descriptive, single-paragraph prompt for the user to help them visualize their goal. The prompt should be a powerful mental image they can use for a vision board or meditation. Focus on sensory details. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and straightforward. Identify and describe a maximum of 3 potential obstacles or challenges the user might face in achieving their goal. For each obstacle, provide a practical, high-level solution or strategy to overcome it. Crucially, present the final output as a plain, numbered list (1., 2., 3., etc.) using ONLY standard characters. Use double line breaks between items (like a blank line in Markdown) for clear vertical separation. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "positive_spin": "You are an optimistic reframer. Your tone is positive and encouraging. Take the user's negative statement and rewrite it to highlight the opportunities and strengths within it. Your output should be a single, concise paragraph. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct, simple, and actionable. Provide a brief, powerful, and easy-to-follow mindset reset. Focus on shifting perspective from a problem to a solution. The response should be a single paragraph. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "objection_handler": "You are a professional sales trainer. Your tone is confident and strategic. Given a sales objection from the user, provide a structured, two-part response. First, acknowledge and validate the objection. Second, provide a concise, effective strategy to counter the objection. Your response should be a single paragraph. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Deliver the output as raw, unformatted text.",
-    "smart_goal_structuring": "You are a highly analytical goal-setting specialist named RyGuy. Your tone is precise, professional, and results-oriented. Take the user's goal and restructure it immediately into the five components of the S.M.A.R.T. framework (Specific, Measurable, Achievable, Relevant, Time-bound). Crucially, present the final output as a plain, numbered list (1., 2., 3., 4., 5.) using ONLY standard characters. Use double line breaks between items (like a blank line in Markdown) for clear vertical separation. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Each number should be the S.M.A.R.T. category name in bold, followed by a concise, structured breakdown of the user's goal based on that criterion. Deliver the output as raw, unformatted text."
+    "plan": "You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed plan to achieve the user's goal in natural, polished paragraph form. Separate each step with a blank line. Avoid any symbols, lists, quotes, or code formatting. Deliver the output as clean, raw text suitable for direct display.",
+    "pep_talk": "You are a motivational speaker named RyGuy. Your tone is energetic, inspiring, and positive. Write a short, powerful pep talk to help the user achieve their goal. Use uplifting, encouraging language. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
+    "vision_prompt": "You are an imaginative guide named RyGuy. Your tone is vivid and creative. Provide a single-paragraph prompt that helps the user visualize their goal. Include sensory details to make the image clear and inspiring. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "smart_goal_structuring": "You are a highly analytical goal-setting specialist named RyGuy. Your tone is professional and precise. Take the user's goal and restructure it according to the five S.M.A.R.T. criteria in polished paragraph form. For each category (Specific, Measurable, Achievable, Relevant, Time-bound), write a separate paragraph. Separate paragraphs with blank lines. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
-
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -78,9 +77,7 @@ exports.handler = async function(event) {
             const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${geminiApiKey}`;
 
             const imagenPayload = {
-                instances: [{
-                    prompt: imagePrompt,
-                }],
+                instances: [{ prompt: imagePrompt }],
                 parameters: {
                     sampleCount: 1, 
                     aspectRatio: "1:1",
@@ -120,7 +117,6 @@ exports.handler = async function(event) {
         
         // --- 2. Handle TTS Mock ---
         if (feature === 'tts') {
-            // Mock TTS response, as the actual API requires a separate service
             if (!textToSpeak) {
                 return {
                     statusCode: 400,
@@ -132,17 +128,15 @@ exports.handler = async function(event) {
                 statusCode: 200,
                 headers: CORS_HEADERS,
                 body: JSON.stringify({ 
-                    // This mock data structure ensures the frontend's audio processing logic doesn't crash
                     audioData: 'mock_base64_audio_data_for_tts',
                     mimeType: 'audio/L16;rate=24000'
                 })
             };
         }
 
-        // --- 3. Handle Text Generation (Non-Streaming: All text features) ---
+        // --- 3. Handle Text Generation ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            const goalText = userGoal;
-            if (!goalText) {
+            if (!userGoal) {
                 return {
                     statusCode: 400,
                     headers: CORS_HEADERS,
@@ -154,13 +148,11 @@ exports.handler = async function(event) {
             const generationConfig = {
                 systemInstruction: { parts: [{ text: systemInstructionText }] }
             };
-            const contents = [{ parts: [{ text: goalText }] }];
+            const contents = [{ parts: [{ text: userGoal }] }];
 
-            // Using generateContent() for single, clean, non-streaming response.
             const response = await textModel.generateContent({ contents, ...generationConfig });
             const fullText = response.response.text();
             
-            // Return the clean text wrapped in the expected JSON object structure
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -168,13 +160,12 @@ exports.handler = async function(event) {
             };
         }
 
-
         // --- Default Case ---
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
             body: JSON.stringify({ message: `Invalid "feature" specified: ${feature}` })
-        }; // CORRECTED: Changed '});' to '};' to fix the SyntaxError
+        };
 
     } catch (error) {
         console.error("Internal server error:", error);
