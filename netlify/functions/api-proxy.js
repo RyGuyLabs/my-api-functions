@@ -9,14 +9,15 @@ const TEXT_GENERATION_FEATURES = [
 ];
 
 // Map feature types to system instructions
+// CRITICAL FIX: Instructions explicitly demand clean, professional, non-JSON output with line breaks.
 const SYSTEM_INSTRUCTIONS = {
     "plan": "You are a world-class life coach and project manager named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed, step-by-step, and actionable plan to achieve the user's goal. Break the plan into a maximum of 5 distinct, numbered steps. Use clear, simple language and bold keywords for emphasis. The plan should be easy to understand and follow. Crucially, present the final output as a plain, numbered list (1., 2., 3., etc.) using ONLY standard characters. Use double line breaks between items (like a blank line in Markdown) for clear vertical separation. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
-    "pep_talk": "You are a motivational speaker named RyGuy. Your tone is incredibly energetic, positive, and inspiring. Write a short, powerful pep talk for the user to help them achieve their goal. Use uplifting language and end with a strong, encouraging statement.",
-    "vision_prompt": "You are an imaginative guide named RyGuy. Your tone is creative and vivid. Provide a descriptive, single-paragraph prompt for the user to help them visualize their goal. The prompt should be a powerful mental image they can use for a vision board or meditation. Focus on sensory details.",
+    "pep_talk": "You are a motivational speaker named RyGuy. Your tone is incredibly energetic, positive, and inspiring. Write a short, powerful pep talk for the user to help them achieve their goal. Use uplifting language and end with a strong, encouraging statement. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
+    "vision_prompt": "You are an imaginative guide named RyGuy. Your tone is creative and vivid. Provide a descriptive, single-paragraph prompt for the user to help them visualize their goal. The prompt should be a powerful mental image they can use for a vision board or meditation. Focus on sensory details. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
     "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and straightforward. Identify and describe a maximum of 3 potential obstacles or challenges the user might face in achieving their goal. For each obstacle, provide a practical, high-level solution or strategy to overcome it. Crucially, present the final output as a plain, numbered list (1., 2., 3., etc.) using ONLY standard characters. Use double line breaks between items (like a blank line in Markdown) for clear vertical separation. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
-    "positive_spin": "You are an optimistic reframer. Your tone is positive and encouraging. Take the user's negative statement and rewrite it to highlight the opportunities and strengths within it. Your output should be a single, concise paragraph.",
-    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct, simple, and actionable. Provide a brief, powerful, and easy-to-follow mindset reset. Focus on shifting perspective from a problem to a solution. The response should be a single paragraph.",
-    "objection_handler": "You are a professional sales trainer. Your tone is confident and strategic. Given a sales objection from the user, provide a structured, two-part response. First, acknowledge and validate the objection. Second, provide a concise, effective strategy to counter the objection. Your response should be a single paragraph.",
+    "positive_spin": "You are an optimistic reframer. Your tone is positive and encouraging. Take the user's negative statement and rewrite it to highlight the opportunities and strengths within it. Your output should be a single, concise paragraph. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
+    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct, simple, and actionable. Provide a brief, powerful, and easy-to-follow mindset reset. Focus on shifting perspective from a problem to a solution. The response should be a single paragraph. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
+    "objection_handler": "You are a professional sales trainer. Your tone is confident and strategic. Given a sales objection from the user, provide a structured, two-part response. First, acknowledge and validate the objection. Second, provide a concise, effective strategy to counter the objection. Your response should be a single paragraph. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting.",
     "smart_goal_structuring": "You are a highly analytical goal-setting specialist named RyGuy. Your tone is precise, professional, and results-oriented. Take the user's goal and restructure it immediately into the five components of the S.M.A.R.T. framework (Specific, Measurable, Achievable, Relevant, Time-bound). Crucially, present the final output as a plain, numbered list (1., 2., 3., 4., 5.) using ONLY standard characters. Use double line breaks between items (like a blank line in Markdown) for clear vertical separation. ABSOLUTELY AVOID using any surrounding quotes, JSON, backticks, or code block formatting. Each number should be the S.M.A.R.T. category name in bold, followed by a concise, structured breakdown of the user's goal based on that criterion."
 };
 
@@ -117,14 +118,35 @@ exports.handler = async function(event) {
             };
         }
         
-        // --- 2. Handle Text Generation (Non-Streaming: All text features) ---
-        if (TEXT_GENERATION_FEATURES.includes(feature) || feature === 'tts') {
-            const goalText = userGoal || textToSpeak;
+        // --- 2. Handle TTS Mock ---
+        if (feature === 'tts') {
+            // Mock TTS response, as the actual API requires a separate service
+            if (!textToSpeak) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required text data for TTS.' })
+                };
+            }
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ 
+                    // This mock data structure ensures the frontend's audio processing logic doesn't crash
+                    audioData: 'mock_base64_audio_data_for_tts',
+                    mimeType: 'audio/L16;rate=24000'
+                })
+            };
+        }
+
+        // --- 3. Handle Text Generation (Non-Streaming: All text features) ---
+        if (TEXT_GENERATION_FEATURES.includes(feature)) {
+            const goalText = userGoal;
             if (!goalText) {
                 return {
                     statusCode: 400,
                     headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing required text data for feature.' })
+                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
                 };
             }
 
@@ -134,22 +156,11 @@ exports.handler = async function(event) {
             };
             const contents = [{ parts: [{ text: goalText }] }];
 
-            if (feature === 'tts') {
-                // Mock TTS response, as the actual API requires a separate service
-                return {
-                    statusCode: 200,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ 
-                        audioData: 'mock_base64_audio_data_for_tts',
-                        mimeType: 'audio/L16;rate=24000'
-                    })
-                };
-            }
-            
-            // This is the fix: Using generateContent() to get the full response at once.
+            // Using generateContent() for single, clean, non-streaming response.
             const response = await textModel.generateContent({ contents, ...generationConfig });
             const fullText = response.response.text();
             
+            // Return the clean text wrapped in the expected JSON object structure
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -157,12 +168,13 @@ exports.handler = async function(event) {
             };
         }
 
+
         // --- Default Case ---
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
             body: JSON.stringify({ message: `Invalid "feature" specified: ${feature}` })
-        });
+        }; // CORRECTED: Changed '});' to '};' to fix the SyntaxError
 
     } catch (error) {
         console.error("Internal server error:", error);
