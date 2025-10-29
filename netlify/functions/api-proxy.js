@@ -9,7 +9,6 @@ const TEXT_GENERATION_FEATURES = [
 ];
 
 // Map feature types to system instructions
-// All outputs are now paragraph-style, polished, with line breaks
 const SYSTEM_INSTRUCTIONS = {
     "plan": "You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed plan to achieve the user's goal in natural, polished paragraph form. Separate each step with a blank line. Avoid any symbols, lists, quotes, or code formatting. Deliver the output as clean, raw text suitable for direct display.",
     "pep_talk": "You are a motivational speaker named RyGuy. Your tone is energetic, inspiring, and positive. Write a short, powerful pep talk to help the user achieve their goal. Use uplifting, encouraging language. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
@@ -56,6 +55,8 @@ exports.handler = async function(event) {
         };
     }
     
+    // Note: We only initialize the standard text model here, not the full service, 
+    // because the TTS model is called via a dedicated HTTP endpoint below.
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
@@ -115,21 +116,63 @@ exports.handler = async function(event) {
             };
         }
         
-        // --- 2. Handle TTS Mock ---
+        // --- 2. Handle TTS Generation (Non-Streaming: gemini-2.5-flash-preview-tts) ---
         if (feature === 'tts') {
             if (!textToSpeak) {
                 return {
                     statusCode: 400,
                     headers: CORS_HEADERS,
                     body: JSON.stringify({ message: 'Missing required text data for TTS.' })
-                };
+                });
             }
+
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${geminiApiKey}`;
+
+            // We use the "Kore" voice, which has a firm, professional sound.
+            const ttsPayload = {
+                contents: [{ parts: [{ text: textToSpeak }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Kore" } 
+                        }
+                    }
+                }
+            };
+
+            const response = await fetch(TTS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ttsPayload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("TTS API Error:", errorBody);
+                throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.find(
+                p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+            );
+            
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (!audioData || !mimeType) {
+                console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
+                throw new Error("TTS API response did not contain audio data.");
+            }
+
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
                 body: JSON.stringify({ 
-                    audioData: 'mock_base64_audio_data_for_tts',
-                    mimeType: 'audio/L16;rate=24000'
+                    audioData: audioData,
+                    mimeType: mimeType
                 })
             };
         }
@@ -150,6 +193,7 @@ exports.handler = async function(event) {
             };
             const contents = [{ parts: [{ text: userGoal }] }];
 
+            // NOTE: The Firebase/Gemini SDK is used for text generation here.
             const response = await textModel.generateContent({ contents, ...generationConfig });
             const fullText = response.response.text();
             
