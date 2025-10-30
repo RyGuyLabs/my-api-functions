@@ -149,7 +149,8 @@ async function checkSquarespaceMembershipStatus(userId) {
         return false;
     }
 
-    // IMPORTANT: This URL is a placeholder. REPLACE it with the actual Squarespace API endpoint 
+    // !! CRITICAL CUSTOMIZATION REQUIRED !!
+    // This URL is a placeholder. REPLACE it with the actual Squarespace API endpoint 
     // that returns member status using the userId/email.
     const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/${userId}`; 
     
@@ -171,6 +172,7 @@ async function checkSquarespaceMembershipStatus(userId) {
         const data = await response.json();
 
         // --- Core Authorization Logic ---
+        // !! CRITICAL CUSTOMIZATION REQUIRED !!
         // You MUST adapt this line to match the JSON structure and value 
         // that your specific Squarespace API returns for an ACTIVE paid subscription.
         const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
@@ -206,12 +208,21 @@ exports.handler = async function(event) {
         };
     }
 
-    // --- API Key and Initialization (EXISTING) ---
+    // --- API Key and Initialization Checks ---
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
             body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
+        };
+    }
+    
+    // NEW CHECK: Firestore/Data Keys
+    if (!FIRESTORE_KEY || !PROJECT_ID) {
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
         };
     }
     
