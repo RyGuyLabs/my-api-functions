@@ -516,9 +516,11 @@ exports.handler = async function(event) {
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+            
+            // **FIXED PAYLOAD STRUCTURE**
             const payload = {
                 contents: [{ parts: [{ text: userGoal }] }],
-                config: {
+                generationConfig: { // Correct field name for the REST API
                     systemInstruction: systemInstructionText
                 }
             };
