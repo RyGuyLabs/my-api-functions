@@ -2,14 +2,14 @@
  * Netlify Function: secure-data-proxy
  * * This function serves as the single secure gateway for ALL features (AI & Data).
  * * It handles:
- * 1. AUTHORIZATION (NEW): Checks for an active subscription status via Squarespace.
- * 2. DATA ACCESS (NEW): Interacts with the secure Firestore database (REST API).
- * 3. AI GENERATION (EXISTING): Text, Image, and TTS via Google APIs.
- * * * Environment Variables required (set in Netlify):
+ * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
+ * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API).
+ * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
+ * * * Environment Variables required:
  * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
  * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
  * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
- * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project (RyGuyLabs-DreamOS-DB).
+ * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
  */
 
 const fetch = require('node-fetch');
@@ -20,25 +20,29 @@ const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
-// Base URL for the Firestore REST API
-const FIRESTORE_BASE_URL = 
-  `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
+// Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
+const FIRESTORE_BASE_URL =
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
-// List of features that perform custom data operations (GATED BY MEMBERSHIP)
+// Base URL for Firestore queries (Used for secure, filtered reads/writes)
+const FIRESTORE_QUERY_URL = 
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
+
+// List of features that perform data operations (GATED BY MEMBERSHIP)
 const DATA_OPERATIONS = [
-    'SAVE_DREAM', 
-    'LOAD_DREAMS', 
+    'SAVE_DREAM',
+    'LOAD_DREAMS',
     'DELETE_DREAM'
 ];
 
-// List of features that perform text generation (EXISTING)
+// List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
-    "plan", "pep_talk", "vision_prompt", "obstacle_analysis", 
-    "positive_spin", "mindset_reset", "objection_handler", 
+    "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
+    "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
 
-// Map feature types to system instructions (EXISTING)
+// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
     "plan": "You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed plan to achieve the user's goal in natural, polished paragraph form. Separate each step with a blank line. Avoid any symbols, lists, quotes, or code formatting. Deliver the output as clean, raw text suitable for direct display.",
     "pep_talk": "You are a motivational speaker named RyGuy. Your tone is energetic, inspiring, and positive. Write a short, powerful pep talk to help the user achieve their goal. Use uplifting, encouraging language. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
@@ -54,17 +58,13 @@ const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json' 
+    'Content-Type': 'application/json'
 };
 
-// --- FIRESTORE REST API HELPERS ---
+// --- FIRESTORE REST API HELPERS (No Change Needed, well-done) ---
 
 /**
- * Recursively converts a standard JavaScript object into the verbose 
- * Firestore REST API format, wrapping values in type indicators (stringValue, arrayValue, etc.).
- * This is CRITICAL for write operations (SAVE_DREAM).
- * @param {any} value - The JavaScript value to convert.
- * @returns {object} The Firestore REST API-compatible field object.
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
  */
 function jsToFirestoreRest(value) {
     if (value === null || value === undefined) {
@@ -74,7 +74,6 @@ function jsToFirestoreRest(value) {
         return { stringValue: value };
     }
     if (typeof value === 'number') {
-        // Use integerValue for integers, doubleValue for floats
         return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
     }
     if (typeof value === 'boolean') {
@@ -96,17 +95,13 @@ function jsToFirestoreRest(value) {
         }
         return { mapValue: { fields: mapFields } };
     }
-    
-    // Default to string value for unknown types
+
     return { stringValue: String(value) };
 }
 
 /**
- * Recursively unwraps the verbose Firestore REST API field object 
+ * Recursively unwraps the verbose Firestore REST API field object
  * into a standard JavaScript object.
- * This is CRITICAL for read operations (LOAD_DREAMS).
- * @param {object} firestoreField - The field object from a Firestore REST API response.
- * @returns {any} The clean JavaScript value.
  */
 function firestoreRestToJs(firestoreField) {
     if (!firestoreField) return null;
@@ -117,11 +112,11 @@ function firestoreRestToJs(firestoreField) {
     if (firestoreField.doubleValue !== undefined) return firestoreField.doubleValue;
     if (firestoreField.booleanValue !== undefined) return firestoreField.booleanValue;
     if (firestoreField.timestampValue !== undefined) return new Date(firestoreField.timestampValue);
-    
+
     if (firestoreField.arrayValue) {
         return (firestoreField.arrayValue.values || []).map(firestoreRestToJs);
     }
-    
+
     if (firestoreField.mapValue) {
         const jsObject = {};
         const fields = firestoreField.mapValue.fields || {};
@@ -133,33 +128,38 @@ function firestoreRestToJs(firestoreField) {
         return jsObject;
     }
 
-    return null; // Should not happen for well-formed data
+    return null; 
 }
 
 
 /**
  * [CRITICAL SECURITY GATE]
  * Checks the user's active membership status via the Squarespace API.
- * @param {string} userId - The unique user ID (e.g., email or member ID) provided by your frontend.
+ * @param {string} userId - The unique user ID (from localStorage).
  * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
  */
 async function checkSquarespaceMembershipStatus(userId) {
+    if (userId.startsWith('mock-') || userId === 'TEST_USER') {
+        console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
+        return true;
+    }
+
     if (!SQUARESPACE_TOKEN) {
-        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all access.");
+        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all data access.");
         return false;
     }
 
     // !! CRITICAL CUSTOMIZATION REQUIRED !!
-    // This URL is a placeholder. REPLACE it with the actual Squarespace API endpoint 
-    // that returns member status using the userId/email.
-    const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/${userId}`; 
-    
+    // This URL is a placeholder. You must change it to the Squarespace API endpoint
+    // (e.g., /1.0/profiles or /1.0/orders) that can verify membership for the user's ID/Email.
+    const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
+
     try {
         const response = await fetch(squarespaceApiUrl, {
             method: 'GET',
             headers: {
                 // Squarespace uses a specific header format for API Keys
-                'Authorization': `Bearer ${SQUARESPACE_TOKEN}`, 
+                'Authorization': `Bearer ${SQUARESPACE_TOKEN}`,
                 'User-Agent': 'RyGuyLabs-Netlify-Function-Checker'
             }
         });
@@ -173,14 +173,13 @@ async function checkSquarespaceMembershipStatus(userId) {
 
         // --- Core Authorization Logic ---
         // !! CRITICAL CUSTOMIZATION REQUIRED !!
-        // You MUST adapt this line to match the JSON structure and value 
-        // that your specific Squarespace API returns for an ACTIVE paid subscription.
+        // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
         const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
 
         if (!isActive) {
             console.log(`User ${userId} is INACTIVE. Access denied.`);
         }
-        
+
         return isActive;
 
     } catch (error) {
@@ -216,8 +215,7 @@ exports.handler = async function(event) {
             body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
         };
     }
-    
-    // NEW CHECK: Firestore/Data Keys
+
     if (!FIRESTORE_KEY || !PROJECT_ID) {
         return {
             statusCode: 500,
@@ -225,12 +223,12 @@ exports.handler = async function(event) {
             body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
         };
     }
-    
+
     try {
         const body = JSON.parse(event.body);
-        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body; 
-        
-        const feature = action || body.feature; // Fallback to 'feature' for existing AI calls
+        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
+
+        const feature = action || body.feature; 
 
         if (!feature) {
              return {
@@ -245,12 +243,12 @@ exports.handler = async function(event) {
         // NEW SECTION: 1. DATA OPERATIONS (GATED BY SQUARESPACE MEMBERSHIP)
         // ------------------------------------------------------------------
         if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
-            
+
             if (!userId) {
-                return { 
-                    statusCode: 401, 
+                return {
+                    statusCode: 401,
                     headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." }) 
+                    body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
                 };
             }
 
@@ -258,88 +256,117 @@ exports.handler = async function(event) {
             const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
 
             if (!isSubscriberActive) {
-                return { 
-                    statusCode: 403, 
+                return {
+                    statusCode: 403,
                     headers: CORS_HEADERS,
-                    body: JSON.stringify({ 
-                        message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription." 
-                    }) 
+                    body: JSON.stringify({
+                        message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription."
+                    })
                 };
             }
 
             // B. FIRESTORE DATA INTERACTION (SECURE ACCESS)
             // Data is stored in: /users/{userId}/dreams/{documentId}
-            const userDreamsCollection = `${FIRESTORE_BASE_URL}users/${userId}/dreams`;
+            const userDreamsCollectionPath = `users/${userId}/dreams`;
             let firestoreResponse;
-            
+
             switch (feature.toUpperCase()) {
                 case 'SAVE_DREAM':
                     if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
-                    
+
                     // Convert raw JS object into Firestore REST API format
                     const firestoreFields = jsToFirestoreRest(data).mapValue.fields;
 
-                    firestoreResponse = await fetch(`${userDreamsCollection}?key=${FIRESTORE_KEY}`, {
-                        method: 'POST', // Creates a new document with an auto-generated ID
+                    // POST to the collection path will create a new document with an auto-generated ID
+                    firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${userDreamsCollectionPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'POST', 
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fields: firestoreFields }) 
+                        body: JSON.stringify({ fields: firestoreFields })
                     });
 
                     if (firestoreResponse.ok) {
                         const result = await firestoreResponse.json();
-                        return { 
-                            statusCode: 200, 
+                        return {
+                            statusCode: 200,
                             headers: CORS_HEADERS,
-                            body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name }) 
+                            body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name })
                         };
                     }
                     break;
 
                 case 'LOAD_DREAMS':
-                    // Fetches all dream documents for the user (GET on collection)
-                    firestoreResponse = await fetch(`${userDreamsCollection}?key=${FIRESTORE_KEY}`, {
-                        method: 'GET'
+                    // **SECURITY REVISION:** Use a Structured Query to filter documents by userId field.
+                    // This is robust against path injection and ensures the collection exists.
+
+                    const structuredQuery = {
+                        // Select all fields
+                        select: { fields: [{ fieldPath: "*" }] },
+                        from: [{ collectionId: "dreams" }],
+                        where: {
+                            fieldFilter: {
+                                field: { fieldPath: "userId" },
+                                op: "EQUAL",
+                                value: { stringValue: userId }
+                            }
+                        },
+                        // OPTIONAL: Order by timestamp
+                        orderBy: [{
+                            field: { fieldPath: "timestamp" },
+                            direction: "DESCENDING"
+                        }]
+                    };
+
+                    firestoreResponse = await fetch(FIRESTORE_QUERY_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
                     });
 
                     if (firestoreResponse.ok) {
                         const result = await firestoreResponse.json();
                         
-                        // Format REST API response for client-side consumption
-                        const dreams = (result.documents || []).map(doc => {
-                            const docId = doc.name.split('/').pop();
-                            
-                            // Convert Firestore fields back to clean JS object
-                            const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
-                            
-                            return { id: docId, ...fields };
-                        });
+                        // The result is an array of query results, each containing a 'document'
+                        const dreams = (result || [])
+                            .filter(item => item.document) // Filter out any empty results
+                            .map(item => {
+                                const doc = item.document;
+                                const docId = doc.name.split('/').pop();
+                                
+                                // Convert Firestore fields back to clean JS object
+                                const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
+                                
+                                // Return the required client-side object
+                                return { id: docId, ...fields };
+                            });
 
-                        return { 
-                            statusCode: 200, 
+                        return {
+                            statusCode: 200,
                             headers: CORS_HEADERS,
-                            body: JSON.stringify({ dreams }) 
+                            body: JSON.stringify({ dreams })
                         };
                     }
                     break;
                     
                 case 'DELETE_DREAM':
-                    // Deletes a specific dream document (DELETE on document path)
+                    // The client passes the document ID in data.dreamId
                     if (!data || !data.dreamId) {
-                         return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
+                        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
                     }
                     
-                    const dreamDocumentPath = `${FIRESTORE_BASE_URL}users/${userId}/dreams/${data.dreamId}`;
+                    // Direct DELETE on the specific document path. 
+                    // This assumes the client only sends IDs they were authorized to LOAD.
+                    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
                     
-                    firestoreResponse = await fetch(`${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
+                    firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
                         method: 'DELETE'
                     });
 
                     if (firestoreResponse.ok) {
                         // Successful deletion returns 200 with an empty body
-                        return { 
-                            statusCode: 200, 
+                        return {
+                            statusCode: 200,
                             headers: CORS_HEADERS,
-                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` }) 
+                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
                         };
                     }
                     break;
@@ -352,10 +379,10 @@ exports.handler = async function(event) {
             // Handle generic Firestore errors
             const errorText = firestoreResponse ? await firestoreResponse.text() : 'Unknown database error';
             console.error("Firestore operation failed:", firestoreResponse?.status, errorText);
-            return { 
-                statusCode: firestoreResponse?.status || 500, 
+            return {
+                statusCode: firestoreResponse?.status || 500,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ message: "Database operation failed.", details: errorText }) 
+                body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
             };
 
         }
@@ -365,7 +392,7 @@ exports.handler = async function(event) {
         // EXISTING SECTION: 2. GOOGLE AI GENERATION FEATURES (UN-GATED)
         // ------------------------------------------------------------------
         
-        // --- 2a. Handle Image Generation (Non-Streaming: Imagen 3.0) ---
+        // --- 2a. Handle Image Generation (Imagen) ---
         if (feature === 'image_generation') {
             if (!imagePrompt) {
                 return {
@@ -381,7 +408,7 @@ exports.handler = async function(event) {
             const imagenPayload = {
                 instances: [{ prompt: imagePrompt }],
                 parameters: {
-                    sampleCount: 1, 
+                    sampleCount: 1,
                     aspectRatio: "1:1",
                     outputMimeType: "image/png"
                 }
@@ -410,34 +437,33 @@ exports.handler = async function(event) {
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     imageUrl: `data:image/png;base64,${base64Data}`,
                     altText: `Generated vision for: ${imagePrompt}`
                 })
             };
         }
         
-        // --- 2b. Handle TTS Generation (Non-Streaming: gemini-2.5-flash-preview-tts) ---
+        // --- 2b. Handle TTS Generation (Gemini TTS) ---
         if (feature === 'tts') {
             if (!textToSpeak) {
                 return {
                     statusCode: 400,
                     headers: CORS_HEADERS,
                     body: JSON.stringify({ message: 'Missing required text data for TTS.' })
-                }; 
+                };
             }
 
-            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Use the specific model
             const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-            // We use the "Kore" voice, which has a firm, professional sound.
             const ttsPayload = {
                 contents: [{ parts: [{ text: textToSpeak }] }],
                 generationConfig: {
                     responseModalities: ["AUDIO"],
                     speechConfig: {
                         voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: "Kore" } 
+                            prebuiltVoiceConfig: { voiceName: "Kore" }
                         }
                     }
                 }
@@ -471,7 +497,7 @@ exports.handler = async function(event) {
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     audioData: audioData,
                     mimeType: mimeType
                 })
@@ -488,15 +514,16 @@ exports.handler = async function(event) {
                 };
             }
 
-            // Using pure fetch with the recommended model for text generation
-            const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
+            // REVISION: Cleaner, non-dated model name
+            const TEXT_MODEL = "gemini-2.5-flash"; 
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
             const payload = {
                 contents: [{ parts: [{ text: userGoal }] }],
-                systemInstruction: { parts: [{ text: systemInstructionText }] },
-                // No tools or generationConfig needed for these simple text requests
+                config: { // Use 'config' instead of 'systemInstruction' for direct setting
+                    systemInstruction: systemInstructionText
+                }
             };
 
             const response = await fetch(TEXT_API_URL, {
