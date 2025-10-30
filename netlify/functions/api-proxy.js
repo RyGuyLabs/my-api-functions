@@ -3,7 +3,7 @@
  * * This function serves as the single secure gateway for ALL features (AI & Data).
  * * It handles:
  * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
- * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API).
+ * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API) using structured queries.
  * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
  * * * Environment Variables required:
  * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
@@ -12,7 +12,8 @@
  * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
  */
 
-const fetch = require('node-fetch');
+// **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
+const fetch = require('node-fetch').default || require('node-fetch');
 
 // --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
@@ -25,7 +26,7 @@ const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 // Base URL for Firestore queries (Used for secure, filtered reads/writes)
-const FIRESTORE_QUERY_URL = 
+const FIRESTORE_QUERY_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
 // List of features that perform data operations (GATED BY MEMBERSHIP)
@@ -61,7 +62,7 @@ const CORS_HEADERS = {
     'Content-Type': 'application/json'
 };
 
-// --- FIRESTORE REST API HELPERS (No Change Needed, well-done) ---
+// --- FIRESTORE REST API HELPERS ---
 
 /**
  * Converts a standard JavaScript object into the verbose Firestore REST API format.
@@ -128,17 +129,19 @@ function firestoreRestToJs(firestoreField) {
         return jsObject;
     }
 
-    return null; 
+    return null;
 }
 
 
 /**
  * [CRITICAL SECURITY GATE]
  * Checks the user's active membership status via the Squarespace API.
+ * Includes a bypass for testing.
  * @param {string} userId - The unique user ID (from localStorage).
  * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
  */
 async function checkSquarespaceMembershipStatus(userId) {
+    // DEVELOPMENT BYPASS
     if (userId.startsWith('mock-') || userId === 'TEST_USER') {
         console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
         return true;
@@ -150,8 +153,8 @@ async function checkSquarespaceMembershipStatus(userId) {
     }
 
     // !! CRITICAL CUSTOMIZATION REQUIRED !!
-    // This URL is a placeholder. You must change it to the Squarespace API endpoint
-    // (e.g., /1.0/profiles or /1.0/orders) that can verify membership for the user's ID/Email.
+    // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
+    // that can verify membership for the user's ID/Email.
     const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
 
     try {
@@ -171,7 +174,6 @@ async function checkSquarespaceMembershipStatus(userId) {
 
         const data = await response.json();
 
-        // --- Core Authorization Logic ---
         // !! CRITICAL CUSTOMIZATION REQUIRED !!
         // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
         const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
@@ -228,7 +230,7 @@ exports.handler = async function(event) {
         const body = JSON.parse(event.body);
         const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
 
-        const feature = action || body.feature; 
+        const feature = action || body.feature;
 
         if (!feature) {
              return {
@@ -240,7 +242,7 @@ exports.handler = async function(event) {
 
 
         // ------------------------------------------------------------------
-        // NEW SECTION: 1. DATA OPERATIONS (GATED BY SQUARESPACE MEMBERSHIP)
+        // SECTION 1: DATA OPERATIONS (GATED BY SQUARESPACE MEMBERSHIP)
         // ------------------------------------------------------------------
         if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
 
@@ -266,7 +268,6 @@ exports.handler = async function(event) {
             }
 
             // B. FIRESTORE DATA INTERACTION (SECURE ACCESS)
-            // Data is stored in: /users/{userId}/dreams/{documentId}
             const userDreamsCollectionPath = `users/${userId}/dreams`;
             let firestoreResponse;
 
@@ -279,7 +280,7 @@ exports.handler = async function(event) {
 
                     // POST to the collection path will create a new document with an auto-generated ID
                     firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${userDreamsCollectionPath}?key=${FIRESTORE_KEY}`, {
-                        method: 'POST', 
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ fields: firestoreFields })
                     });
@@ -295,9 +296,7 @@ exports.handler = async function(event) {
                     break;
 
                 case 'LOAD_DREAMS':
-                    // **SECURITY REVISION:** Use a Structured Query to filter documents by userId field.
-                    // This is robust against path injection and ensures the collection exists.
-
+                    // **SECURITY FIX:** Use a Structured Query to enforce filtering by userId.
                     const structuredQuery = {
                         // Select all fields
                         select: { fields: [{ fieldPath: "*" }] },
@@ -309,7 +308,7 @@ exports.handler = async function(event) {
                                 value: { stringValue: userId }
                             }
                         },
-                        // OPTIONAL: Order by timestamp
+                        // Order by timestamp
                         orderBy: [{
                             field: { fieldPath: "timestamp" },
                             direction: "DESCENDING"
@@ -324,17 +323,17 @@ exports.handler = async function(event) {
 
                     if (firestoreResponse.ok) {
                         const result = await firestoreResponse.json();
-                        
+
                         // The result is an array of query results, each containing a 'document'
                         const dreams = (result || [])
                             .filter(item => item.document) // Filter out any empty results
                             .map(item => {
                                 const doc = item.document;
                                 const docId = doc.name.split('/').pop();
-                                
+
                                 // Convert Firestore fields back to clean JS object
                                 const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
-                                
+
                                 // Return the required client-side object
                                 return { id: docId, ...fields };
                             });
@@ -346,17 +345,16 @@ exports.handler = async function(event) {
                         };
                     }
                     break;
-                    
+
                 case 'DELETE_DREAM':
                     // The client passes the document ID in data.dreamId
                     if (!data || !data.dreamId) {
                         return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
                     }
-                    
-                    // Direct DELETE on the specific document path. 
-                    // This assumes the client only sends IDs they were authorized to LOAD.
+
+                    // Direct DELETE on the specific document path.
                     const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
-                    
+
                     firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
                         method: 'DELETE'
                     });
@@ -389,9 +387,9 @@ exports.handler = async function(event) {
 
 
         // ------------------------------------------------------------------
-        // EXISTING SECTION: 2. GOOGLE AI GENERATION FEATURES (UN-GATED)
+        // SECTION 2: GOOGLE AI GENERATION FEATURES (UN-GATED)
         // ------------------------------------------------------------------
-        
+
         // --- 2a. Handle Image Generation (Imagen) ---
         if (feature === 'image_generation') {
             if (!imagePrompt) {
@@ -401,7 +399,7 @@ exports.handler = async function(event) {
                     body: JSON.stringify({ message: 'Missing "imagePrompt" data for image generation.' })
                 };
             }
-            
+
             const IMAGEN_MODEL = "imagen-3.0-generate-002";
             const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
 
@@ -433,7 +431,7 @@ exports.handler = async function(event) {
                 console.error("Imagen API Response Missing Data:", JSON.stringify(result));
                 throw new Error("Imagen API response did not contain image data.");
             }
-            
+
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -443,7 +441,7 @@ exports.handler = async function(event) {
                 })
             };
         }
-        
+
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
         if (feature === 'tts') {
             if (!textToSpeak) {
@@ -454,7 +452,7 @@ exports.handler = async function(event) {
                 };
             }
 
-            const TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Use the specific model
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
             const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const ttsPayload = {
@@ -485,7 +483,7 @@ exports.handler = async function(event) {
             const part = result?.candidates?.[0]?.content?.parts?.find(
                 p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
             );
-            
+
             const audioData = part?.inlineData?.data;
             const mimeType = part?.inlineData?.mimeType;
 
@@ -504,7 +502,7 @@ exports.handler = async function(event) {
             };
         }
 
-        // --- 2c. Handle Text Generation (REFACTORED) ---
+        // --- 2c. Handle Text Generation ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
             if (!userGoal) {
                 return {
@@ -514,14 +512,13 @@ exports.handler = async function(event) {
                 };
             }
 
-            // REVISION: Cleaner, non-dated model name
-            const TEXT_MODEL = "gemini-2.5-flash"; 
+            const TEXT_MODEL = "gemini-2.5-flash";
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
             const payload = {
                 contents: [{ parts: [{ text: userGoal }] }],
-                config: { // Use 'config' instead of 'systemInstruction' for direct setting
+                config: {
                     systemInstruction: systemInstructionText
                 }
             };
@@ -545,7 +542,7 @@ exports.handler = async function(event) {
                 console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
                 throw new Error("Text Generation API response did not contain generated text.");
             }
-            
+
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
