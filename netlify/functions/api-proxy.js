@@ -12,7 +12,7 @@
  * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project (RyGuyLabs-DreamOS-DB).
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// Removed GoogleGenerativeAI dependency. Using pure fetch for all APIs now.
 const fetch = require('node-fetch');
 
 // --- NEW GLOBAL SETUP FOR DATA & SECURITY ---
@@ -69,7 +69,7 @@ async function checkSquarespaceMembershipStatus(userId) {
         return false;
     }
 
-    // IMPORTANT: Replace this placeholder URL with the actual Squarespace API endpoint 
+    // IMPORTANT: This URL is a placeholder. Replace it with the actual Squarespace API endpoint 
     // that returns member status using the userId. 
     const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/${userId}`; 
     
@@ -132,14 +132,10 @@ exports.handler = async function(event) {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: 'API Key is not configured.' })
+            body: JSON.stringify({ message: 'AI API Key is not configured.' })
         };
     }
     
-    // Initialize AI models
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     try {
         const body = JSON.parse(event.body);
         // Unified input destructuring: 'action' replaces 'feature' for all calls, 
@@ -150,9 +146,9 @@ exports.handler = async function(event) {
 
         if (!feature) {
              return {
-                statusCode: 400,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ message: "Missing required 'action' parameter." })
+                 statusCode: 400,
+                 headers: CORS_HEADERS,
+                 body: JSON.stringify({ message: "Missing required 'action' parameter." })
             };
         }
 
@@ -172,6 +168,7 @@ exports.handler = async function(event) {
             if (!isSubscriberActive) {
                 return { 
                     statusCode: 403, 
+                    headers: CORS_HEADERS,
                     body: JSON.stringify({ 
                         message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription." 
                     }) 
@@ -179,22 +176,23 @@ exports.handler = async function(event) {
             }
 
             // B. FIRESTORE DATA INTERACTION (SECURE ACCESS)
+            // Note: The Firestore REST API uses paths relative to the project/database.
+            // Data is stored in: /users/{userId}/dreams/{documentId}
             const userDreamsCollection = `${FIRESTORE_BASE_URL}users/${userId}/dreams`;
             let firestoreResponse;
             
             switch (feature.toUpperCase()) {
                 case 'SAVE_DREAM':
-                    if (!data) { return { statusCode: 400, body: JSON.stringify({ message: "Missing data to save." }) }; }
-                    // Adds a new dream document (POST to collection)
+                    if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
+                    
+                    // Firestore REST API requires data to be wrapped in a 'fields' object
+                    // We assume 'data' is a standard object that the API can infer types for,
+                    // but for maximum robustness, the client should send data formatted as 
+                    // { "fields": { "fieldName": { "stringValue": "..." }, ... } }
+                    // Here, we attempt to save the raw object passed as 'data'.
                     firestoreResponse = await fetch(`${userDreamsCollection}?key=${FIRESTORE_KEY}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        // The Firestore REST API requires data to be wrapped in a 'fields' object 
-                        // and uses type specifiers (e.g., stringValue, integerValue).
-                        // We assume the incoming 'data' is already structured correctly or will be
-                        // handled by the API's automatic type inference for simple JSON. 
-                        // For maximum compatibility, the client should send data formatted as:
-                        // { "fields": { "fieldName": { "stringValue": "..." }, ... } }
                         body: JSON.stringify({ fields: data }) 
                     });
 
@@ -223,8 +221,9 @@ exports.handler = async function(event) {
                             for (const key in doc.fields) {
                                 const valueObj = doc.fields[key];
                                 // Extract the value from the Firestore type wrapper (e.g., stringValue, integerValue)
-                                const type = Object.keys(valueObj)[0]; 
-                                fields[key] = valueObj[type];
+                                // Handle null/undefined values gracefully
+                                const type = Object.keys(valueObj).find(k => valueObj[k] !== undefined && valueObj[k] !== null);
+                                fields[key] = type ? valueObj[type] : null; 
                             }
                             return { id: docId, ...fields };
                         });
@@ -240,7 +239,7 @@ exports.handler = async function(event) {
                 case 'DELETE_DREAM':
                     // Deletes a specific dream document (DELETE on document path)
                     if (!data || !data.dreamId) {
-                         return { statusCode: 400, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
+                         return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
                     }
                     
                     const dreamDocumentPath = `${FIRESTORE_BASE_URL}users/${userId}/dreams/${data.dreamId}`;
@@ -261,7 +260,7 @@ exports.handler = async function(event) {
 
                 default:
                     // Should be caught by the DATA_OPERATIONS check, but here for safety
-                    return { statusCode: 400, body: JSON.stringify({ message: "Invalid data action." }) };
+                    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data action." }) };
             }
 
             // Handle generic Firestore errors
@@ -393,7 +392,7 @@ exports.handler = async function(event) {
             };
         }
 
-        // --- 2c. Handle Text Generation (EXISTING) ---
+        // --- 2c. Handle Text Generation (REFACTORED) ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
             if (!userGoal) {
                 return {
@@ -403,14 +402,36 @@ exports.handler = async function(event) {
                 };
             }
 
-            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
-            const generationConfig = {
-                systemInstruction: { parts: [{ text: systemInstructionText }] }
-            };
-            const contents = [{ parts: [{ text: userGoal }] }];
+            // Using pure fetch with the recommended model for text generation
+            const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${geminiApiKey}`;
 
-            const response = await textModel.generateContent({ contents, ...generationConfig });
-            const fullText = response.response.text();
+            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
+                systemInstruction: { parts: [{ text: systemInstructionText }] },
+                // No tools or generationConfig needed for these simple text requests
+            };
+
+            const response = await fetch(TEXT_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Text Generation API Error:", errorBody);
+                throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!fullText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
+            }
             
             return {
                 statusCode: 200,
