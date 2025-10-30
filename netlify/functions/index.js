@@ -1,12 +1,12 @@
-// --- SERVER SIDE CODE: FIREBASE CLOUD FUNCTION ---
+// --- SERVER SIDE CODE: FIREBASE CUSTOM AUTH MINTER ---
+// This file is the primary entry point (index.js) and contains the entire function logic.
 
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const fetch = require('node-fetch'); // Included based on your package.json
+const fetch = require('node-fetch');
 
 // 1. Initialize the Admin SDK
-// This automatically authenticates using the Cloud Function's built-in service account, 
-// bypassing the need for a downloaded JSON key file.
+// This automatically authenticates using the Cloud Function's built-in service account.
 admin.initializeApp();
 
 // Load the secure Squarespace Token from the Cloud Function environment variables
