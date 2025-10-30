@@ -517,12 +517,18 @@ exports.handler = async function(event) {
 
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
             
-            // **FIXED PAYLOAD STRUCTURE**
+            // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
+            // structured as a Content object, and NOT nested inside "generationConfig".
             const payload = {
                 contents: [{ parts: [{ text: userGoal }] }],
-                generationConfig: { // Correct field name for the REST API
-                    systemInstruction: systemInstructionText
-                }
+                
+                // FIXED: Now top-level and correctly structured as a Content object
+                systemInstruction: { 
+                    parts: [{ text: systemInstructionText }] 
+                },
+                
+                // generationConfig removed as it was empty and causing the error due to 
+                // containing the misplaced systemInstruction.
             };
 
             const response = await fetch(TEXT_API_URL, {
