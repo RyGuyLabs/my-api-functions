@@ -452,26 +452,23 @@ exports.handler = async function(event) {
                 };
             }
 
-            // FIX 1: Use the correct, current model for TTS
-            const TTS_MODEL = "gemini-2.5-flash-preview-tts"; 
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
             const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const ttsPayload = {
                 contents: [{ parts: [{ text: textToSpeak }] }],
-                
-                // FIX 2: CRITICAL - Nest speechConfig inside generationConfig
+
+                // CRITICAL: Ensure speechConfig is correctly nested inside generationConfig
                 generationConfig: {
                     responseModalities: ["AUDIO"],
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: {
-                                voiceName: "Puck" 
+                                voiceName: "Puck"
                             }
                         }
                     }
                 },
-                // The 'model' property is included in the URL, but setting it here is good practice, 
-                // and it is required if the URL didn't contain the model name.
                 model: TTS_MODEL
             };
 
@@ -520,23 +517,26 @@ exports.handler = async function(event) {
                 };
             }
 
-            const TEXT_MODEL = "gemini-2.5-flash";
+            // FIX: Use the specific, stable model for guaranteed system instruction support
+            const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
-            
+
             // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
-            // structured as a Content object, and NOT nested inside "generationConfig".
+            // structured as a Content object.
             const payload = {
                 contents: [{ parts: [{ text: userGoal }] }],
-                
-                // FIXED: Now top-level and correctly structured as a Content object
-                systemInstruction: { 
-                    parts: [{ text: systemInstructionText }] 
+
+                // Correctly structured top-level system instruction
+                systemInstruction: {
+                    parts: [{ text: systemInstructionText }]
                 },
-                
-                // generationConfig removed as it was empty and causing the error due to 
-                // containing the misplaced systemInstruction.
+                // Add generationConfig for the model
+                generationConfig: {
+                    // Setting temperature to 0.7 for creative generation features
+                    temperature: 0.7,
+                }
             };
 
             const response = await fetch(TEXT_API_URL, {
@@ -548,7 +548,8 @@ exports.handler = async function(event) {
             if (!response.ok) {
                 const errorBody = await response.text();
                 console.error("Text Generation API Error:", response.status, errorBody);
-                throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
+                // Throw the error text directly so the client gets better feedback
+                throw new Error(`Text Generation API failed with status ${response.status}: ${errorBody}`);
             }
 
             const result = await response.json();
