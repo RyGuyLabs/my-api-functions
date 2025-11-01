@@ -40,7 +40,8 @@ const DATA_OPERATIONS = [
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
-    "smart_goal_structuring"
+    "smart_goal_structuring",
+    "dream_energy_analysis" // <-- FIX: Added missing feature
 ];
 
 // Map feature types to system instructions
@@ -52,7 +53,9 @@ const SYSTEM_INSTRUCTIONS = {
     "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
     "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
     "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-    "smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. The output must be in clear, easy-to-read Markdown. Ensure the output is concise, engaging, and breaks down the goal into Specific, Measurable, Achievable, Relevant, and Time-bound sections. Separate paragraphs with blank lines. Deliver as raw text."
+    "smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. The output must be in clear, easy-to-read Markdown. Ensure the output is concise, engaging, and breaks down the goal into Specific, Measurable, Achievable, Relevant, and Time-bound sections. Separate paragraphs with blank lines. Deliver as raw text.",
+    // FIX: Added instruction for energy analysis
+    "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
 
 const CORS_HEADERS = {
@@ -62,7 +65,8 @@ const CORS_HEADERS = {
     'Content-Type': 'application/json'
 };
 
-// --- FIRESTORE REST API HELPERS ---
+// --- FIRESTORE REST API HELPERS (functions remain the same) ---
+// ... (jsToFirestoreRest and firestoreRestToJs functions are unchanged) ...
 
 /**
  * Converts a standard JavaScript object into the verbose Firestore REST API format.
@@ -228,15 +232,17 @@ exports.handler = async function(event) {
 
     try {
         const body = JSON.parse(event.body);
-        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
+        // FIX: Add 'operation' to destructuring as the preferred request parameter
+        const { action, userId, data, userGoal, textToSpeak, imagePrompt, operation } = body;
 
-        const feature = action || body.feature;
+        // FIX: Use 'operation' first, then fallback to existing 'action' or 'feature'
+        const feature = operation || action || body.feature; 
 
         if (!feature) {
              return {
                  statusCode: 400,
                  headers: CORS_HEADERS,
-                 body: JSON.stringify({ message: "Missing required 'action' parameter." })
+                 body: JSON.stringify({ message: "Missing required 'action' or 'operation' parameter." })
              };
         }
 
@@ -568,10 +574,11 @@ exports.handler = async function(event) {
         }
 
         // --- Default Case ---
+        // This will now catch requests using the old "generate_text" or any other invalid feature
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: `Invalid "action/feature" specified: ${feature}` })
+            body: JSON.stringify({ message: `Invalid "action/feature" specified: ${feature}. Must be one of: ${[...DATA_OPERATIONS, 'image_generation', 'tts', ...TEXT_GENERATION_FEATURES].join(', ')}` })
         };
 
     } catch (error) {
