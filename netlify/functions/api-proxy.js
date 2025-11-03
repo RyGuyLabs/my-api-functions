@@ -1,3 +1,4 @@
+
 /**
  * Netlify Function: secure-data-proxy
  * * This function serves as the single secure gateway for ALL features (AI & Data).
@@ -544,89 +545,90 @@ exports.handler = async function(event) {
         }
 
         // --- 2c. Handle Text Generation ---
-        if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            if (!userGoal) {
-                return {
-                    statusCode: 400,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
-                };
-            }
+if (TEXT_GENERATION_FEATURES.includes(feature)) {
+    if (!userGoal) {
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+        };
+    }
 
-            // FIX: Use the specific, stable model for guaranteed system instruction support
-            const TEXT_MODEL = "gemini-2.5-pro";
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    // FIX: Use the standard alias for the Pro model
+    const TEXT_MODEL = "gemini-2.5-pro";
+    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+    const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-            // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
-            // structured as a Content object.
-            const payload = {
-                contents: [{ parts: [{ text: userGoal }] }],
+    // 1. Define the base content and generation config
+    const payload = {
+        contents: [{ parts: [{ text: userGoal }] }],
+        generationConfig: {
+            // Set temperature low for structured output, slightly higher for creative text
+            temperature: feature === 'smart_goal_structuring' ? 0.2 : 0.7, 
+        }
+    };
+    
+    // 2. Add System Instruction ONLY for non-SMART goal features (to avoid conflict with schema)
+    if (feature !== 'smart_goal_structuring') {
+        payload.systemInstruction = {
+            parts: [{ text: systemInstructionText }]
+        };
+    }
 
-                // Correctly structured top-level system instruction
-                systemInstruction: {
-                    parts: [{ text: systemInstructionText }]
-                },
-                // Add generationConfig for the model (includes response schema for SMART goal)
-                generationConfig: {
-                    // Setting temperature to 0.7 for creative generation features
-                    temperature: 0.2,
-                    // **CRITICAL FIX: Structured Output MUST be inside generationConfig for REST API**
-                    ...(feature === 'smart_goal_structuring' && {
-                        responseMimeType: "application/json",
-                        responseSchema: SMART_GOAL_SCHEMA
-                    })
-                }
-            };
+    // 3. Add Structured Output configuration ONLY for SMART goal feature
+    if (feature === 'smart_goal_structuring') {
+        // Structured output must be directly inside generationConfig for REST API
+        payload.generationConfig.responseMimeType = "application/json";
+        payload.generationConfig.responseSchema = SMART_GOAL_SCHEMA;
+    } 
 
-            const response = await fetch(TEXT_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+    const response = await fetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
 
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Text Generation API Error:", response.status, errorBody);
-                // Throw the error text directly so the client gets better feedback
-                throw new Error(`Text Generation API failed with status ${response.status}: ${errorBody}`);
-            }
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Text Generation API Error:", response.status, errorBody);
+        throw new Error(`Text Generation API failed with status ${response.status}: ${errorBody}`);
+    }
 
-            const result = await response.json();
+    const result = await response.json();
 
-            // --- NEW: Handle Structured JSON Output (SMART Goal) ---
-            if (feature === 'smart_goal_structuring') {
-                // Structured output is found in the 'data' field of the part
-                const jsonPart = result.candidates?.[0]?.content?.parts?.[0]?.data;
+    // --- NEW: Handle Structured JSON Output (SMART Goal) ---
+    if (feature === 'smart_goal_structuring') {
+        // Structured output is found in the 'data' field of the part
+        const jsonPart = result.candidates?.[0]?.content?.parts?.[0]?.data;
 
-                if (!jsonPart) {
-                    console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
-                    throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
-                }
-                
-                // Return the JSON object directly (the 'data' field is already parsed JSON)
-                return {
-                    statusCode: 200,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify(jsonPart) // Send the structured data object
-                };
-            }
+        if (!jsonPart) {
+            console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
+            throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
+        }
+        
+        // Return the JSON object directly (the 'data' field is already parsed JSON)
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify(jsonPart) // Send the structured data object
+        };
+    }
 
-            // --- Existing: Handle standard text output (for all other features) ---
-            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    // --- Existing: Handle standard text output (for all other features) ---
+    const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-            if (!fullText) {
-                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-                throw new Error("Text Generation API response did not contain generated text.");
-            }
+    if (!fullText) {
+        console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+        throw new Error("Text Generation API response did not contain generated text.");
+    }
 
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ text: fullText })
-            };
-        }
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ text: fullText })
+    };
+}
 
         // --- Default Case ---
         // This will now catch requests using the old "generate_text" or any other invalid feature
@@ -644,4 +646,4 @@ exports.handler = async function(event) {
             body: JSON.stringify({ message: `Internal server error: ${error.message}` })
         };
     }
-};
+}; 
