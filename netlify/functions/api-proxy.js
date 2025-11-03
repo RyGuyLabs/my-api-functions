@@ -53,10 +53,42 @@ const SYSTEM_INSTRUCTIONS = {
     "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
     "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
     "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-    "smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. The output must be in clear, easy-to-read Markdown. Ensure the output is concise, engaging, and breaks down the goal into Specific, Measurable, Achievable, Relevant, and Time-bound sections. Separate paragraphs with blank lines. Deliver as raw text.",
-    // FIX: Added instruction for energy analysis
+"smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. You MUST return only a single JSON object that conforms to the provided schema. Do not include any text, notes, or markdown outside of the JSON block.",    // FIX: Added instruction for energy analysis
     "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
+
+// --- NEW: Schema for Structured Output (S.M.A.R.T. Goal) ---
+const SMART_GOAL_SCHEMA = {
+    type: "object",
+    properties: {
+        goalTitle: {
+            type: "string",
+            description: "A concise, inspiring title for the S.M.A.R.T. goal."
+        },
+        specific: {
+            type: "string",
+            description: "A statement explaining what exactly will be accomplished."
+        },
+        measurable: {
+            type: "string",
+            description: "A statement defining the metrics used to track progress."
+        },
+        achievable: {
+            type: "string",
+            description: "A statement confirming the necessary skills, resources, and realism of the goal."
+        },
+        relevant: {
+            type: "string",
+            description: "A statement explaining why this goal is important and how it aligns with the user's dream."
+        },
+        timeBound: {
+            type: "string",
+            description: "A statement defining the specific deadline for goal completion."
+        }
+    },
+    required: ["goalTitle", "specific", "measurable", "achievable", "relevant", "timeBound"]
+};
+// -------------------------------------------------------------
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -530,20 +562,27 @@ exports.handler = async function(event) {
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
             // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
-            // structured as a Content object.
-            const payload = {
-                contents: [{ parts: [{ text: userGoal }] }],
+            // structured as a Content object.
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
 
-                // Correctly structured top-level system instruction
-                systemInstruction: {
-                    parts: [{ text: systemInstructionText }]
-                },
-                // Add generationConfig for the model
-                generationConfig: {
-                    // Setting temperature to 0.7 for creative generation features
-                    temperature: 0.7,
-                }
-            };
+                // Correctly structured top-level system instruction
+                systemInstruction: {
+                    parts: [{ text: systemInstructionText }]
+                },
+                // Add generationConfig for the model
+                generationConfig: {
+                    // Setting temperature to 0.7 for creative generation features
+                    temperature: 0.7,
+                },
+                // **NEW: Conditional Structured Output for S.M.A.R.T. Goal**
+                ...(feature === 'smart_goal_structuring' && {
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: SMART_GOAL_SCHEMA
+                    }
+                })
+            };
 
             const response = await fetch(TEXT_API_URL, {
                 method: 'POST',
@@ -559,19 +598,39 @@ exports.handler = async function(event) {
             }
 
             const result = await response.json();
-            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-            if (!fullText) {
-                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-                throw new Error("Text Generation API response did not contain generated text.");
-            }
+            // --- NEW: Handle Structured JSON Output (SMART Goal) ---
+            if (feature === 'smart_goal_structuring') {
+                // Structured output is found in the 'data' field of the part
+                const jsonPart = result.candidates?.[0]?.content?.parts?.[0]?.data;
 
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ text: fullText })
-            };
-        }
+                if (!jsonPart) {
+                    console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
+                    throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
+                }
+                
+                // Return the JSON object directly (the 'data' field is already parsed JSON)
+                return {
+                    statusCode: 200,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify(jsonPart) // Send the structured data object
+                };
+            }
+
+            // --- Existing: Handle standard text output (for all other features) ---
+            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!fullText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ text: fullText })
+            };
+        }
 
         // --- Default Case ---
         // This will now catch requests using the old "generate_text" or any other invalid feature
