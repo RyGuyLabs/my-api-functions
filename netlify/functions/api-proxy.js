@@ -556,7 +556,7 @@ exports.handler = async function(event) {
             }
 
             // FIX: Use the specific, stable model for guaranteed system instruction support
-            const TEXT_MODEL = "gemini-2.5-pro-09-2025";
+            const TEXT_MODEL = "gemini-2.5-pro";
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
