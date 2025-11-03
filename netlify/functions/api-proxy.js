@@ -564,25 +564,23 @@ exports.handler = async function(event) {
             // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
             // structured as a Content object.
             const payload = {
-                contents: [{ parts: [{ text: userGoal }] }],
+                contents: [{ parts: [{ text: userGoal }] }],
 
-                // Correctly structured top-level system instruction
-                systemInstruction: {
-                    parts: [{ text: systemInstructionText }]
-                },
-                // Add generationConfig for the model
-                generationConfig: {
-                    // Setting temperature to 0.7 for creative generation features
-                    temperature: 0.7,
-                },
-                // **NEW: Conditional Structured Output for S.M.A.R.T. Goal**
-                ...(feature === 'smart_goal_structuring' && {
-                    config: {
+                // Correctly structured top-level system instruction
+                systemInstruction: {
+                    parts: [{ text: systemInstructionText }]
+                },
+                // Add generationConfig for the model (includes response schema for SMART goal)
+                generationConfig: {
+                    // Setting temperature to 0.7 for creative generation features
+                    temperature: 0.7,
+                    // **CRITICAL FIX: Structured Output MUST be inside generationConfig for REST API**
+                    ...(feature === 'smart_goal_structuring' && {
                         responseMimeType: "application/json",
                         responseSchema: SMART_GOAL_SCHEMA
-                    }
-                })
-            };
+                    })
+                }
+            };
 
             const response = await fetch(TEXT_API_URL, {
                 method: 'POST',
