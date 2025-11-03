@@ -1,15 +1,15 @@
 /*** Netlify Function: secure-data-proxy
- * * This function serves as the single secure gateway for ALL features (AI & Data).
- * * It handles:
- * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
- * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API) using structured queries.
- * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
- * * * Environment Variables required:
- * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
- * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
- * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
- * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
- */
+ * * This function serves as the single secure gateway for ALL features (AI & Data).
+ * * It handles:
+ * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
+ * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API) using structured queries.
+ * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
+ * * * Environment Variables required:
+ * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
+ * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
+ * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
+ * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
+ */
 
 // **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
 const fetch = require('node-fetch').default || require('node-fetch');
@@ -22,116 +22,134 @@ const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
 // Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
 const FIRESTORE_BASE_URL =
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 // Base URL for Firestore queries (Used for secure, filtered reads/writes)
 const FIRESTORE_QUERY_URL =
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
 // List of features that perform data operations (GATED BY MEMBERSHIP)
 const DATA_OPERATIONS = [
-    'SAVE_DREAM',
-    'LOAD_DREAMS',
-    'DELETE_DREAM'
+    'SAVE_DREAM',
+    'LOAD_DREAMS',
+    'DELETE_DREAM'
 ];
 
 // List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
-    "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
-    "positive_spin", "mindset_reset", "objection_handler",
-    "smart_goal_structuring",
-    "dream_energy_analysis" // <-- FIX: Added missing feature
+    "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
+    "positive_spin", "mindset_reset", "objection_handler",
+    "smart_goal_structuring",
+    "dream_energy_analysis"
 ];
 
 // Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
-    "plan": "You are an expert project manager and motivator. Create a comprehensive, step-by-step action plan to achieve the user's dream. The plan must contain a brief, motivating introduction and a numbered list (ordered list in Markdown) of at least 10 concrete, initial steps or milestones. Deliver the output as clean, raw text suitable for direct display.",
-    "pep_talk": "You are RyGuy, a masculine, inspiring, and enthusiastic life coach. Generate an encouraging, short pep talk (about 120 words or less) to motivate the user to start their dream. The tone must be exciting, positive, and direct. The content should be suitable for Text-to-Speech narration. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
-    "vision_prompt": "You are a creative visual artist. Based on the user's dream, write a detailed, high-quality, cinematic image generation prompt (max 100 words) suitable for an AI image model like Imagen. The image should be a dramatic, aspirational, and highly detailed visual representation of the dream achieved. Write a prompt to generate a visual representation of this dream's successful completion. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
-    "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-    "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
-    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-    "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-"smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. You MUST return only a single JSON object that conforms to the provided schema. Do not include any text, notes, or markdown outside of the JSON block.",    // FIX: Added instruction for energy analysis
-    "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
+    "plan": "You are an expert project manager and motivator. Create a comprehensive, step-by-step action plan to achieve the user's dream. The plan must contain a brief, motivating introduction and a numbered list (ordered list in Markdown) of at least 10 concrete, initial steps or milestones. Deliver the output as clean, raw text suitable for direct display.",
+    "pep_talk": "You are RyGuy, a masculine, inspiring, and enthusiastic life coach. Generate an encouraging, short pep talk (about 120 words or less) to motivate the user to start their dream. The tone must be exciting, positive, and direct. The content should be suitable for Text-to-Speech narration. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver as raw text.",
+    "vision_prompt": "You are a creative visual artist. Based on the user's dream, write a detailed, high-quality, cinematic image generation prompt (max 100 words) suitable for an AI image model like Imagen. The image should be a dramatic, aspirational, and highly detailed visual representation of the dream achieved. Write a prompt to generate a visual representation of this dream's successful completion. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "smart_goal_structuring": `You are a professional goal-setting consultant. Take the user's dream and convert it into a modern, high-value, actionable S.M.A.R.T. goal. Your output MUST include:
+- Specific: Clear and precise description of the goal.
+- Measurable: Metrics or indicators that track progress.
+- Achievable: Realistic yet challenging steps to reach it.
+- Relevant: Connect the goal to the user's long-term aspirations or values.
+- Time-bound: Define a timeline with milestones and check-ins.
+- Next-Level Strategy: Include cutting-edge micro-hacks, modern productivity tools, AI-assisted apps, mindset shifts, or behavioral techniques that accelerate success and provide a unique edge.
+Deliver ONLY a single JSON object in this format:
+
+{
+  "specific": "...",
+  "measurable": "...",
+  "achievable": "...",
+  "relevant": "...",
+  "time_bound": "...",
+  "next_level_strategy": "..."
+}
+
+Do NOT include any extra text, explanation, or markdown outside of the JSON object.`,
+    "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
 
 const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json'
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json'
 };
 
 // --- FIRESTORE REST API HELPERS (functions remain the same) ---
 // ... (jsToFirestoreRest and firestoreRestToJs functions are unchanged) ...
 
 /**
- * Converts a standard JavaScript object into the verbose Firestore REST API format.
- */
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
+ */
 function jsToFirestoreRest(value) {
-    if (value === null || value === undefined) {
-        return { nullValue: null };
-    }
-    if (typeof value === 'string') {
-        return { stringValue: value };
-    }
-    if (typeof value === 'number') {
-        return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
-    }
-    if (typeof value === 'boolean') {
-        return { booleanValue: value };
-    }
-    if (Array.isArray(value)) {
-        return {
-            arrayValue: {
-                values: value.map(jsToFirestoreRest)
-            }
-        };
-    }
-    if (typeof value === 'object') {
-        const mapFields = {};
-        for (const key in value) {
-            if (Object.prototype.hasOwnProperty.call(value, key)) {
-                mapFields[key] = jsToFirestoreRest(value[key]);
-            }
-        }
-        return { mapValue: { fields: mapFields } };
-    }
+    if (value === null || value === undefined) {
+        return { nullValue: null };
+    }
+    if (typeof value === 'string') {
+        return { stringValue: value };
+    }
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    }
+    if (typeof value === 'boolean') {
+        return { booleanValue: value };
+    }
+    if (Array.isArray(value)) {
+        return {
+            arrayValue: {
+                values: value.map(jsToFirestoreRest)
+            }
+        };
+    }
+    if (typeof value === 'object') {
+        const mapFields = {};
+        for (const key in value) {
+            if (Object.prototype.hasOwnProperty.call(value, key)) {
+                mapFields[key] = jsToFirestoreRest(value[key]);
+            }
+        }
+        return { mapValue: { fields: mapFields } };
+    }
 
-    return { stringValue: String(value) };
+    return { stringValue: String(value) };
 }
 
 /**
- * Recursively unwraps the verbose Firestore REST API field object
- * into a standard JavaScript object.
- */
+ * Recursively unwraps the verbose Firestore REST API field object
+ * into a standard JavaScript object.
+ */
 function firestoreRestToJs(firestoreField) {
-    if (!firestoreField) return null;
+    if (!firestoreField) return null;
 
-    if (firestoreField.nullValue !== undefined) return null;
-    if (firestoreField.stringValue !== undefined) return firestoreField.stringValue;
-    if (firestoreField.integerValue !== undefined) return parseInt(firestoreField.integerValue, 10);
-    if (firestoreField.doubleValue !== undefined) return firestoreField.doubleValue;
-    if (firestoreField.booleanValue !== undefined) return firestoreField.booleanValue;
-    if (firestoreField.timestampValue !== undefined) return new Date(firestoreField.timestampValue);
+    if (firestoreField.nullValue !== undefined) return null;
+    if (firestoreField.stringValue !== undefined) return firestoreField.stringValue;
+    if (firestoreField.integerValue !== undefined) return parseInt(firestoreField.integerValue, 10);
+    if (firestoreField.doubleValue !== undefined) return firestoreField.doubleValue;
+    if (firestoreField.booleanValue !== undefined) return firestoreField.booleanValue;
+    if (firestoreField.timestampValue !== undefined) return new Date(firestoreField.timestampValue);
 
-    if (firestoreField.arrayValue) {
-        return (firestoreField.arrayValue.values || []).map(firestoreRestToJs);
-    }
+    if (firestoreField.arrayValue) {
+        return (firestoreField.arrayValue.values || []).map(firestoreRestToJs);
+    }
 
-    if (firestoreField.mapValue) {
-        const jsObject = {};
-        const fields = firestoreField.mapValue.fields || {};
-        for (const key in fields) {
-            if (Object.prototype.hasOwnProperty.call(fields, key)) {
-                jsObject[key] = firestoreRestToJs(fields[key]);
-            }
-        }
-        return jsObject;
-    }
+    if (firestoreField.mapValue) {
+        const jsObject = {};
+        const fields = firestoreField.mapValue.fields || {};
+        for (const key in fields) {
+            if (Object.prototype.hasOwnProperty.call(fields, key)) {
+                jsObject[key] = firestoreRestToJs(fields[key]);
+            }
+        }
+        return jsObject;
+    }
 
-    return null;
+    return null;
 }
 
 
@@ -512,65 +530,96 @@ exports.handler = async function(event) {
         }
 
         // --- 2c. Handle Text Generation ---
-        if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            if (!userGoal) {
-                return {
-                    statusCode: 400,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
-                };
-            }
+        // --- 2c. Handle Next-Level Multi-Modal Text Features ---
+if (['smart_goal_structuring','plan','pep_talk'].includes(feature)) {
 
-            // FIX: Use the specific, stable model for guaranteed system instruction support
-            const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    if (!userGoal) {
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Missing required userGoal data for ${feature}.` })
+        };
+    }
 
-            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+    const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
+    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-            // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
-            // structured as a Content object.
-            const payload = {
-                contents: [{ parts: [{ text: userGoal }] }],
+    const payload = {
+        contents: [{ parts: [{ text: userGoal }] }],
+        systemInstruction: { parts: [{ text: systemInstructionText }] },
+        generationConfig: { temperature: 0.7 }
+    };
 
-                // Correctly structured top-level system instruction
-                systemInstruction: {
-                    parts: [{ text: systemInstructionText }]
-                },
-                // Add generationConfig for the model
-                generationConfig: {
-                    // Setting temperature to 0.7 for creative generation features
-                    temperature: 0.7,
-                }
-            };
+    const textResponse = await fetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
 
-            const response = await fetch(TEXT_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+    if (!textResponse.ok) throw new Error(`Text Generation API failed for ${feature}.`);
 
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Text Generation API Error:", response.status, errorBody);
-                // Throw the error text directly so the client gets better feedback
-                throw new Error(`Text Generation API failed with status ${response.status}: ${errorBody}`);
-            }
+    const textResult = await textResponse.json();
+    const generatedText = textResult.candidates?.[0]?.content?.parts?.[0]?.text;
 
-            const result = await response.json();
-            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    // --- Image Generation ---
+    const IMAGEN_MODEL = "imagen-3.0-generate-002";
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
+    const imagePrompt = feature === 'smart_goal_structuring'
+        ? `A cinematic, motivational, high-quality representation of someone achieving this goal: ${userGoal}.`
+        : `A cinematic, motivational, high-quality representation of ${feature} for: ${userGoal}.`;
 
-            if (!fullText) {
-                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-                throw new Error("Text Generation API response did not contain generated text.");
-            }
+    const imagenPayload = {
+        instances: [{ prompt: imagePrompt }],
+        parameters: { sampleCount: 1, aspectRatio: "1:1", outputMimeType: "image/png" }
+    };
 
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ text: fullText })
-            };
-        }
+    const imageResponse = await fetch(IMAGEN_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagenPayload)
+    });
 
+    const imageResult = await imageResponse.json();
+    const base64Image = imageResult?.predictions?.[0]?.bytesBase64Encoded;
+
+    // --- TTS Generation ---
+    const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+    const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const ttsPayload = {
+        contents: [{ parts: [{ text: generatedText }] }],
+        generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+        },
+        model: TTS_MODEL
+    };
+
+    const ttsResponse = await fetch(TTS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ttsPayload)
+    });
+
+    const ttsResult = await ttsResponse.json();
+    const audioData = ttsResult?.candidates?.[0]?.content?.parts?.find(
+        p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+    )?.inlineData?.data;
+    const mimeType = ttsResult?.candidates?.[0]?.content?.parts?.find(
+        p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+    )?.inlineData?.mimeType;
+
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+            text: generatedText,
+            imageUrl: base64Image ? `data:image/png;base64,${base64Image}` : null,
+            ttsAudio: audioData || null,
+            ttsMimeType: mimeType || null
+        })
+    };
+}
         // --- Default Case ---
         // This will now catch requests using the old "generate_text" or any other invalid feature
         return {
