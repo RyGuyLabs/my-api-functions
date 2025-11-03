@@ -6,7 +6,7 @@ const CORS_HEADERS = {
 };
 
 // IMPORTANT: Define these as your environment variables (e.g., in Netlify settings)
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
