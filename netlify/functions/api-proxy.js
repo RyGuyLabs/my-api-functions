@@ -53,8 +53,7 @@ const SYSTEM_INSTRUCTIONS = {
     "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
     "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
     "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-"smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. You MUST return only a single JSON object that conforms to the provided schema. Do not include any text, notes, or markdown outside of the JSON block.",    // FIX: Added instruction for energy analysis
-    "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
+"smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. Your ONLY task is to return a complete, valid JSON object that strictly adheres to the provided schema. DO NOT include any introductory text, Markdown formatting (like `json`), or notes. Return only the raw JSON object.",    "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
 
 // --- NEW: Schema for Structured Output (S.M.A.R.T. Goal) ---
@@ -573,7 +572,7 @@ exports.handler = async function(event) {
                 // Add generationConfig for the model (includes response schema for SMART goal)
                 generationConfig: {
                     // Setting temperature to 0.7 for creative generation features
-                    temperature: 0.7,
+                    temperature: 0.2,
                     // **CRITICAL FIX: Structured Output MUST be inside generationConfig for REST API**
                     ...(feature === 'smart_goal_structuring' && {
                         responseMimeType: "application/json",
