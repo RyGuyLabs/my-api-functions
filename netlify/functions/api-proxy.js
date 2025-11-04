@@ -426,16 +426,18 @@ User goal: "${userGoal}"`
     }
   ],
   generationConfig: {
-    temperature: 0.7,
-    candidateCount: 1
-  }
-};
+  temperature: 0.7,        // creativity/flexibility
+  candidateCount: 1,       // one response is enough
+  maxOutputTokens: 1500,   // allow long JSON output
+  topP: 0.95               // ensures stable, high-probability tokens
+}
+
 
     console.log("📤 Sending to Gemini API:", aiRequest);
 
 try {
   const aiResponse = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1:generateContent?key=${FIRST_API_KEY}`,
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${FIRST_API_KEY}`,
   {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
