@@ -432,7 +432,6 @@ User goal: "${userGoal}"`
   }
 };
 
-
     console.log("📤 Sending to Gemini API:", aiRequest);
 
     try {
