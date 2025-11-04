@@ -10,13 +10,9 @@
 const fetch = require('node-fetch').default;
 
 // --- ENV VARIABLES ---
-// NOTE: Only GEMINI_API_KEY is required for this function.
-// Firestore and Squarespace keys are not used as the frontend handles data directly.
 const GEMINI_API_KEY = process.env.FIRST_API_KEY; // Used for all Google AI calls (Gemini, Imagen, TTS)
 
 // --- FEATURE GROUPS ---
-// 'vision_prompt' has been REMOVED from this list, as it's an image op.
-// 'dream_energy_analysis' has been ADDED.
 const TEXT_GENERATION_FEATURES = [
   "plan", "pep_talk", "obstacle_analysis",
   "positive_spin", "mindset_reset", "objection_handler",
@@ -118,7 +114,6 @@ exports.handler = async function (event) {
 
   try {
     const body = JSON.parse(event.body);
-    // Get the keys the frontend is sending: 'action', 'userGoal', 'text', 'voice'
     const feature = body.action;
     const { userGoal, text, voice } = body;
 
@@ -129,7 +124,7 @@ exports.handler = async function (event) {
       if (!userGoal) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal for image prompt.' }) };
 
       // 1. Generate the vision prompt text first
-      const PROMPT_MODEL = "gemini-2.5-flash"; // Fast model for prompt generation
+      const PROMPT_MODEL = "gemini-2.5-flash"; 
       const PROMPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${PROMPT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
       const promptPayload = {
         contents: [{ parts: [{ text: userGoal }] }],
@@ -156,7 +151,6 @@ exports.handler = async function (event) {
       const base64Data = imgResult?.predictions?.[0]?.bytesBase64Encoded;
       if (!base64Data) throw new Error("Image generation failed to return data.");
 
-      // Return the format the frontend expects: { imageUrl: "...", prompt: "..." }
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
@@ -169,10 +163,9 @@ exports.handler = async function (event) {
 
     // --- ROUTE 2: TTS GENERATION ---
     if (feature === 'tts') {
-      // Use 'text' key from payload, as sent by handleTts()
       if (!text) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing text for TTS.' }) };
       
-      const TTS_MODEL = "gemini-2.5-flash-preview-tts"; // Using the specified TTS model
+      const TTS_MODEL = "gemini-2.5-flash-preview-tts"; 
       const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
       const ttsPayload = {
         contents: [{ parts: [{ text: text }] }],
@@ -180,7 +173,6 @@ exports.handler = async function (event) {
           responseModalities: ["AUDIO"],
           speechConfig: {
             voiceConfig: {
-              // Use 'voice' key from payload, defaulting to 'Fenrir' (which matches RYGUY_TTS_VOICE)
               prebuiltVoiceConfig: { voiceName: voice || "Fenrir" } 
             }
           }
@@ -195,7 +187,6 @@ exports.handler = async function (event) {
       const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData && p.inlineData.mimeType.startsWith('audio/'));
       if (!part?.inlineData?.data) throw new Error("TTS generation failed to return audio data.");
 
-      // Return format frontend expects: { audioData: "...", mimeType: "..." }
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
@@ -207,47 +198,58 @@ exports.handler = async function (event) {
     if (TEXT_GENERATION_FEATURES.includes(feature)) {
       if (!userGoal) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal.' }) };
 
-      const TEXT_MODEL = "gemini-2.5-pro"; // Use Pro for complex analysis and JSON
+      const TEXT_MODEL = "gemini-2.5-pro"; 
       const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
       const payload = {
         contents: [{ parts: [{ text: userGoal }] }],
-        tools: [{ googleSearch: {} }], // Enable search grounding
         generationConfig: {
-          temperature: feature.includes('smart') || feature.includes('energy') ? 0.2 : 0.7,
+          temperature: 0.7, // Default temperature
         }
       };
 
-      // Add system instruction for non-JSON features
-      if (feature !== 'smart_goal_structuring' && feature !== 'dream_energy_analysis') {
-        payload.systemInstruction = { parts: [{ text: SYSTEM_INSTRUCTIONS[feature] }] };
-      } else {
-        // Enforce JSON output for SMART Goal and Energy Analysis
+      // *** FIX AHEAD ***
+      // Apply correct config based on feature type
+      if (feature === 'smart_goal_structuring' || feature === 'dream_energy_analysis') {
+        // This is a JSON feature.
+        // DO NOT ADD 'tools'.
+        // Add JSON-specific config.
+        payload.generationConfig.temperature = 0.2; // Lower temp for factual JSON
         payload.generationConfig.responseMimeType = "application/json";
         payload.generationConfig.responseSchema = (feature === 'smart_goal_structuring') ? SMART_GOAL_SCHEMA : DREAM_ENERGY_SCHEMA;
         payload.systemInstruction = { parts: [{ text: SYSTEM_INSTRUCTIONS[feature] }] };
+      } else {
+        // This is a standard text feature.
+        // ADD 'tools' for Google Search grounding.
+        // DO NOT ADD 'responseMimeType'.
+        payload.tools = [{ googleSearch: {} }];
+        payload.systemInstruction = { parts: [{ text: SYSTEM_INSTRUCTIONS[feature] }] };
       }
+      // *** END FIX ***
 
       const res = await fetchWithRetry(TEXT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const result = await res.json();
-      if (!res.ok) throw new Error(`Gemini API error: ${JSON.stringify(result)}`);
+      
+      if (!res.ok) {
+          // Throw the specific error message from Gemini
+          throw new Error(`Gemini API error: ${JSON.stringify(result)}`);
+      }
 
       const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawText) throw new Error("Text generation failed: empty response.");
 
-      // For JSON features, return the raw JSON text for the client to parse
-      // For text features, return the text in the format the client expects: { text: "..." }
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
-        body: JSON.stringify({ text: rawText }) // Client expects { text: "..." } for ALL text/json responses
+        body: JSON.stringify({ text: rawText }) // Client expects { text: "..." }
       };
     }
 
     return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `Invalid action: ${feature}` }) };
 
   } catch (err) {
-    console.error(err);
+    console.error(err); // Log the full error to Netlify console
+    // Return the specific error message to the client
     return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `Internal server error: ${err.message}` }) };
   }
 };
