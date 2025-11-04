@@ -435,13 +435,14 @@ User goal: "${userGoal}"`
 
 try {
   const aiResponse = await fetch(
-  `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${FIRST_API_KEY}`,
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1:generateContent?key=${FIRST_API_KEY}`,
   {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(aiRequest)
   }
 );
+
 
         if (!aiResponse.ok) {
             const errText = await aiResponse.text();
@@ -457,16 +458,41 @@ try {
             throw new Error("AI text generation failed: invalid JSON response");
         }
 
-        const textOutput =
-            aiData?.candidates?.[0]?.content?.[0]?.text?.trim() ||
-            "[AI failed to generate content]";
-
-        console.log("✅ Gemini API response received:", textOutput.slice(0, 100));
+        // ✅ SMART Goal: parse Gemini JSON and return as structured object
+if (feature === "smart_goal_structuring") {
+    let smartGoalObj;
+    try {
+        smartGoalObj = JSON.parse(aiData.candidates[0].content[0].text);
+    } catch (parseErr) {
+        console.error("❌ Failed to parse SMART Goal JSON:", parseErr);
         return {
-            statusCode: 200,
+            statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ text: textOutput })
+            body: JSON.stringify({
+                message: "Failed to parse SMART Goal JSON from AI response."
+            })
         };
+    }
+
+    console.log("✅ Gemini API SMART Goal object received:", smartGoalObj);
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ smartGoal: smartGoalObj })
+    };
+}
+
+// ✅ Fallback for other text-generation features
+const textOutput =
+    aiData?.candidates?.[0]?.content?.[0]?.text?.trim() ||
+    "[AI failed to generate content]";
+console.log("✅ Gemini API response received:", textOutput.slice(0, 100));
+return {
+    statusCode: 200,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({ text: textOutput })
+};
+
     } catch (err) {
         console.error("❌ AI text generation failed:", err);
         return {
