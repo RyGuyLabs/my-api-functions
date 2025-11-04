@@ -378,33 +378,73 @@ exports.handler = async function(event) {
             }
         }
 
-        if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            const prompt = SYSTEM_INSTRUCTIONS[feature];
+        // ✅ Enhanced AI text generation handler
+if (TEXT_GENERATION_FEATURES.includes(feature)) {
+    console.log("🧠 AI generation request received:", { feature, userGoal });
 
-            const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate?key=${GEMINI_API_KEY}`, {
+    if (!userGoal || userGoal.trim() === '') {
+        console.error("❌ Missing userGoal for AI request");
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Missing 'userGoal' in request body." })
+        };
+    }
+
+    const promptTemplate = SYSTEM_INSTRUCTIONS[feature];
+    const fullPrompt = promptTemplate.replace(/\$\{userGoal\}/g, userGoal);
+
+    const aiRequest = {
+        prompt: { text: fullPrompt },
+        temperature: 0.7,
+        candidateCount: 1
+    };
+
+    console.log("📤 Sending to Gemini API:", aiRequest);
+
+    try {
+        const aiResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate?key=${GEMINI_API_KEY}`,
+            {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    prompt: { text: prompt.replace(/\$\{userGoal\}/g, userGoal || '') },
-                    temperature: 0.7,
-                    candidateCount: 1
-                })
-            });
-
-            if (!aiResponse.ok) {
-                const errText = await aiResponse.text();
-                throw new Error(`AI text generation failed: ${errText}`);
+                body: JSON.stringify(aiRequest)
             }
+        );
 
-            const aiData = await aiResponse.json();
-            const textOutput = aiData?.candidates?.[0]?.content?.[0]?.text || '';
-
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ text: textOutput })
-            };
+        if (!aiResponse.ok) {
+            const errText = await aiResponse.text();
+            console.error("❌ Gemini API error:", errText);
+            throw new Error(`AI text generation failed: ${errText}`);
         }
+
+        let aiData;
+        try {
+            aiData = await aiResponse.json();
+        } catch (err) {
+            console.error("❌ Failed to parse Gemini response:", err);
+            throw new Error("AI text generation failed: invalid JSON response");
+        }
+
+        const textOutput =
+            aiData?.candidates?.[0]?.content?.[0]?.text?.trim() ||
+            "[AI failed to generate content]";
+
+        console.log("✅ Gemini API response received:", textOutput.slice(0, 100));
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ text: textOutput })
+        };
+    } catch (err) {
+        console.error("❌ AI text generation failed:", err);
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `AI text generation failed: ${err.message}` })
+        };
+    }
+}
 
         if (feature === 'image_generation') {
             const imgPrompt = imagePrompt || `A cinematic, motivational, high-quality representation of ${userGoal}`;
