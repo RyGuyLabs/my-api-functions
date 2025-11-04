@@ -18,7 +18,7 @@ const fetch = require('node-fetch').default || require('node-fetch');
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
-const GEMINI_API_KEY = process.env.FIRST_API_KEY;
+const FIRST_API_KEY = process.env.FIRST_API_KEY;
 
 // Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
 const FIRESTORE_BASE_URL =
@@ -480,7 +480,7 @@ try {
 
         if (feature === 'image_generation') {
             const imgPrompt = imagePrompt || `A cinematic, motivational, high-quality representation of ${userGoal}`;
-            const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta2/models/image-vision-001:generateImage?key=${GEMINI_API_KEY}`, {
+            const imgRes = await fetch(`https://generativelanguage.googleapis.com/v1beta2/models/image-vision-001:generateImage?key=${FIRST_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -518,7 +518,7 @@ try {
                 return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing text to generate TTS." }) };
             }
 
-            const ttsRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GEMINI_API_KEY}`, {
+            const ttsRes = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${FIRST_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
