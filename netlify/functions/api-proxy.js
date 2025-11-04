@@ -243,14 +243,13 @@ exports.handler = async function(event) {
         };
     }
 
-    if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
+    if (!FIRST_API_KEY || FIRST_API_KEY.trim() === '') {
     return {
         statusCode: 500,
         headers: CORS_HEADERS,
         body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
     };
 }
-
 
     if (!FIRESTORE_KEY || !PROJECT_ID) {
         return {
