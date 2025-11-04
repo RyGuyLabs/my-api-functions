@@ -435,13 +435,13 @@ User goal: "${userGoal}"`
 
 try {
   const aiResponse = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${FIRST_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(aiRequest)
-    }
-  );
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${FIRST_API_KEY}`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(aiRequest)
+  }
+);
 
         if (!aiResponse.ok) {
             const errText = await aiResponse.text();
