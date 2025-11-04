@@ -396,10 +396,42 @@ if (TEXT_GENERATION_FEATURES.includes(feature)) {
     const fullPrompt = promptTemplate.replace(/\$\{userGoal\}/g, userGoal);
 
     const aiRequest = {
-        prompt: { text: fullPrompt },
-        temperature: 0.7,
-        candidateCount: 1
-    };
+  contents: [
+    {
+      role: "user",
+      parts: [
+        {
+          text: `You are a professional goal-setting consultant. Take the user's dream and convert it into a modern, high-value, actionable S.M.A.R.T. goal. Your output MUST include:
+- Specific: Clear and precise description of the goal.
+- Measurable: Metrics or indicators that track progress.
+- Achievable: Realistic yet challenging steps to reach it.
+- Relevant: Connect the goal to the user's long-term aspirations or values.
+- Time-bound: Define a timeline with milestones and check-ins.
+- Next-Level Strategy: Include cutting-edge micro-hacks, modern productivity tools, AI-assisted apps, mindset shifts, or behavioral techniques that accelerate success and provide a unique edge.
+Deliver ONLY a single JSON object in this format:
+
+{
+  "specific": "...",
+  "measurable": "...",
+  "achievable": "...",
+  "relevant": "...",
+  "time_bound": "...",
+  "next_level_strategy": "..."
+}
+
+Do NOT include any extra text, explanation, or markdown outside of the JSON object.
+
+User goal: "${userGoal}"`
+        }
+      ]
+    }
+  ],
+  generationConfig: {
+    temperature: 0.7,
+    candidateCount: 1
+  }
+};
+
 
     console.log("📤 Sending to Gemini API:", aiRequest);
 
