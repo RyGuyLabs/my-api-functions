@@ -298,15 +298,15 @@ exports.handler = async function (event) {
     if (TEXT_GENERATION_FEATURES.includes(feature)) {
       if (!userGoal) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal.' }) };
       
-      // Using gemini-2.5-pro as requested for complex analysis/structuring
       const TEXT_MODEL = "gemini-2.5-pro"; 
       const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
       
       const payload = { 
         contents: [{ parts: [{ text: userGoal }] }], 
+        // FIX: The tools property must be at the root level, not inside generationConfig.
+        tools: [{ googleSearch: {} }], // Enable search grounding for all text features
         generationConfig: { 
           temperature: feature === 'smart_goal_structuring' ? 0.2 : 0.7,
-          tools: [{ googleSearch: {} }] // Enable search grounding for all text features
         } 
       };
 
@@ -324,7 +324,6 @@ exports.handler = async function (event) {
       if (!res.ok) throw new Error(`Gemini API error: ${JSON.stringify(result)}`);
 
       if (feature === 'smart_goal_structuring') {
-        // Attempt to parse clean JSON (since responseMimeType is set)
         const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawText) throw new Error("SMART Goal generation failed: empty response.");
         
