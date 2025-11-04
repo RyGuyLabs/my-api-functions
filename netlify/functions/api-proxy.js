@@ -244,12 +244,13 @@ exports.handler = async function(event) {
     }
 
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
-        return {
-            statusCode: 500,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
-        };
-    }
+    return {
+        statusCode: 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
+    };
+}
+
 
     if (!FIRESTORE_KEY || !PROJECT_ID) {
         return {
@@ -404,13 +405,14 @@ if (TEXT_GENERATION_FEATURES.includes(feature)) {
 
     try {
         const aiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate?key=${GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(aiRequest)
-            }
-        );
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(aiRequest)
+  }
+);
+
 
         if (!aiResponse.ok) {
             const errText = await aiResponse.text();
