@@ -49,10 +49,6 @@ const FeatureConfig = {
       "positive_spin", "mindset_reset", "objection_handler",
       "smart_goal_structuring",
       "dream_energy_analysis"
-    ],
-    // Features requiring a paid membership check
-    HIGH_COST_AI_FEATURES: [
-        "vision_prompt", "tts", "smart_goal_structuring", "dream_energy_analysis"
     ]
 };
 
@@ -211,70 +207,107 @@ function extractJsonFromText(text) { /* ... implementation retained ... */
 }
 
 // --- CORE SECURITY FUNCTIONS ---
+// Removed verifyAuthToken()
+// Removed checkSquarespaceMembershipStatus()
 
-function verifyAuthToken(userId, authToken) {
-    if (userId && (userId.startsWith('mock-') || userId === 'TEST_USER')) {
-        return true; // Bypass for dev/test
-    }
-    if (!authToken || !userId) return false;
-    
-    // Placeholder check: requires the token to be present and contain a part of the user ID
-    return authToken.includes(userId.substring(0, 8)) && authToken.length > 30; 
+function getUsageDocumentPath(userId) {
+    const today = new Date().toISOString().split('T')[0]; 
+    return `users/${userId}/usage/${today}`;
 }
-
-
-/** Prunes expired entries and implements LRU logic for max size. */
-function pruneCache() {
-    const now = Date.now();
-    let oldestKey = null;
-    let oldestExpiry = Infinity;
-
-    membershipCache.forEach((cached, key) => {
-        if (now > cached.expiry) {
-            membershipCache.delete(key);
-        } else if (cached.expiry < oldestExpiry) {
-            oldestExpiry = cached.expiry;
-            oldestKey = key;
-        }
-    });
-
-    if (membershipCache.size > MAX_CACHE_SIZE && oldestKey) {
-        membershipCache.delete(oldestKey);
-    }
-}
-
 
 /**
- * Checks Squarespace membership status and returns tier information.
- * Uses cache to reduce API calls.
- * * NOTE: The implementation below is a MOCK, but the structure is correct for 
- * when real Squarespace API integration is complete.
+ * Checks and increments the daily usage counter in Firestore based on the user's tier.
+ * @returns The new request count, or -1 if the limit is exceeded.
  */
-async function checkSquarespaceMembershipStatus(userId) {
-  
-  // 1. MOCK USER GUARD
-  if (userId && (userId.startsWith('mock-') || userId === 'TEST_USER')) {
-    if (IS_PRODUCTION) {
-        log('ERROR', `Blocking mock user ${userId} in production environment.`);
-        return { isActive: false, tier: 'unknown' };
+async function checkRateLimit(userId, feature, context, tier) {
+    const dailyLimit = getDailyLimit(tier);
+    const path = getUsageDocumentPath(userId);
+    const firestoreUrl = `${FIRESTORE_BASE_URL}${path}?key=${FIRESTORE_KEY}`;
+
+    let currentCount = 0;
+    
+    try {
+        // 1. GET current count
+        const getRes = await fetchWithRetry(firestoreUrl, { method: 'GET' }, context);
+        
+        if (getRes.status === 200) {
+            const doc = await getRes.json();
+            const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
+            currentCount = fields?.count || 0;
+        } else if (getRes.status !== 404) {
+             log('WARN', `Rate limit GET failed with status ${getRes.status}. Continuing, but logging.`, context);
+        }
+
+        const newCount = currentCount + 1;
+
+        if (newCount > dailyLimit) {
+            log('WARN', `Rate limit exceeded for user (Tier: ${tier}). Count: ${newCount} / ${dailyLimit}`, context);
+            return -1; 
+        }
+
+        // 2. UPSERT the new count
+        const newFields = jsToFirestoreRest({ 
+            count: newCount, 
+            last_feature: feature,
+            tier: tier, // Log the tier at time of request
+            timestamp: new Date().toISOString()
+        });
+        
+        const upsertMethod = (getRes.status === 200) ? 'PATCH' : 'POST';
+        let upsertUrl = firestoreUrl;
+        
+        if (upsertMethod === 'POST') {
+             upsertUrl = `${FIRESTORE_BASE_URL}users/${userId}/usage?documentId=${path.split('/').pop()}&key=${FIRESTORE_KEY}`;
+        }
+
+        const upsertRes = await fetchWithRetry(upsertUrl, {
+            method: upsertMethod,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: newFields.mapValue.fields })
+        }, context);
+
+        if (!upsertRes.ok) {
+            log('ERROR', `Rate limit UPSERT failed. Status: ${upsertRes.status}`, context);
+        }
+
+        return newCount;
+
+    } catch (error) {
+        log('ERROR', `Rate limit check failed unexpectedly.`, { ...context, details: error.message });
+        return currentCount + 1; 
     }
-    // Mock Tiers for Dev/Test users
-    const mockTier = userId.includes('premium') ? 'premium' : (userId.includes('paid') ? 'paid' : 'free');
-    log('INFO', `Bypassing Squarespace check for dev user: ${userId}. Mock Tier: ${mockTier}`);
-    return { isActive: true, tier: mockTier };
+}
+
+// --- MAIN HANDLER ---
+
+exports.handler = async function (event) {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+  }
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Method Not Allowed' }) };
+  }
+  
+  // 1. Production Safety & Initial Parsing
+  if (IS_PRODUCTION && (!GEMINI_API_KEY || !FIRESTORE_KEY || !PROJECT_ID || !SESSION_SECRET)) {
+    log('FATAL', 'Missing critical API keys/secrets in production environment. Immediate fail.');
+    return { statusCode: 503, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Service Unavailable: Critical configuration missing.' }) };
   }
 
-  // 2. CACHE CHECK 
-  pruneCache();
-  const cached = membershipCache.get(userId);
-  if (cached && (Date.now() < cached.expiry)) {
-      membershipCache.delete(userId); 
-      membershipCache.set(userId, cached);
-      return { isActive: cached.isActive, tier: cached.tier };
-  }
+  let body;
+  try { body = event.body ? JSON.parse(event.body) : {}; } 
+  catch (e) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Invalid JSON body.', code: CustomErrorCodes.INVALID_INPUT }) }; }
+
+  const { operation, action, userId, data, userGoal, textToSpeak, voice } = body;
+  const feature = operation || action || body.feature;
+
+  const context = { userId, feature };
   
-  // Default non-member state
-  let membershipStatus = { isActive: false, tier: 'free' };
+  if (!feature) {
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required "operation" or "action" parameter.', code: CustomErrorCodes.INVALID_INPUT }) };
+  }
+
+  let membership = { isActive: false, tier: 'free' };
 
   if (!SQUARESPACE_TOKEN) {
     log('FATAL', "SQUARESPACE_ACCESS_TOKEN is missing. Blocking access.");
