@@ -331,7 +331,6 @@ exports.handler = async function (event) {
           if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
 
           // Convert raw JS object into Firestore REST API format
-          // FIX: Removed duplicate call
           const firestoreFields = jsToFirestoreRest(data).mapValue?.fields;
           if (!firestoreFields) {
             return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data format for saving." }) };
@@ -374,8 +373,6 @@ exports.handler = async function (event) {
           firestoreResponse = await fetch(FIRESTORE_QUERY_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            // The 'parent' path is for collection-group queries, not this one.
-            // The body should just be the structured query object.
             body: JSON.stringify({ structuredQuery: structuredQuery })
           });
 
@@ -438,24 +435,19 @@ exports.handler = async function (event) {
     // ------------------------------------------------------------------
 
     // --- 2a. Handle Image Generation (Imagen) ---
-    // FIX: Changed feature check to 'vision_prompt' to match frontend
     if (feature === 'vision_prompt') {
-        // This request now has two steps:
-        // 1. Generate the 'vision_prompt' text (using Gemini)
-        // 2. Generate the image (using Imagen)
-
         if (!userGoal) {
              return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal for image prompt.' }) };
         }
 
         // 1. Generate the vision prompt text first
-        const PROMPT_MODEL = "gemini-2.5-flash"; // Fast model for prompt generation
+        const PROMPT_MODEL = "gemini-2.5-flash"; 
         const PROMPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${PROMPT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
         const promptPayload = {
             contents: [{ parts: [{ text: userGoal }] }],
             systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS["vision_prompt"] }] },
             generationConfig: { temperature: 0.8 },
-            tools: [{ googleSearch: {} }] // Allow search for this creative task
+            tools: [{ googleSearch: {} }] 
         };
 
         const promptRes = await fetchWithRetry(PROMPT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(promptPayload) });
@@ -470,7 +462,7 @@ exports.handler = async function (event) {
         const IMAGEN_MODEL = "imagen-3.0-generate-002";
         const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
         const imagenPayload = {
-            instances: [{ prompt: generatedImagePrompt }], // Use the generated prompt
+            instances: [{ prompt: generatedImagePrompt }], 
             parameters: {
                 sampleCount: 1,
                 aspectRatio: "1:1",
@@ -498,13 +490,11 @@ exports.handler = async function (event) {
             throw new Error("Imagen API response did not contain image data.");
         }
 
-        // Return the format the frontend expects: { imageUrl: "...", prompt: "..." }
         return {
             statusCode: 200,
             headers: CORS_HEADERS,
             body: JSON.stringify({
                 imageUrl: `data:image/png;base64,${base64Data}`,
-                // FIX: Send the generated prompt back to the client
                 prompt: generatedImagePrompt 
             })
         };
@@ -512,7 +502,6 @@ exports.handler = async function (event) {
 
     // --- 2b. Handle TTS Generation (Gemini TTS) ---
     if (feature === 'tts') {
-      // FIX: Use 'text' key from payload, as sent by handleTts()
       if (!textToSpeak) {
         return {
           statusCode: 400,
@@ -531,7 +520,6 @@ exports.handler = async function (event) {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                // FIX: Use the 'voice' variable from the payload, fallback to 'Puck'
                 voiceName: voice || "Puck" 
               }
             }
@@ -565,7 +553,6 @@ exports.handler = async function (event) {
         throw new Error("TTS API response did not contain audio data.");
       }
 
-      // Return the format the frontend expects: { audioData: "...", mimeType: "..." }
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
@@ -586,7 +573,6 @@ exports.handler = async function (event) {
         };
       }
 
-      // Use a powerful model for these tasks
       const TEXT_MODEL = "gemini-2.5-pro";
       const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -630,18 +616,27 @@ exports.handler = async function (event) {
 
       const result = await response.json();
 
-      // Get the raw text string from the response
-      // For JSON features, this will be the stringified JSON.
-      // For text features, this will be the markdown/raw text.
+      // **FIX: The Gemini REST API returns JSON in .text, not .data**
+      // 'rawText' will be a JSON string for JSON features, or markdown for text features.
       const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (!rawText) {
-        console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-        throw new Error("Text Generation API response did not contain generated text.");
+          // This is the only check we need. If 'text' is missing, the API call failed.
+          console.error("Text Generation API Response Missing 'text' field:", JSON.stringify(result));
+          
+          // Log the actual response for debugging
+          console.error("Full API Response:", JSON.stringify(result));
+
+          if (isJsonFeature) {
+              // This is the error the user is seeing.
+               throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
+          } else {
+               throw new Error("Text Generation API response did not contain generated text.");
+          }
       }
 
-      // FIX: The frontend *always* expects the response in the format { "text": "..." }
-      // This is true for both raw text and for JSON strings that the client will parse.
+      // The frontend client *always* expects the response in the format { "text": "..." }
+      // The client-side 'generateContent' function will handle parsing the JSON string.
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
