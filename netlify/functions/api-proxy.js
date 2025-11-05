@@ -1,10 +1,3 @@
-/**
- * Netlify Function: api-proxy.js
- * * This function serves as the single secure gateway for ALL features (AI & Data)
- * for the Squarespace frontend.
- * * FINALIZED VERSION: Includes dynamic tier-based membership gating and rate limiting.
- */
-
 // --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
