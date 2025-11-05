@@ -1,255 +1,649 @@
 /**
- * Netlify Function: api-proxy.js
- * Handles AI Generation for the Dream Planner App:
- * 1. AI GENERATION: Text (Gemini), Image (Imagen), TTS (Gemini).
- *
- * This function is now streamlined to ONLY handle AI calls,
- * as the frontend handles Firestore data operations directly.
+ * Netlify Function: secure-data-proxy
+ * * This function serves as the single secure gateway for ALL features (AI & Data).
+ * * It handles:
+ * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
+ * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API) using structured queries.
+ * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
+ * * * Environment Variables required:
+ * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
+ * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
+ * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
+ * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
  */
 
-const fetch = require('node-fetch').default;
+// **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
+const fetch = require('node-fetch').default || require('node-fetch');
 
-// --- ENV VARIABLES ---
-const GEMINI_API_KEY = process.env.FIRST_API_KEY; // Used for all Google AI calls (Gemini, Imagen, TTS)
+// --- GLOBAL SETUP FOR DATA & SECURITY ---
+const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
+const FIRESTORE_KEY = process.env.DATA_API_KEY;
+const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
+const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
-// --- FEATURE GROUPS ---
-const TEXT_GENERATION_FEATURES = [
-  "plan", "pep_talk", "obstacle_analysis",
-  "positive_spin", "mindset_reset", "objection_handler",
-  "smart_goal_structuring", "dream_energy_analysis"
+// Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
+const FIRESTORE_BASE_URL =
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
+
+// Base URL for Firestore queries (Used for secure, filtered reads/writes)
+const FIRESTORE_QUERY_URL =
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
+
+// List of features that perform data operations (GATED BY MEMBERSHIP)
+const DATA_OPERATIONS = [
+    'SAVE_DREAM',
+    'LOAD_DREAMS',
+    'DELETE_DREAM'
 ];
 
-// --- SMART GOAL SCHEMA (Matches frontend) ---
-const SMART_GOAL_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    title: { type: "STRING", description: "A motivating, concise title for the complete SMART goal." },
-    smartComponents: {
-      type: "ARRAY",
-      description: "An array of five objects, one for each SMART category.",
-      items: {
-        type: "OBJECT",
-        properties: {
-          type: {
-            type: "STRING",
-            description: "The SMART component type: Specific, Measurable, Achievable, Relevant, or Time-bound."
-          },
-          description: {
-            type: "STRING",
-            description: "The detailed, actionable description of this component."
-          }
-        },
-        required: ["type", "description"]
-      }
-    }
-  },
-  required: ["title", "smartComponents"]
-};
+// List of features that perform text generation
+const TEXT_GENERATION_FEATURES = [
+    "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
+    "positive_spin", "mindset_reset", "objection_handler",
+    "smart_goal_structuring",
+    "dream_energy_analysis" // <-- FIX: Added missing feature
+];
 
-// --- DREAM ENERGY SCHEMA (NEW - Matches frontend 'updateEnergyDisplay') ---
-const DREAM_ENERGY_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    confidence: { type: "INTEGER", description: "The user's likely confidence score for this goal, 0-100." },
-    consistency: { type: "INTEGER", description: "The user's likely consistency score for this goal, 0-100." },
-    creativity: { type: "INTEGER", description: "The creativity and novelty score of this goal, 0-100." },
-    actionableInsight: { type: "STRING", description: "A single, short, actionable insight based on these scores." }
-  },
-  required: ["confidence", "consistency", "creativity", "actionableInsight"]
-};
-
-// --- SYSTEM INSTRUCTIONS (Updated) ---
+// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
-  "plan": "You are an expert project manager and motivator. Your sole task is to take the user's goal and break it down into a highly actionable, time-bound, 5-step strategic plan. Write in a clear, supportive, and professional tone. Respond with a motivating introductory paragraph followed by the five steps in a numbered list.",
-  "pep_talk": "You are RyGuy, a masculine, inspiring, and direct motivational coach. Provide an intense, high-energy pep talk to the user about why their goal is achievable and why they must start now. Use bold text liberally for impact and keep the response concise and powerful, around 4-5 sentences.",
-  "vision_prompt": "You are a creative visual artist. Take the user's goal and transform it into a highly detailed, cinematic, and descriptive prompt for an image generator (like Imagen). The prompt must emphasize style, lighting, setting, emotion, and aesthetic details (e.g., 'hyper-detailed, dramatic lighting, 8K, cinematic contrast'). The output must ONLY be the image prompt string, no other text or explanation.",
-  "obstacle_analysis": "You are a strategic consultant named RyGuy. Analyze the user's goal and identify the three most likely internal and external obstacles they will face. For each obstacle, provide a concrete, 1-2 sentence counter-strategy. Format the output using markdown headers for clarity.",
-  "positive_spin": "You are an optimistic reframer named RyGuy. Take the user's goal and rephrase it into three distinct, highly positive, and empowering affirmations. Each affirmation should be a standalone sentence and focus on the identity the user is becoming, not just the action they are taking. Use a confident tone.",
-  "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Provide a short, structured script for the user to perform a 60-second mental reset. The script must contain three steps: Acknowledge the Fear, Re-center on the Why, and Take the Next Small Action. Use numbered steps.",
-  "objection_handler": "You are a professional sales trainer named RyGuy. Identify three common internal objections (e.g., 'I don't have time', 'I'm not good enough') that might sabotage the user's goal. For each objection, provide a single, powerful, pre-written counter-statement the user can say to themselves to overcome it. Use a confident, firm tone.",
-  "smart_goal_structuring": "You are a professional goal-setting consultant. Your sole instruction is to structure the user's goal into the SMART framework and return the result STRICTLY as a JSON object that adheres to the provided schema. Do not include any introductory text, markdown fences, or explanations outside of the final JSON.",
-  "dream_energy_analysis": "You are the 'Energy Flow Specialist'. Analyze the user's goal for confidence, consistency, and creativity on a scale of 0-100. Provide a single, short, actionable insight based on these scores. You MUST return ONLY a JSON object adhering to the provided schema."
+    "plan": "You are an expert project manager and motivator. Create a comprehensive, step-by-step action plan to achieve the user's dream. The plan must contain a brief, motivating introduction and a numbered list (ordered list in Markdown) of at least 10 concrete, initial steps or milestones. Deliver the output as clean, raw text suitable for direct display.",
+    "pep_talk": "You are RyGuy, a masculine, inspiring, and enthusiastic life coach. Generate an encouraging, short pep talk (about 120 words or less) to motivate the user to start their dream. The tone must be exciting, positive, and direct. The content should be suitable for Text-to-Speech narration. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
+    "vision_prompt": "You are a creative visual artist. Based on the user's dream, write a detailed, high-quality, cinematic image generation prompt (max 100 words) suitable for an AI image model like Imagen. The image should be a dramatic, aspirational, and highly detailed visual representation of the dream achieved. Write a prompt to generate a visual representation of this dream's successful completion. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+"smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. You MUST return only a single JSON object that conforms to the provided schema. Do not include any text, notes, or markdown outside of the JSON block.",    // FIX: Added instruction for energy analysis
+    "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Analyze the user's dream for its emotional and psychological 'energy.' Provide a brief, practical analysis in one paragraph focused on the next actionable feeling or mood the user should adopt (e.g., 'This dream shows high ambition, now harness that energy into quiet, methodical discipline.'). Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
 
-// --- CORS HEADERS ---
+// --- NEW: Schema for Structured Output (S.M.A.R.T. Goal) ---
+const SMART_GOAL_SCHEMA = {
+    type: "object",
+    properties: {
+        goalTitle: {
+            type: "string",
+            description: "A concise, inspiring title for the S.M.A.R.T. goal."
+        },
+        specific: {
+            type: "string",
+            description: "A statement explaining what exactly will be accomplished."
+        },
+        measurable: {
+            type: "string",
+            description: "A statement defining the metrics used to track progress."
+        },
+        achievable: {
+            type: "string",
+            description: "A statement confirming the necessary skills, resources, and realism of the goal."
+        },
+        relevant: {
+            type: "string",
+            description: "A statement explaining why this goal is important and how it aligns with the user's dream."
+        },
+        timeBound: {
+            type: "string",
+            description: "A statement defining the specific deadline for goal completion."
+        }
+    },
+    required: ["goalTitle", "specific", "measurable", "achievable", "relevant", "timeBound"]
+};
+// -------------------------------------------------------------
+
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Content-Type': 'application/json'
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json'
 };
 
-// --- HELPER: Fetch with Exponential Backoff ---
-async function fetchWithRetry(url, options, maxRetries = 3) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, options);
-      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) return response;
-      if ([500, 503, 429].includes(response.status) && attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      return response;
-    } catch (err) {
-      if (attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-        await new Promise(r => setTimeout(r, delay));
-      } else throw err;
+// --- FIRESTORE REST API HELPERS (functions remain the same) ---
+// ... (jsToFirestoreRest and firestoreRestToJs functions are unchanged) ...
+
+/**
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
+ */
+function jsToFirestoreRest(value) {
+    if (value === null || value === undefined) {
+        return { nullValue: null };
     }
-  }
-  throw new Error("Maximum fetch retries reached.");
+    if (typeof value === 'string') {
+        return { stringValue: value };
+    }
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    }
+    if (typeof value === 'boolean') {
+        return { booleanValue: value };
+    }
+    if (Array.isArray(value)) {
+        return {
+            arrayValue: {
+                values: value.map(jsToFirestoreRest)
+            }
+        };
+    }
+    if (typeof value === 'object') {
+        const mapFields = {};
+        for (const key in value) {
+            if (Object.prototype.hasOwnProperty.call(value, key)) {
+                mapFields[key] = jsToFirestoreRest(value[key]);
+            }
+        }
+        return { mapValue: { fields: mapFields } };
+    }
+
+    return { stringValue: String(value) };
 }
 
-// --- NETLIFY HANDLER ---
-exports.handler = async function (event) {
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS_HEADERS, body: '' };
-  if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: "Method Not Allowed" }) };
+/**
+ * Recursively unwraps the verbose Firestore REST API field object
+ * into a standard JavaScript object.
+ */
+function firestoreRestToJs(firestoreField) {
+    if (!firestoreField) return null;
 
-  if (!GEMINI_API_KEY) return {
-    statusCode: 500,
-    headers: CORS_HEADERS,
-    body: JSON.stringify({ message: 'Missing API key in environment variables.' })
-  };
+    if (firestoreField.nullValue !== undefined) return null;
+    if (firestoreField.stringValue !== undefined) return firestoreField.stringValue;
+    if (firestoreField.integerValue !== undefined) return parseInt(firestoreField.integerValue, 10);
+    if (firestoreField.doubleValue !== undefined) return firestoreField.doubleValue;
+    if (firestoreField.booleanValue !== undefined) return firestoreField.booleanValue;
+    if (firestoreField.timestampValue !== undefined) return new Date(firestoreField.timestampValue);
 
-  try {
-    const body = JSON.parse(event.body);
-    const feature = body.action;
-    const { userGoal, text, voice } = body;
-
-    if (!feature) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing required 'action'." }) };
-
-    // --- ROUTE 1: IMAGE GENERATION (Triggered by 'vision_prompt') ---
-    if (feature === 'vision_prompt') {
-      if (!userGoal) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal for image prompt.' }) };
-
-      // 1. Generate the vision prompt text first
-      const PROMPT_MODEL = "gemini-2.5-flash"; 
-      const PROMPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${PROMPT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-      const promptPayload = {
-        contents: [{ parts: [{ text: userGoal }] }],
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS["vision_prompt"] }] },
-        generationConfig: { temperature: 0.8 }
-      };
-
-      const promptRes = await fetchWithRetry(PROMPT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(promptPayload) });
-      const promptResult = await promptRes.json();
-      if (!promptRes.ok) throw new Error(`Gemini prompt generation error: ${JSON.stringify(promptResult)}`);
-      
-      const imagePrompt = promptResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!imagePrompt) throw new Error("Image prompt generation failed.");
-
-      // 2. Generate the image using the new prompt
-      const IMAGEN_MODEL = "imagen-3.0-generate-002";
-      const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
-      const imagePayload = { instances: [{ prompt: imagePrompt }], parameters: { sampleCount: 1, aspectRatio: "1:1", outputMimeType: "image/png" } };
-
-      const imgRes = await fetchWithRetry(IMAGEN_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(imagePayload) });
-      const imgResult = await imgRes.json();
-      if (!imgRes.ok) throw new Error(`Imagen API error: ${JSON.stringify(imgResult)}`);
-
-      const base64Data = imgResult?.predictions?.[0]?.bytesBase64Encoded;
-      if (!base64Data) throw new Error("Image generation failed to return data.");
-
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-          imageUrl: `data:image/png;base64,${base64Data}`,
-          prompt: imagePrompt
-        })
-      };
+    if (firestoreField.arrayValue) {
+        return (firestoreField.arrayValue.values || []).map(firestoreRestToJs);
     }
 
-    // --- ROUTE 2: TTS GENERATION ---
-    if (feature === 'tts') {
-      if (!text) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing text for TTS.' }) };
-      
-      const TTS_MODEL = "gemini-2.5-flash-preview-tts"; 
-      const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-      const ttsPayload = {
-        contents: [{ parts: [{ text: text }] }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voice || "Fenrir" } 
+    if (firestoreField.mapValue) {
+        const jsObject = {};
+        const fields = firestoreField.mapValue.fields || {};
+        for (const key in fields) {
+            if (Object.prototype.hasOwnProperty.call(fields, key)) {
+                jsObject[key] = firestoreRestToJs(fields[key]);
             }
-          }
-        },
-        model: TTS_MODEL
-      };
-      
-      const res = await fetchWithRetry(TTS_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ttsPayload) });
-      const result = await res.json();
-      if (!res.ok) throw new Error(`TTS API error: ${JSON.stringify(result)}`);
-
-      const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData && p.inlineData.mimeType.startsWith('audio/'));
-      if (!part?.inlineData?.data) throw new Error("TTS generation failed to return audio data.");
-
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ audioData: part.inlineData.data, mimeType: part.inlineData.mimeType })
-      };
-    }
-
-    // --- ROUTE 3: TEXT & JSON GENERATION ---
-    if (TEXT_GENERATION_FEATURES.includes(feature)) {
-      if (!userGoal) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal.' }) };
-
-      const TEXT_MODEL = "gemini-2.5-pro"; 
-      const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-
-      const payload = {
-        contents: [{ parts: [{ text: userGoal }] }],
-        generationConfig: {
-          temperature: 0.7, // Default temperature
         }
-      };
-
-      // *** FIX AHEAD ***
-      // Apply correct config based on feature type
-      if (feature === 'smart_goal_structuring' || feature === 'dream_energy_analysis') {
-        // This is a JSON feature.
-        // DO NOT ADD 'tools'.
-        // Add JSON-specific config.
-        payload.generationConfig.temperature = 0.2; // Lower temp for factual JSON
-        payload.generationConfig.responseMimeType = "application/json";
-        payload.generationConfig.responseSchema = (feature === 'smart_goal_structuring') ? SMART_GOAL_SCHEMA : DREAM_ENERGY_SCHEMA;
-        payload.systemInstruction = { parts: [{ text: SYSTEM_INSTRUCTIONS[feature] }] };
-      } else {
-        // This is a standard text feature.
-        // ADD 'tools' for Google Search grounding.
-        // DO NOT ADD 'responseMimeType'.
-        payload.tools = [{ googleSearch: {} }];
-        payload.systemInstruction = { parts: [{ text: SYSTEM_INSTRUCTIONS[feature] }] };
-      }
-      // *** END FIX ***
-
-      const res = await fetchWithRetry(TEXT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const result = await res.json();
-      
-      if (!res.ok) {
-          // Throw the specific error message from Gemini
-          throw new Error(`Gemini API error: ${JSON.stringify(result)}`);
-      }
-
-      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) throw new Error("Text generation failed: empty response.");
-
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ text: rawText }) // Client expects { text: "..." }
-      };
+        return jsObject;
     }
 
-    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `Invalid action: ${feature}` }) };
+    return null;
+}
 
-  } catch (err) {
-    console.error(err); // Log the full error to Netlify console
-    // Return the specific error message to the client
-    return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `Internal server error: ${err.message}` }) };
-  }
+
+/**
+ * [CRITICAL SECURITY GATE]
+ * Checks the user's active membership status via the Squarespace API.
+ * Includes a bypass for testing.
+ * @param {string} userId - The unique user ID (from localStorage).
+ * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
+ */
+async function checkSquarespaceMembershipStatus(userId) {
+    // DEVELOPMENT BYPASS
+    if (userId.startsWith('mock-') || userId === 'TEST_USER') {
+        console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
+        return true;
+    }
+
+    if (!SQUARESPACE_TOKEN) {
+        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all data access.");
+        return false;
+    }
+
+    // !! CRITICAL CUSTOMIZATION REQUIRED !!
+    // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
+    // that can verify membership for the user's ID/Email.
+    const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
+
+    try {
+        const response = await fetch(squarespaceApiUrl, {
+            method: 'GET',
+            headers: {
+                // Squarespace uses a specific header format for API Keys
+                'Authorization': `Bearer ${SQUARESPACE_TOKEN}`,
+                'User-Agent': 'RyGuyLabs-Netlify-Function-Checker'
+            }
+        });
+
+        if (!response.ok) {
+            console.warn(`Squarespace API returned error for user ${userId}: ${response.status} - ${response.statusText}`);
+            return false;
+        }
+
+        const data = await response.json();
+
+        // !! CRITICAL CUSTOMIZATION REQUIRED !!
+        // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
+        const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
+
+        if (!isActive) {
+            console.log(`User ${userId} is INACTIVE. Access denied.`);
+        }
+
+        return isActive;
+
+    } catch (error) {
+        console.error("Error checking Squarespace membership:", error);
+        return false; // Deny access on failure
+    }
+}
+
+
+exports.handler = async function(event) {
+    // Handle pre-flight OPTIONS requests for CORS
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: ''
+        };
+    }
+
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Method Not Allowed" })
+        };
+    }
+
+    // --- API Key and Initialization Checks ---
+    if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
+        };
+    }
+
+    if (!FIRESTORE_KEY || !PROJECT_ID) {
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
+        };
+    }
+
+    try {
+        const body = JSON.parse(event.body);
+        // FIX: Add 'operation' to destructuring as the preferred request parameter
+        const { action, userId, data, userGoal, textToSpeak, imagePrompt, operation } = body;
+
+        // FIX: Use 'operation' first, then fallback to existing 'action' or 'feature'
+        const feature = operation || action || body.feature; 
+
+        if (!feature) {
+             return {
+                 statusCode: 400,
+                 headers: CORS_HEADERS,
+                 body: JSON.stringify({ message: "Missing required 'action' or 'operation' parameter." })
+             };
+        }
+
+
+        // ------------------------------------------------------------------
+        // SECTION 1: DATA OPERATIONS (GATED BY SQUARESPACE MEMBERSHIP)
+        // ------------------------------------------------------------------
+        if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
+
+            if (!userId) {
+                return {
+                    statusCode: 401,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
+                };
+            }
+
+            // A. SUBSCRIPTION GATE CHECK (AUTHORIZATION)
+            const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
+
+            if (!isSubscriberActive) {
+                return {
+                    statusCode: 403,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({
+                        message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription."
+                    })
+                };
+            }
+
+            // B. FIRESTORE DATA INTERACTION (SECURE ACCESS)
+            const userDreamsCollectionPath = `users/${userId}/dreams`;
+            let firestoreResponse;
+
+            switch (feature.toUpperCase()) {
+                case 'SAVE_DREAM':
+                    if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
+
+                    // Convert raw JS object into Firestore REST API format
+                    const firestoreFields = jsToFirestoreRest(data).mapValue.fields;
+
+                    // POST to the collection path will create a new document with an auto-generated ID
+                    firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${userDreamsCollectionPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fields: firestoreFields })
+                    });
+
+                    if (firestoreResponse.ok) {
+                        const result = await firestoreResponse.json();
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name })
+                        };
+                    }
+                    break;
+
+                case 'LOAD_DREAMS':
+                    // **SECURITY FIX:** Use a Structured Query to enforce filtering by userId.
+                    const structuredQuery = {
+                        // Select all fields
+                        select: { fields: [{ fieldPath: "*" }] },
+                        from: [{ collectionId: "dreams" }],
+                        where: {
+                            fieldFilter: {
+                                field: { fieldPath: "userId" },
+                                op: "EQUAL",
+                                value: { stringValue: userId }
+                            }
+                        },
+                        // Order by timestamp
+                        orderBy: [{
+                            field: { fieldPath: "timestamp" },
+                            direction: "DESCENDING"
+                        }]
+                    };
+
+                    firestoreResponse = await fetch(FIRESTORE_QUERY_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
+                    });
+
+                    if (firestoreResponse.ok) {
+                        const result = await firestoreResponse.json();
+
+                        // The result is an array of query results, each containing a 'document'
+                        const dreams = (result || [])
+                            .filter(item => item.document) // Filter out any empty results
+                            .map(item => {
+                                const doc = item.document;
+                                const docId = doc.name.split('/').pop();
+
+                                // Convert Firestore fields back to clean JS object
+                                const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
+
+                                // Return the required client-side object
+                                return { id: docId, ...fields };
+                            });
+
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ dreams })
+                        };
+                    }
+                    break;
+
+                case 'DELETE_DREAM':
+                    // The client passes the document ID in data.dreamId
+                    if (!data || !data.dreamId) {
+                        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
+                    }
+
+                    // Direct DELETE on the specific document path.
+                    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
+
+                    firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (firestoreResponse.ok) {
+                        // Successful deletion returns 200 with an empty body
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
+                        };
+                    }
+                    break;
+
+                default:
+                    // Should be caught by the DATA_OPERATIONS check, but here for safety
+                    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data action." }) };
+            }
+
+            // Handle generic Firestore errors
+            const errorText = firestoreResponse ? await firestoreResponse.text() : 'Unknown database error';
+            console.error("Firestore operation failed:", firestoreResponse?.status, errorText);
+            return {
+                statusCode: firestoreResponse?.status || 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
+            };
+
+        }
+
+
+        // ------------------------------------------------------------------
+        // SECTION 2: GOOGLE AI GENERATION FEATURES (UN-GATED)
+        // ------------------------------------------------------------------
+
+        // --- 2a. Handle Image Generation (Imagen) ---
+        if (feature === 'image_generation') {
+            if (!imagePrompt) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing "imagePrompt" data for image generation.' })
+                };
+            }
+
+            const IMAGEN_MODEL = "imagen-3.0-generate-002";
+            const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
+
+            const imagenPayload = {
+                instances: [{ prompt: imagePrompt }],
+                parameters: {
+                    sampleCount: 1,
+                    aspectRatio: "1:1",
+                    outputMimeType: "image/png"
+                }
+            };
+
+            const response = await fetch(IMAGEN_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(imagenPayload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Imagen API Error:", response.status, errorBody);
+                throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+
+            if (!base64Data) {
+                console.error("Imagen API Response Missing Data:", JSON.stringify(result));
+                throw new Error("Imagen API response did not contain image data.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    imageUrl: `data:image/png;base64,${base64Data}`,
+                    altText: `Generated vision for: ${imagePrompt}`
+                })
+            };
+        }
+
+        // --- 2b. Handle TTS Generation (Gemini TTS) ---
+        if (feature === 'tts') {
+            if (!textToSpeak) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required text data for TTS.' })
+                };
+            }
+
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+            const ttsPayload = {
+                contents: [{ parts: [{ text: textToSpeak }] }],
+
+                // CRITICAL: Ensure speechConfig is correctly nested inside generationConfig
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: "Puck"
+                            }
+                        }
+                    }
+                },
+                model: TTS_MODEL
+            };
+
+            const response = await fetch(TTS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ttsPayload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("TTS API Error:", response.status, errorBody);
+                throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.find(
+                p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+            );
+
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (!audioData || !mimeType) {
+                console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
+                throw new Error("TTS API response did not contain audio data.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    audioData: audioData,
+                    mimeType: mimeType
+                })
+            };
+        }
+
+        // --- 2c. Handle Text Generation ---
+        if (TEXT_GENERATION_FEATURES.includes(feature)) {
+            if (!userGoal) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+                };
+            }
+
+            // FIX: Use the specific, stable model for guaranteed system instruction support
+            const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+
+            // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
+            // structured as a Content object.
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
+
+                // Correctly structured top-level system instruction
+                systemInstruction: {
+                    parts: [{ text: systemInstructionText }]
+                },
+                // Add generationConfig for the model (includes response schema for SMART goal)
+                generationConfig: {
+                    // Setting temperature to 0.7 for creative generation features
+                    temperature: 0.7,
+                    // **CRITICAL FIX: Structured Output MUST be inside generationConfig for REST API**
+                    ...(feature === 'smart_goal_structuring' && {
+                        responseMimeType: "application/json",
+                        responseSchema: SMART_GOAL_SCHEMA
+                    })
+                }
+            };
+
+            const response = await fetch(TEXT_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Text Generation API Error:", response.status, errorBody);
+                // Throw the error text directly so the client gets better feedback
+                throw new Error(`Text Generation API failed with status ${response.status}: ${errorBody}`);
+            }
+
+            const result = await response.json();
+
+            // --- NEW: Handle Structured JSON Output (SMART Goal) ---
+            if (feature === 'smart_goal_structuring') {
+                // Structured output is found in the 'data' field of the part
+                const jsonPart = result.candidates?.[0]?.content?.parts?.[0]?.data;
+
+                if (!jsonPart) {
+                    console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
+                    throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
+                }
+                
+                // Return the JSON object directly (the 'data' field is already parsed JSON)
+                return {
+                    statusCode: 200,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify(jsonPart) // Send the structured data object
+                };
+            }
+
+            // --- Existing: Handle standard text output (for all other features) ---
+            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!fullText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ text: fullText })
+            };
+        }
+
+        // --- Default Case ---
+        // This will now catch requests using the old "generate_text" or any other invalid feature
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Invalid "action/feature" specified: ${feature}. Must be one of: ${[...DATA_OPERATIONS, 'image_generation', 'tts', ...TEXT_GENERATION_FEATURES].join(', ')}` })
+        };
+
+    } catch (error) {
+        console.error("Internal server error:", error);
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Internal server error: ${error.message}` })
+        };
+    }
 };
