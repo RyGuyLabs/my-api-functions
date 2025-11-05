@@ -11,9 +11,8 @@
  * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
  * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
  * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
- * * **ROBUSTNESS ENHANCEMENTS:** * 1. Sanitized AI JSON output to remove invisible characters before parsing.
- * 2. Implemented auto-filling of missing required fields with 'TBD' to ensure valid JSON structure is always returned.
- * 3. Added logging of the raw AI output for debugging.
+ * * **BULLETPROOF JSON FIX:** * Implemented the robust 'extractJsonFromText' function to strip surrounding text/markdown,
+ * parse, sanitize, and auto-fill any missing required fields with a 'TBD' placeholder, guaranteeing a valid JSON structure.
  */
 
 // --- CRITICAL FIX: Rely on native global fetch (available in Node 18+ / Netlify Functions) ---
@@ -75,7 +74,8 @@ const SYSTEM_INSTRUCTIONS = {
   "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
   "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
   "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-  "smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a well-structured, inspiring S.M.A.R.T. goal. You MUST return ONLY a single JSON object. The object MUST contain the following 6 fields: goalTitle, specific, measurable, achievable, relevant, and timeBound. Do not include any introductory text, markdown, or notes outside of the JSON block.",
+  // --- ENHANCED, STRICT SYSTEM INSTRUCTION FOR CLEAN JSON ---
+  "smart_goal_structuring": "You are a professional goal-setting consultant. Take the user's dream and convert it into a clean, modular S.M.A.R.T. goal.\n**CRITICAL:** Return ONLY a single JSON object. Do NOT include any Markdown, code blocks, comments, quotes, or extra text.\nThe object MUST contain the following 6 fields:\n- goalTitle\n- specific\n- measurable\n- achievable\n- relevant\n- timeBound\nReturn a perfectly formatted JSON object suitable for direct frontend rendering.",
   "dream_energy_analysis": "You are a pragmatic mindset coach named RyGuy. Analyze the user's dream for its emotional and psychological 'energy.' You MUST return only a single JSON object that conforms to the provided schema, with scores for confidence, consistency, creativity, and an actionable insight."
 };
 
@@ -217,6 +217,47 @@ async function checkSquarespaceMembershipStatus(userId) {
     return false; // Deny access on failure
   }
 }
+
+// Helper function to robustly extract a JSON object from text,
+// even if it's embedded in markdown or surrounded by noise, and auto-fill missing fields.
+function extractJsonFromText(text, requiredKeys) {
+    const defaultPlaceholder = "TBD - Missing from AI output";
+    let parsedJson = {};
+
+    try {
+        // 1. Sanitize the text (remove zero-width spaces, trim)
+        const cleanText = text.trim().replace(/\u200B/g, "");
+
+        // 2. Use regex to find and extract the JSON object { ... }
+        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+        
+        if (!jsonMatch) {
+            console.warn("[JSON_EXTRACTION_FAILED] No JSON object found in AI response text.");
+            // If no JSON is found, fallback to a placeholder object
+            requiredKeys.forEach(key => parsedJson[key] = defaultPlaceholder);
+            return parsedJson;
+        }
+
+        // 3. Parse the extracted JSON string
+        parsedJson = JSON.parse(jsonMatch[0]);
+
+    } catch (e) {
+        console.error("[JSON_EXTRACTION_PARSE_ERROR] Failed to parse JSON, returning TBD:", e.message);
+        // On parsing failure, use a placeholder object
+        requiredKeys.forEach(key => parsedJson[key] = defaultPlaceholder);
+        return parsedJson;
+    }
+
+    // 4. Auto-fill missing required keys to ensure structure integrity
+    const missingKeys = requiredKeys.filter(key => !(key in parsedJson));
+    if (missingKeys.length > 0) {
+        missingKeys.forEach(key => parsedJson[key] = defaultPlaceholder);
+        console.warn(`[AUTO_FILL] Missing fields auto-filled: ${missingKeys.join(', ')}`);
+    }
+    
+    return parsedJson;
+}
+
 
 // --- MAIN HANDLER ---
 
@@ -436,6 +477,9 @@ exports.handler = async function (event) {
         payload.generationConfig.temperature = 0.2; 
         payload.generationConfig.responseMimeType = "application/json";
         payload.generationConfig.responseSchema = (feature === 'smart_goal_structuring') ? SMART_GOAL_SCHEMA : DREAM_ENERGY_SCHEMA;
+        // CRITICAL: Remove tools for JSON generation to prevent model confusion
+        // This is explicitly allowed to be undefined/null/omitted
+        // if (!payload.tools) payload.tools = undefined; 
       } else {
         // Only use Google Search grounding for non-JSON, text-based features (plan, obstacle_analysis, etc.)
         payload.tools = [{ googleSearch: {} }];
@@ -458,46 +502,21 @@ exports.handler = async function (event) {
           // 1. Logging raw content for debug
           console.log("[GEMINI_RAW_OUTPUT]", responseContent);
 
-          try {
-              // 2. Trim/sanitize AI JSON output (removes zero-width space characters, etc.)
-              const cleanText = responseContent.trim().replace(/\u200B/g, "");
-              
-              let parsedJson;
-              try {
-                  parsedJson = JSON.parse(cleanText);
-              } catch (e) {
-                  // Catch JSON parse failures (e.g., if the model added non-JSON text)
-                  console.error(`[JSON_PARSE_FAILED] Response was not valid JSON: ${e.message}`);
-                  throw new Error(`AI generation failed: Output was not valid JSON for ${feature}.`);
-              }
+          // 2. Define required keys based on the feature
+          const requiredKeys = (feature === 'smart_goal_structuring') ? 
+              ["goalTitle", "specific", "measurable", "achievable", "relevant", "timeBound"] : 
+              ["confidence", "consistency", "creativity", "actionableInsight"];
 
+          // 3. Robustly extract, parse, sanitize, and auto-fill the JSON
+          const parsedJson = extractJsonFromText(responseContent, requiredKeys);
 
-              // 3. Define required keys
-              const requiredKeys = (feature === 'smart_goal_structuring') ? 
-                ["goalTitle", "specific", "measurable", "achievable", "relevant", "timeBound"] : 
-                ["confidence", "consistency", "creativity", "actionableInsight"];
-              
-              // 4. Find missing keys
-              const missingKeys = requiredKeys.filter(key => !(key in parsedJson));
-
-              // 5. Auto-fill missing fields (Bulletproof Enhancement)
-              if (missingKeys.length > 0) {
-                  missingKeys.forEach(key => parsedJson[key] = "TBD - Missing from AI output");
-                  console.warn(`[AUTO_FILL] Missing fields auto-filled for ${feature}: ${missingKeys.join(', ')}`);
-              }
-
-              // 6. Return the stringified, validated (and potentially padded) object
-              return {
-                  statusCode: 200,
-                  headers: CORS_HEADERS,
-                  body: JSON.stringify({ text: JSON.stringify(parsedJson) }) 
-              };
-
-          } catch (e) {
-              // This catches errors thrown during JSON.parse or the explicit error thrown above
-              console.error(`[JSON_PROCESSING_ERROR] ${e.message}`);
-              throw new Error(`AI generation failed: Could not process structured JSON output for ${feature}.`);
-          }
+          // 4. Return the stringified, validated (and potentially padded) object
+          return {
+              statusCode: 200,
+              headers: CORS_HEADERS,
+              // The frontend expects the JSON object *as a string* inside the 'text' property
+              body: JSON.stringify({ text: JSON.stringify(parsedJson) }) 
+          };
       }
       // --- END JSON VALIDATION ---
 
