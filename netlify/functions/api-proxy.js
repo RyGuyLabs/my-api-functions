@@ -11,12 +11,14 @@
  * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
  * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
  * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
- * * **Update:** Switch cases are now wrapped in braces {} for explicit variable scoping, 
- * ensuring no conflicts (e.g., const res) across cases.
+ * * **CRITICAL FIX:** Removed the 'require("node-fetch")' dependency call and now rely on the 
+ * native global 'fetch' available in the Node.js 18+ runtime to resolve the "fetch2 is not a function" error.
  */
 
-// Use standard CommonJS import for node-fetch assuming a .js file.
-const fetch = require('node-fetch');
+// --- CRITICAL FIX: Rely on native global fetch (available in Node 18+ / Netlify Functions) ---
+// By removing 'const fetch = require("node-fetch")', we ensure the function
+// uses the stable, global fetch provided by the runtime environment.
+// -----------------------------------------------------------------------------------------
 
 // --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
@@ -143,7 +145,8 @@ function firestoreRestToJs(firestoreField) {
 async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await fetch(url, options);
+      // Calls the globally available fetch function
+      const response = await fetch(url, options); 
       
       // Return immediately on success or non-retryable client errors (4xx except 429)
       if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
