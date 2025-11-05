@@ -1,3 +1,4 @@
+
 /**
  * Netlify Function: secure-data-proxy
  * * This function serves as the single secure gateway for ALL features (AI & Data).
@@ -124,6 +125,10 @@ const CORS_HEADERS = {
 };
 
 // --- FIRESTORE REST API HELPERS ---
+
+/**
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
+ */
 function jsToFirestoreRest(value) {
   if (value === null || value === undefined) {
     return { nullValue: null };
@@ -157,6 +162,10 @@ function jsToFirestoreRest(value) {
   return { stringValue: String(value) };
 }
 
+/**
+ * Recursively unwraps the verbose Firestore REST API field object
+ * into a standard JavaScript object.
+ */
 function firestoreRestToJs(firestoreField) {
   if (!firestoreField) return null;
 
@@ -185,41 +194,14 @@ function firestoreRestToJs(firestoreField) {
   return null;
 }
 
-async function fetchWithRetry(url, options, maxRetries = 3) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, options);
-      
-      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
-        return response;
-      }
 
-      if (response.status === 503 || response.status === 500 || response.status === 429) {
-        if (attempt < maxRetries - 1) {
-          const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 500); 
-          console.log(`[RETRY] Attempt ${attempt + 1}/${maxRetries} failed with status ${response.status}. Retrying in ${delay.toFixed(0)}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue; 
-        }
-      }
-      
-      return response;
-
-    } catch (error) {
-      if (attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 500);
-        console.log(`[RETRY] Network error on attempt ${attempt + 1}/${maxRetries}. Retrying in ${delay.toFixed(0)}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      } else {
-        throw error; 
-      }
-    }
-  }
-  throw new Error("Maximum fetch retries reached.");
-}
-
+/**
+ * [CRITICAL SECURITY GATE]
+ * Checks the user's active membership status via the Squarespace API.
+ */
 async function checkSquarespaceMembershipStatus(userId) {
-  if (userId && (userId.startsWith('mock-') || userId === 'TEST_USER')) {
+  // DEVELOPMENT BYPASS
+  if (userId.startsWith('mock-') || userId === 'TEST_USER') {
     console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
     return true;
   }
@@ -229,6 +211,7 @@ async function checkSquarespaceMembershipStatus(userId) {
     return false;
   }
 
+  // !! CRITICAL CUSTOMIZATION REQUIRED !!
   const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
 
   try {
@@ -246,6 +229,8 @@ async function checkSquarespaceMembershipStatus(userId) {
     }
 
     const data = await response.json();
+
+    // !! CRITICAL CUSTOMIZATION REQUIRED !!
     const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
 
     if (!isActive) {
@@ -262,6 +247,7 @@ async function checkSquarespaceMembershipStatus(userId) {
 
 
 exports.handler = async function (event) {
+  // Handle pre-flight OPTIONS requests for CORS
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -278,7 +264,8 @@ exports.handler = async function (event) {
     };
   }
 
-  if (!GEMINI_API_KEY || (typeof GEMINI_API_KEY === 'string' && GEMINI_API_KEY.trim() === '')) {
+  // --- API Key and Initialization Checks ---
+  if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
@@ -295,9 +282,10 @@ exports.handler = async function (event) {
   }
 
   try {
-    const body = event.body ? JSON.parse(event.body) : {};
+    const body = JSON.parse(event.body);
     const { action, userId, data, userGoal, textToSpeak, imagePrompt, operation, voice } = body;
 
+    // Use 'operation' first (from new frontend), then fallback to 'action'
     const feature = operation || action || body.feature;
 
     if (!feature) {
@@ -308,75 +296,123 @@ exports.handler = async function (event) {
       };
     }
 
-    // --- SECTION 1: DATA OPERATIONS (GATED) ---
+
+    // ------------------------------------------------------------------
+    // SECTION 1: DATA OPERATIONS (GATED BY SQUARESPACE MEMBERSHIP)
+    // ------------------------------------------------------------------
     if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
+
       if (!userId) {
-        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." }) };
-      }
-      const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
-      if (!isSubscriberActive) {
-        return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription." }) };
+        return {
+          statusCode: 401,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
+        };
       }
 
+      // A. SUBSCRIPTION GATE CHECK (AUTHORIZATION)
+      const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
+
+      if (!isSubscriberActive) {
+        return {
+          statusCode: 403,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription."
+          })
+        };
+      }
+
+      // B. FIRESTORE DATA INTERACTION (SECURE ACCESS)
       const userDreamsCollectionPath = `users/${userId}/dreams`;
       let firestoreResponse;
 
       switch (feature.toUpperCase()) {
         case 'SAVE_DREAM':
           if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
+
+          // Convert raw JS object into Firestore REST API format
           const firestoreFields = jsToFirestoreRest(data).mapValue?.fields;
-          if (!firestoreFields) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data format for saving." }) }; }
+          if (!firestoreFields) {
+            return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data format for saving." }) };
+          }
           
           firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${userDreamsCollectionPath}?key=${FIRESTORE_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fields: firestoreFields })
           });
+
           if (firestoreResponse.ok) {
             const result = await firestoreResponse.json();
-            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name }) };
+            return {
+              statusCode: 200,
+              headers: CORS_HEADERS,
+              body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name })
+            };
           }
           break;
 
         case 'LOAD_DREAMS':
           const structuredQuery = {
-            structuredQuery: { // This wrapper is required by the runQuery endpoint
-              select: { fields: [{ fieldPath: "*" }] },
-              from: [{ collectionId: "dreams" }],
-              // NOTE: This query requires a composite index in Firestore on (userId, timestamp DESC)
-              where: { fieldFilter: { field: { fieldPath: "userId" }, op: "EQUAL", value: { stringValue: userId } } },
-              orderBy: [{ field: { fieldPath: "timestamp" }, direction: "DESCENDING" }]
-            }
+            select: { fields: [{ fieldPath: "*" }] },
+            from: [{ collectionId: "dreams" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "userId" },
+                op: "EQUAL",
+                value: { stringValue: userId }
+              }
+            },
+            orderBy: [{
+              field: { fieldPath: "timestamp" },
+              direction: "DESCENDING"
+            }]
           };
-          
+
+          // FIX: Corrected the fetch body for runQuery. It requires 'structuredQuery' at the root.
           firestoreResponse = await fetch(FIRESTORE_QUERY_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(structuredQuery) // Send the wrapped query
+            body: JSON.stringify({ structuredQuery: structuredQuery })
           });
 
           if (firestoreResponse.ok) {
             const result = await firestoreResponse.json();
+
             const dreams = (result || [])
-              .filter(item => item.document) 
+              .filter(item => item.document)
               .map(item => {
                 const doc = item.document;
                 const docId = doc.name.split('/').pop();
                 const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
                 return { id: docId, ...fields };
               });
-            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams }) };
+
+            return {
+              statusCode: 200,
+              headers: CORS_HEADERS,
+              body: JSON.stringify({ dreams })
+            };
           }
           break;
 
         case 'DELETE_DREAM':
-          if (!data || !data.dreamId) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) }; }
+          if (!data || !data.dreamId) {
+            return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
+          }
           const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
+
           firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
             method: 'DELETE'
           });
+
           if (firestoreResponse.ok) {
-            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` }) };
+            return {
+              statusCode: 200,
+              headers: CORS_HEADERS,
+              body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
+            };
           }
           break;
 
@@ -384,75 +420,111 @@ exports.handler = async function (event) {
           return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data action." }) };
       }
 
+      // Handle generic Firestore errors
       const errorText = firestoreResponse ? await firestoreResponse.text() : 'Unknown database error';
       console.error("Firestore operation failed:", firestoreResponse?.status, errorText);
-      return { statusCode: firestoreResponse?.status || 500, headers: CORS_HEADERS, body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText }) };
+      return {
+        statusCode: firestoreResponse?.status || 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
+      };
     }
 
-    // --- SECTION 2: AI GENERATION (UN-GATED) ---
 
-    // --- 2a. Image Generation (vision_prompt -> Imagen pipeline) ---
+    // ------------------------------------------------------------------
+    // SECTION 2: GOOGLE AI GENERATION FEATURES (UN-GATED)
+    // ------------------------------------------------------------------
+
+    // --- 2a. Handle Image Generation (Imagen) ---
     if (feature === 'vision_prompt') {
-      if (!userGoal) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal for image prompt.' }) }; }
+        if (!userGoal) {
+             return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal for image prompt.' }) };
+        }
 
-      const PROMPT_MODEL = "gemini-2.5-flash"; 
-      const PROMPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${PROMPT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-      const promptPayload = {
-        contents: [{ parts: [{ text: userGoal }] }],
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS["vision_prompt"] }] },
-        generationConfig: { temperature: 0.8 },
-        tools: [{ googleSearch: {} }]
-      };
+        // 1. Generate the vision prompt text first
+        const PROMPT_MODEL = "gemini-2.5-flash"; 
+        const PROMPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${PROMPT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        const promptPayload = {
+            contents: [{ parts: [{ text: userGoal }] }],
+            systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS["vision_prompt"] }] },
+            generationConfig: { temperature: 0.8 },
+            tools: [{ googleSearch: {} }] 
+        };
 
-      const promptRes = await fetchWithRetry(PROMPT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(promptPayload) });
-      const promptResult = await promptRes.json();
-      if (!promptRes.ok) throw new Error(`Gemini prompt generation error: ${JSON.stringify(promptResult)}`);
-      
-      const generatedImagePrompt = promptResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!generatedImagePrompt) throw new Error("Image prompt generation failed.");
+        const promptRes = await fetchWithRetry(PROMPT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(promptPayload) });
+        const promptResult = await promptRes.json();
+        if (!promptRes.ok) throw new Error(`Gemini prompt generation error: ${JSON.stringify(promptResult)}`);
+        
+        const generatedImagePrompt = promptResult?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!generatedImagePrompt) throw new Error("Image prompt generation failed.");
 
-      const IMAGEN_MODEL = "imagen-3.0-generate-002";
-      const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
-      const imagenPayload = {
-        instances: [{ prompt: generatedImagePrompt }], 
-        parameters: { sampleCount: 1, aspectRatio: "1:1", outputMimeType: "image/png" }
-      };
 
-      const response = await fetch(IMAGEN_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagenPayload)
-      });
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("Imagen API Error:", response.status, errorBody);
-        throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
-      }
-      const result = await response.json();
-      const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
-      if (!base64Data) { throw new Error("Imagen API response did not contain image data."); }
+        // 2. Generate the image using the new prompt
+        const IMAGEN_MODEL = "imagen-3.0-generate-002";
+        const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
+        const imagenPayload = {
+            instances: [{ prompt: generatedImagePrompt }], 
+            parameters: {
+                sampleCount: 1,
+                aspectRatio: "1:1",
+                outputMimeType: "image/png"
+            }
+        };
 
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-          imageUrl: `data:image/png;base64,${base64Data}`,
-          prompt: generatedImagePrompt 
-        })
-      };
+        const response = await fetch(IMAGEN_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(imagenPayload)
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("Imagen API Error:", response.status, errorBody);
+            throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+
+        if (!base64Data) {
+            console.error("Imagen API Response Missing Data:", JSON.stringify(result));
+            throw new Error("Imagen API response did not contain image data.");
+        }
+
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                imageUrl: `data:image/png;base64,${base64Data}`,
+                prompt: generatedImagePrompt 
+            })
+        };
     }
 
     // --- 2b. Handle TTS Generation (Gemini TTS) ---
     if (feature === 'tts') {
-      if (!textToSpeak) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required "textToSpeak" data for TTS.' }) }; }
+      if (!textToSpeak) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ message: 'Missing required "textToSpeak" data for TTS.' })
+        };
+      }
 
       const TTS_MODEL = "gemini-2.5-flash-preview-tts";
       const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
       const ttsPayload = {
         contents: [{ parts: [{ text: textToSpeak }] }],
         generationConfig: {
           responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice || "Puck" } } }
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: voice || "Puck" 
+              }
+            }
+          }
         },
         model: TTS_MODEL
       };
@@ -462,93 +534,152 @@ exports.handler = async function (event) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(ttsPayload)
       });
+
       if (!response.ok) {
         const errorBody = await response.text();
         console.error("TTS API Error:", response.status, errorBody);
         throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
       }
+
       const result = await response.json();
-      const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData && typeof p.inlineData.mimeType === 'string' && p.inlineData.mimeType.startsWith('audio/'));
+      const part = result?.candidates?.[0]?.content?.parts?.find(
+        p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+      );
+
       const audioData = part?.inlineData?.data;
       const mimeType = part?.inlineData?.mimeType;
-      if (!audioData || !mimeType) { throw new Error("TTS API response didnot contain audio data."); }
+
+      if (!audioData || !mimeType) {
+        console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
+        throw new Error("TTS API response did not contain audio data.");
+      }
 
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
-        body: JSON.stringify({ audioData: audioData, mimeType: mimeType })
+        body: JSON.stringify({
+          audioData: audioData,
+          mimeType: mimeType
+        })
       };
     }
 
     // --- 2c. Handle Text Generation ---
     if (TEXT_GENERATION_FEATURES.includes(feature)) {
-      if (!userGoal) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required userGoal data for feature.' }) }; }
+      if (!userGoal) {
+        return {
+          statusCode: 400,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+        };
+      }
 
       const TEXT_MODEL = "gemini-2.5-pro";
       const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
       const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+
       const payload = {
         contents: [{ parts: [{ text: userGoal }] }],
-        systemInstruction: { parts: [{ text: systemInstructionText }] },
-        generationConfig: { temperature: 0.7 }
+        systemInstruction: {
+          parts: [{ text: systemInstructionText }]
+        },
+        generationConfig: {
+          temperature: 0.7, // Default for creative text
+        }
       };
 
+      // --- CRITICAL FIX: Conditionally apply 'tools' OR 'responseMimeType' ---
       const isJsonFeature = feature === 'smart_goal_structuring' || feature === 'dream_energy_analysis';
 
       if (isJsonFeature) {
-        payload.generationConfig.temperature = 0.2;
+        // This is a JSON feature. DO NOT add 'tools'.
+        payload.generationConfig.temperature = 0.2; // Lower temp for factual JSON
         payload.generationConfig.responseMimeType = "application/json";
         payload.generationConfig.responseSchema = (feature === 'smart_goal_structuring') ? SMART_GOAL_SCHEMA : DREAM_ENERGY_SCHEMA;
       } else {
+        // This is a standard text feature. ADD 'tools' for Google Search grounding.
         payload.tools = [{ googleSearch: {} }];
       }
+      // --- END FIX ---
 
-      const response = await fetchWithRetry(TEXT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const result = await response.json();
-      if (!response.ok) { throw new Error(`Gemini API error: ${JSON.stringify(result)}`); }
+      const response = await fetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-      // ==================================================================
-      // --- START CRITICAL FIX ---
-      // This logic correctly handles both JSON and Text responses.
-      // ==================================================================
-      let responseContent; // This will hold either the text string or the JSON string
-
-      if (isJsonFeature) {
-        // --- JSON FEATURE LOGIC ---
-        // 1. Look for the JSON object in the 'data' field, which is where the REST API places it.
-        const jsonObject = result.candidates?.[0]?.content?.parts?.[0]?.data;
-        
-        if (!jsonObject) {
-          // This is the error from your log.
-          console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
-          throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
-        }
-        // 2. Stringify it so the frontend can parse it.
-        responseContent = JSON.stringify(jsonObject);
-
-      } else {
-        // --- TEXT FEATURE LOGIC ---
-        // 1. Look for the text in the 'text' field.
-        const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawText) {
-          console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-          throw new Error("Text Generation API response did not contain generated text.");
-        }
-        // 2. Use the raw text.
-        responseContent = rawText;
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Text Generation API Error:", response.status, errorBody);
+        throw new Error(`Text Generation API failed: ${errorBody}`);
       }
 
-      // 3. Return the content (either a markdown string or a JSON string)
-      //    in the wrapper the frontend *always* expects.
-      return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ text: responseContent })
-      };
+      const result = await response.json();
+
       // ==================================================================
-      // --- END CRITICAL FIX ---
-      // ==================================================================
+// --- CRITICAL FIX ---
+// Improved parsing for Gemini structured responses (.data, .inlineData.data, .text)
+// ==================================================================
+let responseContent;
+
+// Handle structured JSON (SMART Goal, Dream Energy)
+if (isJsonFeature) {
+  const candidate = result.candidates?.[0];
+  const jsonPart = candidate?.content?.parts?.[0];
+  let jsonObject = null;
+
+  // 1️⃣ Prefer .data field
+  if (jsonPart?.data) {
+    jsonObject = jsonPart.data;
+  }
+
+  // 2️⃣ Fallback: .inlineData.data (base64-encoded JSON)
+  if (!jsonObject && jsonPart?.inlineData?.data) {
+    try {
+      jsonObject = JSON.parse(jsonPart.inlineData.data);
+    } catch (e) {
+      console.error("Failed to parse inlineData JSON:", jsonPart.inlineData.data);
     }
+  }
+
+  // 3️⃣ Fallback: raw JSON text
+  if (!jsonObject && jsonPart?.text) {
+    try {
+      jsonObject = JSON.parse(jsonPart.text);
+    } catch (e) {
+      console.error("Failed to parse JSON from text field:", jsonPart.text);
+    }
+  }
+
+  // 4️⃣ Validate
+  if (!jsonObject) {
+    console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
+    throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
+  }
+
+  responseContent = JSON.stringify(jsonObject);
+
+} else {
+  // --- TEXT FEATURE LOGIC ---
+  const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawText) {
+    console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+    throw new Error("Text Generation API response did not contain generated text.");
+  }
+  responseContent = rawText;
+}
+
+// Always return consistent structure
+return {
+  statusCode: 200,
+  headers: CORS_HEADERS,
+  body: JSON.stringify({ text: responseContent })
+};
+// ==================================================================
+// --- END CRITICAL FIX ---
+// ==================================================================
+
 
     // --- Default Case ---
     return {
