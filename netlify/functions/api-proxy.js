@@ -193,6 +193,47 @@ function firestoreRestToJs(firestoreField) {
   return null;
 }
 
+/**
+ * Utility function to fetch with automatic retry on temporary errors (500, 503, 429).
+ * Implements exponential backoff.
+ */
+async function fetchWithRetry(url, options, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      
+      // Success codes or permanent failure codes (400s) should not be retried.
+      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+        return response;
+      }
+
+      // Retry for temporary errors: 5xx server errors, or 429 rate limit
+      if (response.status === 503 || response.status === 500 || response.status === 429) {
+        if (attempt < maxRetries - 1) {
+          const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 500); // 1s, 2s, 4s + jitter
+          console.log(`[RETRY] Attempt ${attempt + 1}/${maxRetries} failed with status ${response.status}. Retrying in ${delay.toFixed(0)}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue; // Go to the next loop iteration
+        }
+      }
+      
+      // If it's the last attempt or a non-retryable error, return the response to be handled.
+      return response;
+
+    } catch (error) {
+      // Handle network errors (e.g., connection reset)
+      if (attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 500);
+        console.log(`[RETRY] Network error on attempt ${attempt + 1}/${maxRetries}. Retrying in ${delay.toFixed(0)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error; // Throw the error if max retries reached
+      }
+    }
+  }
+  // This should be unreachable but added for safety
+  throw new Error("Maximum fetch retries reached.");
+}
 
 /**
  * [CRITICAL SECURITY GATE]
@@ -200,7 +241,7 @@ function firestoreRestToJs(firestoreField) {
  */
 async function checkSquarespaceMembershipStatus(userId) {
   // DEVELOPMENT BYPASS
-  if (userId.startsWith('mock-') || userId === 'TEST_USER') {
+  if (userId && (userId.startsWith('mock-') || userId === 'TEST_USER')) {
     console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
     return true;
   }
@@ -264,7 +305,7 @@ exports.handler = async function (event) {
   }
 
   // --- API Key and Initialization Checks ---
-  if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
+  if (!GEMINI_API_KEY || (typeof GEMINI_API_KEY === 'string' && GEMINI_API_KEY.trim() === '')) {
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
@@ -281,7 +322,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    const body = JSON.parse(event.body);
+    const body = event.body ? JSON.parse(event.body) : {};
     const { action, userId, data, userGoal, textToSpeak, imagePrompt, operation, voice } = body;
 
     // Use 'operation' first (from new frontend), then fallback to 'action'
@@ -434,7 +475,7 @@ exports.handler = async function (event) {
     // SECTION 2: GOOGLE AI GENERATION FEATURES (UN-GATED)
     // ------------------------------------------------------------------
 
-    // --- 2a. Handle Image Generation (Imagen) ---
+    // --- 2a. Handle Image Generation (vision_prompt -> Imagen pipeline) ---
     if (feature === 'vision_prompt') {
         if (!userGoal) {
              return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing userGoal for image prompt.' }) };
@@ -447,7 +488,8 @@ exports.handler = async function (event) {
             contents: [{ parts: [{ text: userGoal }] }],
             systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS["vision_prompt"] }] },
             generationConfig: { temperature: 0.8 },
-            tools: [{ googleSearch: {} }] 
+            // Keep 'tools' optional and minimal — included here for grounding if supported
+            tools: [{ googleSearch: {} }]
         };
 
         const promptRes = await fetchWithRetry(PROMPT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(promptPayload) });
@@ -542,7 +584,7 @@ exports.handler = async function (event) {
 
       const result = await response.json();
       const part = result?.candidates?.[0]?.content?.parts?.find(
-        p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+        p => p.inlineData && typeof p.inlineData.mimeType === 'string' && p.inlineData.mimeType.startsWith('audio/')
       );
 
       const audioData = part?.inlineData?.data;
@@ -628,15 +670,14 @@ exports.handler = async function (event) {
           console.error("Full API Response:", JSON.stringify(result));
 
           if (isJsonFeature) {
-              // This is the error the user is seeing.
-               throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
+               throw new Error("SMART Goal / Dream Energy generation failed: response did not contain structured JSON data.");
           } else {
                throw new Error("Text Generation API response did not contain generated text.");
           }
       }
 
       // The frontend client *always* expects the response in the format { "text": "..." }
-      // The client-side 'generateContent' function will handle parsing the JSON string.
+      // The client-side 'generateContent' function will handle parsing the JSON string for JSON features.
       return {
         statusCode: 200,
         headers: CORS_HEADERS,
