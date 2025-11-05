@@ -618,24 +618,24 @@ exports.handler = async function (event) {
       const result = await response.json();
 
       // ==================================================================
-// --- CRITICAL FIX ---
-// Improved parsing for Gemini structured responses (.data, .inlineData.data, .text)
+// --- START CRITICAL FIX ---
+// Handles structured JSON (.data, .inlineData.data, .text) safely.
 // ==================================================================
 let responseContent;
 
-// Handle structured JSON (SMART Goal, Dream Energy)
 if (isJsonFeature) {
+  // --- JSON FEATURE LOGIC ---
   const candidate = result.candidates?.[0];
   const jsonPart = candidate?.content?.parts?.[0];
   let jsonObject = null;
 
-  // 1️⃣ Prefer .data field
-  if (jsonPart?.data) {
+  // 1. Preferred: .data field
+  if (jsonPart && jsonPart.data) {
     jsonObject = jsonPart.data;
   }
 
-  // 2️⃣ Fallback: .inlineData.data (base64-encoded JSON)
-  if (!jsonObject && jsonPart?.inlineData?.data) {
+  // 2. Fallback: .inlineData.data
+  if (!jsonObject && jsonPart && jsonPart.inlineData && jsonPart.inlineData.data) {
     try {
       jsonObject = JSON.parse(jsonPart.inlineData.data);
     } catch (e) {
@@ -643,8 +643,8 @@ if (isJsonFeature) {
     }
   }
 
-  // 3️⃣ Fallback: raw JSON text
-  if (!jsonObject && jsonPart?.text) {
+  // 3. Fallback: raw JSON text
+  if (!jsonObject && jsonPart && jsonPart.text) {
     try {
       jsonObject = JSON.parse(jsonPart.text);
     } catch (e) {
@@ -652,14 +652,13 @@ if (isJsonFeature) {
     }
   }
 
-  // 4️⃣ Validate
+  // 4. Validate
   if (!jsonObject) {
     console.error("Text Generation API Response Missing JSON Data:", JSON.stringify(result));
     throw new Error("SMART Goal generation failed: response did not contain structured JSON data.");
   }
 
   responseContent = JSON.stringify(jsonObject);
-
 } else {
   // --- TEXT FEATURE LOGIC ---
   const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -670,7 +669,7 @@ if (isJsonFeature) {
   responseContent = rawText;
 }
 
-// Always return consistent structure
+// 5. Always return consistent structure
 return {
   statusCode: 200,
   headers: CORS_HEADERS,
