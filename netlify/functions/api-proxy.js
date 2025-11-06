@@ -1,438 +1,576 @@
+/**
+ * Netlify Function: secure-data-proxy
+ * * This function serves as the single secure gateway for ALL features (AI & Data).
+ * * It handles:
+ * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
+ * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API) using structured queries.
+ * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
+ * * * Environment Variables required:
+ * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
+ * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
+ * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
+ * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
+ */
+
+// **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
+const fetch = require('node-fetch').default || require('node-fetch');
+
 // --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
-const SESSION_SECRET = process.env.SESSION_SECRET || 'a-strong-fallback-secret-for-token-validation'; // MUST be set in ENV!
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Base URL for the Firestore REST API
+// Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
 const FIRESTORE_BASE_URL =
-  `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
-// --- SECURITY & LIMITS CONFIGURATION ---
-const MAX_GOAL_LENGTH = 2000;    // Max characters for user goals/text input
+// Base URL for Firestore queries (Used for secure, filtered reads/writes)
+const FIRESTORE_QUERY_URL =
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
-// --- DYNAMIC LIMITS ---
-function getDailyLimit(tier) {
-    switch (tier) {
-        case 'premium': return 100;    // premium: highest limit
-        case 'paid': return 50;        // standard paid: medium limit
-        case 'free': return 10;        // free tier: small limit
-        default: return 5;             // fallback for unknown/unauthenticated tier
-    }
-}
+// List of features that perform data operations (GATED BY MEMBERSHIP)
+const DATA_OPERATIONS = [
+    'SAVE_DREAM',
+    'LOAD_DREAMS',
+    'DELETE_DREAM'
+];
 
-// --- ERROR CODES ---
-const CustomErrorCodes = {
-    INVALID_INPUT: 'INVALID_INPUT',
-    UNAUTHORIZED: 'UNAUTHORIZED',
-    RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
-    MEMBERSHIP_INACTIVE: 'MEMBERSHIP_INACTIVE',
-    UPGRADE_REQUIRED: 'UPGRADE_REQUIRED', // New code for tier-based feature block
-    FIRESTORE_ERROR: 'FIRESTORE_ERROR',
-    AI_API_ERROR: 'AI_API_ERROR',
-    JSON_PARSING_ERROR: 'JSON_PARSING_ERROR',
-    INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
-};
+// List of features that perform text generation
+const TEXT_GENERATION_FEATURES = [
+    "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
+    "positive_spin", "mindset_reset", "objection_handler",
+    "smart_goal_structuring"
+];
 
-// --- CACHING SETUP (Map with LRU Logic and TTL) ---
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const MAX_CACHE_SIZE = 1000;
-const membershipCache = new Map();
-
-// --- FEATURE CONFIGURATION ---
-const FeatureConfig = {
-    // All features that use Gemini for text generation
-    TEXT_GENERATION_FEATURES: [
-      "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
-      "positive_spin", "mindset_reset", "objection_handler",
-      "smart_goal_structuring",
-      "dream_energy_analysis"
-    ],
-    HIGH_COST_AI_FEATURES: [
-      "smart_goal_structuring",
-      "dream_energy_analysis"
-    ]
-};
-
-// Map S.M.A.R.T. characteristic to a default icon
-const SMART_ICON_DEFAULTS = {
-    specific: "🎯", measurable: "📊", achievable: "💪", relevant: "🔗", timeBound: "📅" 
-};
-
-// Map normalized lowercase importance level to frontend style hints
-const IMPORTANCE_MAP = {
-    "high": { colorCode: "#059669", tooltip: "This is a critical component for success. Focus energy here." }, 
-    "medium": { colorCode: "#fbbf24", tooltip: "This factor is well-balanced and manageable." }, 
-    "low": { colorCode: "#ef4444", tooltip: "This area may need strengthening or re-evaluation." }, 
-    "tbd": { colorCode: "#6b7280", tooltip: "Data missing from AI. Review and regenerate." } 
+// Map feature types to system instructions
+const SYSTEM_INSTRUCTIONS = {
+    "plan": "You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed plan to achieve the user's goal in natural, polished paragraph form. Separate each step with a blank line. Avoid any symbols, lists, quotes, or code formatting. Deliver the output as clean, raw text suitable for direct display.",
+    "pep_talk": "You are a motivational speaker named RyGuy. Your tone is energetic, inspiring, and positive. Write a short, powerful pep talk to help the user achieve their goal. Use uplifting, encouraging language. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
+    "vision_prompt": "You are an imaginative guide named RyGuy. Your tone is vivid and creative. Provide a single-paragraph prompt that helps the user visualize their goal. Include sensory details to make the image clear and inspiring. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+    "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+    "smart_goal_structuring": "You are a highly analytical goal-setting specialist named RyGuy. Your tone is professional and precise. Take the user's goal and restructure it according to the five S.M.A.R.T. criteria in polished paragraph form. For each category (Specific, Measurable, Achievable, Relevant, Time-bound), write a separate paragraph. Separate paragraphs with blank lines. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
 };
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, DELETE',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization', 
-  'Content-Type': 'application/json' 
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json'
 };
 
-// --- UTILITY FUNCTIONS (Logging, Conversions, Retry, JSON Extraction) ---
-const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+// --- FIRESTORE REST API HELPERS ---
 
-function log(level, message, context = {}) {
-    const logMessage = `[${level}] ${message}`;
-    const fullLog = context.userId || context.feature ? 
-        `${logMessage} | Feature: ${context.feature || 'N/A'}, User: ${context.userId || 'N/A'}` :
-        logMessage;
-    
-    if (IS_PRODUCTION && level === 'ERROR' && context.isExternalAPIError) {
-        level = 'WARN';
-    }
-
-    if (level === 'ERROR' || level === 'FATAL') {
-        console.error(fullLog, context.details || '');
-    } else if (level === 'WARN') {
-        console.warn(fullLog, context.details || '');
-    } else {
-        console.log(fullLog, context.details || '');
-    }
-}
-
+/**
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
+ */
 function jsToFirestoreRest(value) {
-    if (value === null || value === undefined) return { nullValue: null };
-    if (typeof value === 'string') return { stringValue: value };
-    if (typeof value === 'number') return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
-    if (typeof value === 'boolean') return { booleanValue: value };
+    if (value === null || value === undefined) {
+        return { nullValue: null };
+    }
+    if (typeof value === 'string') {
+        return { stringValue: value };
+    }
+    if (typeof value === 'number') {
+        return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+    }
+    if (typeof value === 'boolean') {
+        return { booleanValue: value };
+    }
     if (Array.isArray(value)) {
-        return { arrayValue: { values: value.map(jsToFirestoreRest) } };
+        return {
+            arrayValue: {
+                values: value.map(jsToFirestoreRest)
+            }
+        };
     }
     if (typeof value === 'object') {
         const mapFields = {};
         for (const key in value) {
-        if (Object.prototype.hasOwnProperty.call(value, key)) {
-            mapFields[key] = jsToFirestoreRest(value[key]);
-        }
+            if (Object.prototype.hasOwnProperty.call(value, key)) {
+                mapFields[key] = jsToFirestoreRest(value[key]);
+            }
         }
         return { mapValue: { fields: mapFields } };
     }
+
     return { stringValue: String(value) };
 }
 
+/**
+ * Recursively unwraps the verbose Firestore REST API field object
+ * into a standard JavaScript object.
+ */
 function firestoreRestToJs(firestoreField) {
     if (!firestoreField) return null;
+
     if (firestoreField.nullValue !== undefined) return null;
     if (firestoreField.stringValue !== undefined) return firestoreField.stringValue;
     if (firestoreField.integerValue !== undefined) return parseInt(firestoreField.integerValue, 10);
     if (firestoreField.doubleValue !== undefined) return firestoreField.doubleValue;
     if (firestoreField.booleanValue !== undefined) return firestoreField.booleanValue;
-    if (firestoreField.timestampValue !== undefined) return new Date(firestoreField.timestampValue).toISOString();
+    if (firestoreField.timestampValue !== undefined) return new Date(firestoreField.timestampValue);
+
     if (firestoreField.arrayValue) {
         return (firestoreField.arrayValue.values || []).map(firestoreRestToJs);
     }
+
     if (firestoreField.mapValue) {
         const jsObject = {};
         const fields = firestoreField.mapValue.fields || {};
         for (const key in fields) {
-        if (Object.prototype.hasOwnProperty.call(fields, key)) {
-            jsObject[key] = firestoreRestToJs(fields[key]);
-        }
+            if (Object.prototype.hasOwnProperty.call(fields, key)) {
+                jsObject[key] = firestoreRestToJs(fields[key]);
+            }
         }
         return jsObject;
     }
+
     return null;
 }
 
-async function fetchWithRetry(url, options, context = {}, maxRetries = 3) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const response = await fetch(url, options); 
-      
-      if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
-        return response;
-      }
-      
-      if (response.status === 429) {
-          const delay = 5000; 
-          log('WARN', `External API Rate Limited (429). Waiting ${delay}ms...`, context);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue; 
-      }
-
-      if (response.status >= 500) {
-        if (attempt < maxRetries - 1) {
-             const errorBody = await response.clone().text(); 
-             log('WARN', `External API 5XX Error. Retrying. Status: ${response.status}`, { 
-                 ...context, 
-                 details: errorBody.substring(0, 200) + '...' 
-             });
-        }
-      }
-
-      if (attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 500); 
-        log('INFO', `Attempt ${attempt + 1}/${maxRetries} failed with status ${response.status}. Retrying in ${delay.toFixed(0)}ms...`, context);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue; 
-      }
-      
-      return response; 
-    } catch (error) {
-      if (attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 500);
-        log('WARN', `Network error on attempt ${attempt + 1}/${maxRetries}. Retrying in ${delay.toFixed(0)}ms...`, context);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      } else {
-        throw error; 
-      }
-    }
-  }
-  throw new Error("Maximum fetch retries reached.");
-}
-
-function extractJsonFromText(text) {
-    try {
-        const cleanText = text.trim().replace(/\u200B/g, "");
-        const startIndex = cleanText.indexOf('{');
-        const endIndex = cleanText.lastIndexOf('}');
-        
-        if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-            return { error: true, code: CustomErrorCodes.JSON_PARSING_ERROR };
-        }
-
-        let jsonString = cleanText.substring(startIndex, endIndex + 1);
-        jsonString = jsonString.replace(/,\s*([\}\]])/g, '$1'); 
-        
-        return JSON.parse(jsonString);
-
-    } catch (e) {
-        log('ERROR', "[JSON_EXTRACTION_PARSE_ERROR] Failed to parse JSON.", { details: e.message });
-        return { error: true, code: CustomErrorCodes.JSON_PARSING_ERROR };
-    }
-}
-
-// --- CORE SECURITY FUNCTIONS ---
-function getUsageDocumentPath(userId) {
-    const today = new Date().toISOString().split('T')[0]; 
-    return `users/${userId}/usage/${today}`;
-}
 
 /**
- * Checks and increments the daily usage counter in Firestore based on the user's tier.
- * @returns The new request count, or -1 if the limit is exceeded.
+ * [CRITICAL SECURITY GATE]
+ * Checks the user's active membership status via the Squarespace API.
+ * Includes a bypass for testing.
+ * @param {string} userId - The unique user ID (from localStorage).
+ * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
  */
-async function checkRateLimit(userId, feature, context, tier) {
-    const dailyLimit = getDailyLimit(tier);
-    const path = getUsageDocumentPath(userId);
-    const firestoreUrl = `${FIRESTORE_BASE_URL}${path}?key=${FIRESTORE_KEY}`;
-
-    let currentCount = 0;
-    
-    try {
-        const getRes = await fetchWithRetry(firestoreUrl, { method: 'GET' }, context);
-        
-        if (getRes.status === 200) {
-            const doc = await getRes.json();
-            const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
-            currentCount = fields?.count || 0;
-        } else if (getRes.status !== 404) {
-             log('WARN', `Rate limit GET failed with status ${getRes.status}. Continuing, but logging.`, context);
-        }
-
-        const newCount = currentCount + 1;
-
-        if (newCount > dailyLimit) {
-            log('WARN', `Rate limit exceeded for user (Tier: ${tier}). Count: ${newCount} / ${dailyLimit}`, context);
-            return -1; 
-        }
-
-        const newFields = jsToFirestoreRest({ 
-            count: newCount, 
-            last_feature: feature,
-            tier: tier,
-            timestamp: new Date().toISOString()
-        });
-        
-        const upsertMethod = (getRes.status === 200) ? 'PATCH' : 'POST';
-        let upsertUrl = firestoreUrl;
-        
-        if (upsertMethod === 'POST') {
-             upsertUrl = `${FIRESTORE_BASE_URL}users/${userId}/usage?documentId=${path.split('/').pop()}&key=${FIRESTORE_KEY}`;
-        }
-
-        const upsertRes = await fetchWithRetry(upsertUrl, {
-            method: upsertMethod,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: newFields.mapValue.fields })
-        }, context);
-
-        if (!upsertRes.ok) {
-            log('ERROR', `Rate limit UPSERT failed. Status: ${upsertRes.status}`, context);
-        }
-
-        return newCount;
-
-    } catch (error) {
-        log('ERROR', `Rate limit check failed unexpectedly.`, { ...context, details: error.message });
-        return currentCount + 1; 
+async function checkSquarespaceMembershipStatus(userId) {
+    // DEVELOPMENT BYPASS
+    if (userId.startsWith('mock-') || userId === 'TEST_USER') {
+        console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
+        return true;
     }
-}
 
-// --- SQUARESPACE MEMBERSHIP FETCH ---
-async function fetchMembership(userId) {
-    if (!SQUARESPACE_TOKEN) return { isActive: false, tier: 'free' };
+    if (!SQUARESPACE_TOKEN) {
+        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all data access.");
+        return false;
+    }
 
-    // Check cache
-    const cached = membershipCache.get(userId);
-    if (cached && cached.expiry > Date.now()) return { isActive: cached.isActive, tier: cached.tier };
+    // !! CRITICAL CUSTOMIZATION REQUIRED !!
+    // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
+    // that can verify membership for the user's ID/Email.
+    const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
 
-    let membershipStatus = { isActive: false, tier: 'free' };
     try {
-        const res = await fetchWithRetry(`https://api.squarespace.com/1.0/profiles/check-membership/${userId}`, {
+        const response = await fetch(squarespaceApiUrl, {
             method: 'GET',
-            headers: { 
+            headers: {
+                // Squarespace uses a specific header format for API Keys
                 'Authorization': `Bearer ${SQUARESPACE_TOKEN}`,
-                'User-Agent': 'RyGuyLabs-Netlify-Function'
+                'User-Agent': 'RyGuyLabs-Netlify-Function-Checker'
             }
-        }, { userId: userId, feature: 'AUTH' });
+        });
 
-        if (res.ok) {
-            const data = await res.json();
-            const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
-            const tier = isActive ? (data.planName?.toLowerCase().includes('premium') ? 'premium' : 'paid') : 'free';
-            membershipStatus = { isActive, tier };
-        } else {
-            log('WARN', `Squarespace API returned status ${res.status}`, { userId, feature: 'AUTH', isExternalAPIError: true });
+        if (!response.ok) {
+            console.warn(`Squarespace API returned error for user ${userId}: ${response.status} - ${response.statusText}`);
+            return false;
         }
+
+        const data = await response.json();
+
+        // !! CRITICAL CUSTOMIZATION REQUIRED !!
+        // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
+        const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
+
+        if (!isActive) {
+            console.log(`User ${userId} is INACTIVE. Access denied.`);
+        }
+
+        return isActive;
+
     } catch (error) {
-        log('ERROR', "Squarespace API failed during fetch.", { userId, feature: 'AUTH', details: error.message, isExternalAPIError: true });
+        console.error("Error checking Squarespace membership:", error);
+        return false; // Deny access on failure
     }
-
-    // Cache result
-    membershipCache.set(userId, { ...membershipStatus, expiry: Date.now() + CACHE_TTL });
-    return membershipStatus;
 }
 
-// --- PLACEHOLDER AUTH TOKEN VERIFICATION ---
-function verifyAuthToken(userId, authToken) {
-    // Simple placeholder: In production, implement JWT/session validation
-    if (!authToken || !userId) return false;
-    return true;
-}
 
-// --- MAIN HANDLER ---
 exports.handler = async function(event) {
+    // Handle pre-flight OPTIONS requests for CORS
     if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: ''
+        };
     }
+
     if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Method Not Allowed' }) };
+        return {
+            statusCode: 405,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Method Not Allowed" })
+        };
     }
 
-    if (IS_PRODUCTION && (!GEMINI_API_KEY || !FIRESTORE_KEY || !PROJECT_ID || !SQUARESPACE_TOKEN || !SESSION_SECRET)) {
-        log('FATAL', 'Missing critical API keys/secrets in production environment. Immediate fail.');
-        return { statusCode: 503, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Service Unavailable: Critical configuration missing.' }) };
+    // --- API Key and Initialization Checks ---
+    if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
+        };
     }
 
-    let body;
-    try { body = event.body ? JSON.parse(event.body) : {}; } 
-    catch (e) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Invalid JSON body.', code: CustomErrorCodes.INVALID_INPUT }) }; }
-
-    const authToken = event.headers.authorization ? event.headers.authorization.split('Bearer ')[1] : null;
-    const { operation, action, userId, data, userGoal, textToSpeak, voice } = body;
-    const feature = operation || action || body.feature;
-    const context = { userId, feature };
-
-    if (!verifyAuthToken(userId, authToken)) {
-        log('WARN', 'Unauthorized access attempt: Invalid or missing token.', context);
-        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Unauthorized: Invalid session token or missing userId.', code: CustomErrorCodes.UNAUTHORIZED }) };
+    if (!FIRESTORE_KEY || !PROJECT_ID) {
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
+        };
     }
-
-    if (!feature) {
-        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required "operation" or "action" parameter.', code: CustomErrorCodes.INVALID_INPUT }) };
-    }
-
-    const membership = userId ? await fetchMembership(userId) : { isActive: false, tier: 'free' };
 
     try {
-        // --- DATA OPERATIONS (SAVE/LOAD/DELETE DREAMS) ---
-        if (['SAVE_DREAM','LOAD_DREAMS','DELETE_DREAM'].includes(feature.toUpperCase())) {
-            if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing userId for data access.`, code: CustomErrorCodes.UNAUTHORIZED }) };
-            if (!membership.isActive) return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Forbidden: No active RyGuyLabs membership found.', code: CustomErrorCodes.MEMBERSHIP_INACTIVE }) };
+        const body = JSON.parse(event.body);
+        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
 
-            const dreamDocumentPath = `users/${userId}/dreams`;
+        const feature = action || body.feature;
+
+        if (!feature) {
+             return {
+                 statusCode: 400,
+                 headers: CORS_HEADERS,
+                 body: JSON.stringify({ message: "Missing required 'action' parameter." })
+            };
+        }
+
+
+        // ------------------------------------------------------------------
+        // SECTION 1: DATA OPERATIONS (GATED BY SQUARESPACE MEMBERSHIP)
+        // ------------------------------------------------------------------
+        if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
+
+            if (!userId) {
+                return {
+                    statusCode: 401,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
+                };
+            }
+
+            // A. SUBSCRIPTION GATE CHECK (AUTHORIZATION)
+            const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
+
+            if (!isSubscriberActive) {
+                return {
+                    statusCode: 403,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({
+                        message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription."
+                    })
+                };
+            }
+
+            // B. FIRESTORE DATA INTERACTION (SECURE ACCESS)
+            const userDreamsCollectionPath = `users/${userId}/dreams`;
+            let firestoreResponse;
+
             switch (feature.toUpperCase()) {
-                case 'SAVE_DREAM': {
-                    if (!data) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing data to save.`, code: CustomErrorCodes.INVALID_INPUT }) };
-                    const saveData = { ...data, timestamp: new Date().toISOString() };
-                    const firestoreRest = jsToFirestoreRest(saveData);
-                    const firestoreFields = firestoreRest.mapValue ? firestoreRest.mapValue.fields : null;
-                    if (!firestoreFields) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Invalid data format for saving.`, code: CustomErrorCodes.INVALID_INPUT }) };
+                case 'SAVE_DREAM':
+                    if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
 
-                    const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: firestoreFields }) }, context);
-                    if (!res.ok) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Firestore save failed.`, code: CustomErrorCodes.FIRESTORE_ERROR }) };
-                    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Dream saved successfully.' }) };
-                }
-                case 'LOAD_DREAMS': {
-                    const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, { method: 'GET' }, context);
-                    if (!res.ok) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Firestore load failed.`, code: CustomErrorCodes.FIRESTORE_ERROR }) };
-                    const doc = await res.json();
-                    const fields = firestoreRestToJs({ mapValue: { fields: doc.fields || {} } });
-                    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams: fields || [] }) };
-                }
-                case 'DELETE_DREAM': {
-                    if (!data?.dreamId) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing dreamId to delete.`, code: CustomErrorCodes.INVALID_INPUT }) };
-                    const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}/${data.dreamId}?key=${FIRESTORE_KEY}`, { method: 'DELETE' }, context);
-                    if (!res.ok) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Firestore delete failed.`, code: CustomErrorCodes.FIRESTORE_ERROR }) };
-                    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Dream deleted successfully.' }) };
-                }
+                    // Convert raw JS object into Firestore REST API format
+                    const firestoreFields = jsToFirestoreRest(data).mapValue.fields;
+
+                    // POST to the collection path will create a new document with an auto-generated ID
+                    firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${userDreamsCollectionPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fields: firestoreFields })
+                    });
+
+                    if (firestoreResponse.ok) {
+                        const result = await firestoreResponse.json();
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name })
+                        };
+                    }
+                    break;
+
+                case 'LOAD_DREAMS':
+                    // **SECURITY FIX:** Use a Structured Query to enforce filtering by userId.
+                    const structuredQuery = {
+                        // Select all fields
+                        select: { fields: [{ fieldPath: "*" }] },
+                        from: [{ collectionId: "dreams" }],
+                        where: {
+                            fieldFilter: {
+                                field: { fieldPath: "userId" },
+                                op: "EQUAL",
+                                value: { stringValue: userId }
+                            }
+                        },
+                        // Order by timestamp
+                        orderBy: [{
+                            field: { fieldPath: "timestamp" },
+                            direction: "DESCENDING"
+                        }]
+                    };
+
+                    firestoreResponse = await fetch(FIRESTORE_QUERY_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
+                    });
+
+                    if (firestoreResponse.ok) {
+                        const result = await firestoreResponse.json();
+
+                        // The result is an array of query results, each containing a 'document'
+                        const dreams = (result || [])
+                            .filter(item => item.document) // Filter out any empty results
+                            .map(item => {
+                                const doc = item.document;
+                                const docId = doc.name.split('/').pop();
+
+                                // Convert Firestore fields back to clean JS object
+                                const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
+
+                                // Return the required client-side object
+                                return { id: docId, ...fields };
+                            });
+
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ dreams })
+                        };
+                    }
+                    break;
+
+                case 'DELETE_DREAM':
+                    // The client passes the document ID in data.dreamId
+                    if (!data || !data.dreamId) {
+                        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
+                    }
+
+                    // Direct DELETE on the specific document path.
+                    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
+
+                    firestoreResponse = await fetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (firestoreResponse.ok) {
+                        // Successful deletion returns 200 with an empty body
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
+                        };
+                    }
+                    break;
+
+                default:
+                    // Should be caught by the DATA_OPERATIONS check, but here for safety
+                    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data action." }) };
             }
+
+            // Handle generic Firestore errors
+            const errorText = firestoreResponse ? await firestoreResponse.text() : 'Unknown database error';
+            console.error("Firestore operation failed:", firestoreResponse?.status, errorText);
+            return {
+                statusCode: firestoreResponse?.status || 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
+            };
+
         }
 
-        // --- RATE LIMIT CHECK ---
-        if (membership.isActive) {
-            const currentCount = await checkRateLimit(userId, feature, context, membership.tier);
-            if (currentCount === -1) return { statusCode: 429, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Rate limit exceeded. Please try again tomorrow.', code: CustomErrorCodes.RATE_LIMIT_EXCEEDED }) };
-        } else {
-            return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Membership inactive. Upgrade to access AI features.', code: CustomErrorCodes.UPGRADE_REQUIRED }) };
-        }
 
-        // --- TEXT GENERATION FEATURES ---
-        if (FeatureConfig.TEXT_GENERATION_FEATURES.includes(feature)) {
-            if (!data?.prompt) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing "prompt".`, code: CustomErrorCodes.INVALID_INPUT }) };
+        // ------------------------------------------------------------------
+        // SECTION 2: GOOGLE AI GENERATION FEATURES (UN-GATED)
+        // ------------------------------------------------------------------
 
-            if (FeatureConfig.HIGH_COST_AI_FEATURES.includes(feature) && membership.tier === 'free') {
-                return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Upgrade required for this premium feature.', code: CustomErrorCodes.UPGRADE_REQUIRED }) };
+        // --- 2a. Handle Image Generation (Imagen) ---
+        if (feature === 'image_generation') {
+            if (!imagePrompt) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing "imagePrompt" data for image generation.' })
+                };
             }
 
-            const gptResponse = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
+            const IMAGEN_MODEL = "imagen-3.0-generate-002";
+            const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
+
+            const imagenPayload = {
+                instances: [{ prompt: imagePrompt }],
+                parameters: {
+                    sampleCount: 1,
+                    aspectRatio: "1:1",
+                    outputMimeType: "image/png"
+                }
+            };
+
+            const response = await fetch(IMAGEN_API_URL, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${GEMINI_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: 'gpt-4.1-mini',
-                    messages: [{ role: 'user', content: data.prompt }],
-                    temperature: 0.7,
-                    max_tokens: 1200
-                })
-            }, context);
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(imagenPayload)
+            });
 
-            const resultJson = await gptResponse.json();
-            let finalContent = resultJson?.choices?.[0]?.message?.content || '';
-            
-            if (['smart_goal_structuring','dream_energy_analysis'].includes(feature)) {
-                finalContent = extractJsonFromText(finalContent);
-                if (finalContent?.error) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: 'JSON generation failed', code: CustomErrorCodes.JSON_PARSING_ERROR }) };
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Imagen API Error:", response.status, errorBody);
+                throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
             }
 
-            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ result: finalContent }) };
+            const result = await response.json();
+            const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+
+            if (!base64Data) {
+                console.error("Imagen API Response Missing Data:", JSON.stringify(result));
+                throw new Error("Imagen API response did not contain image data.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    imageUrl: `data:image/png;base64,${base64Data}`,
+                    altText: `Generated vision for: ${imagePrompt}`
+                })
+            };
         }
 
-        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Feature not recognized or implemented yet.', code: CustomErrorCodes.INVALID_INPUT }) };
+        // --- 2b. Handle TTS Generation (Gemini TTS) ---
+        if (feature === 'tts') {
+            if (!textToSpeak) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required text data for TTS.' })
+                };
+            }
+
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+            const ttsPayload = {
+                contents: [{ parts: [{ text: textToSpeak }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Kore" }
+                        }
+                    }
+                }
+            };
+
+            const response = await fetch(TTS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ttsPayload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("TTS API Error:", response.status, errorBody);
+                throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.find(
+                p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+            );
+
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (!audioData || !mimeType) {
+                console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
+                throw new Error("TTS API response did not contain audio data.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    audioData: audioData,
+                    mimeType: mimeType
+                })
+            };
+        }
+
+        // --- 2c. Handle Text Generation ---
+        if (TEXT_GENERATION_FEATURES.includes(feature)) {
+            if (!userGoal) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+                };
+            }
+
+            const TEXT_MODEL = "gemini-2.5-flash";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+            
+            // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
+            // structured as a Content object, and NOT nested inside "generationConfig".
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
+                
+                // FIXED: Now top-level and correctly structured as a Content object
+                systemInstruction: { 
+                    parts: [{ text: systemInstructionText }] 
+                },
+                
+                // generationConfig removed as it was empty and causing the error due to 
+                // containing the misplaced systemInstruction.
+            };
+
+            const response = await fetch(TEXT_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Text Generation API Error:", response.status, errorBody);
+                throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!fullText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
+            }
+
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ text: fullText })
+            };
+        }
+
+        // --- Default Case ---
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Invalid "action/feature" specified: ${feature}` })
+        };
 
     } catch (error) {
-        log('ERROR', 'Unexpected error in handler.', { ...context, details: error.message });
-        return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Internal server error.', code: CustomErrorCodes.INTERNAL_SERVER_ERROR }) };
+        console.error("Internal server error:", error);
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Internal server error: ${error.message}` })
+        };
     }
 };
