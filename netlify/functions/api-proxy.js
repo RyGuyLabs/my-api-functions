@@ -49,6 +49,10 @@ const FeatureConfig = {
       "positive_spin", "mindset_reset", "objection_handler",
       "smart_goal_structuring",
       "dream_energy_analysis"
+    ],
+    HIGH_COST_AI_FEATURES: [
+      "smart_goal_structuring",
+      "dream_energy_analysis"
     ]
 };
 
@@ -94,7 +98,7 @@ function log(level, message, context = {}) {
     }
 }
 
-function jsToFirestoreRest(value) { /* ... implementation retained ... */
+function jsToFirestoreRest(value) {
     if (value === null || value === undefined) return { nullValue: null };
     if (typeof value === 'string') return { stringValue: value };
     if (typeof value === 'number') return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
@@ -114,7 +118,7 @@ function jsToFirestoreRest(value) { /* ... implementation retained ... */
     return { stringValue: String(value) };
 }
 
-function firestoreRestToJs(firestoreField) { /* ... implementation retained ... */
+function firestoreRestToJs(firestoreField) {
     if (!firestoreField) return null;
     if (firestoreField.nullValue !== undefined) return null;
     if (firestoreField.stringValue !== undefined) return firestoreField.stringValue;
@@ -185,7 +189,7 @@ async function fetchWithRetry(url, options, context = {}, maxRetries = 3) {
   throw new Error("Maximum fetch retries reached.");
 }
 
-function extractJsonFromText(text) { /* ... implementation retained ... */
+function extractJsonFromText(text) {
     try {
         const cleanText = text.trim().replace(/\u200B/g, "");
         const startIndex = cleanText.indexOf('{');
@@ -207,9 +211,6 @@ function extractJsonFromText(text) { /* ... implementation retained ... */
 }
 
 // --- CORE SECURITY FUNCTIONS ---
-// Removed verifyAuthToken()
-// Removed checkSquarespaceMembershipStatus()
-
 function getUsageDocumentPath(userId) {
     const today = new Date().toISOString().split('T')[0]; 
     return `users/${userId}/usage/${today}`;
@@ -227,7 +228,6 @@ async function checkRateLimit(userId, feature, context, tier) {
     let currentCount = 0;
     
     try {
-        // 1. GET current count
         const getRes = await fetchWithRetry(firestoreUrl, { method: 'GET' }, context);
         
         if (getRes.status === 200) {
@@ -245,11 +245,10 @@ async function checkRateLimit(userId, feature, context, tier) {
             return -1; 
         }
 
-        // 2. UPSERT the new count
         const newFields = jsToFirestoreRest({ 
             count: newCount, 
             last_feature: feature,
-            tier: tier, // Log the tier at time of request
+            tier: tier,
             timestamp: new Date().toISOString()
         });
         
@@ -278,449 +277,162 @@ async function checkRateLimit(userId, feature, context, tier) {
     }
 }
 
-// --- MAIN HANDLER ---
+// --- SQUARESPACE MEMBERSHIP FETCH ---
+async function fetchMembership(userId) {
+    if (!SQUARESPACE_TOKEN) return { isActive: false, tier: 'free' };
 
-exports.handler = async function (event) {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
-  }
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Method Not Allowed' }) };
-  }
-  
-  // 1. Production Safety & Initial Parsing
-  if (IS_PRODUCTION && (!GEMINI_API_KEY || !FIRESTORE_KEY || !PROJECT_ID || !SESSION_SECRET)) {
-    log('FATAL', 'Missing critical API keys/secrets in production environment. Immediate fail.');
-    return { statusCode: 503, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Service Unavailable: Critical configuration missing.' }) };
-  }
+    // Check cache
+    const cached = membershipCache.get(userId);
+    if (cached && cached.expiry > Date.now()) return { isActive: cached.isActive, tier: cached.tier };
 
-  let body;
-  try { body = event.body ? JSON.parse(event.body) : {}; } 
-  catch (e) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Invalid JSON body.', code: CustomErrorCodes.INVALID_INPUT }) }; }
+    let membershipStatus = { isActive: false, tier: 'free' };
+    try {
+        const res = await fetchWithRetry(`https://api.squarespace.com/1.0/profiles/check-membership/${userId}`, {
+            method: 'GET',
+            headers: { 
+                'Authorization': `Bearer ${SQUARESPACE_TOKEN}`,
+                'User-Agent': 'RyGuyLabs-Netlify-Function'
+            }
+        }, { userId: userId, feature: 'AUTH' });
 
-  const { operation, action, userId, data, userGoal, textToSpeak, voice } = body;
-  const feature = operation || action || body.feature;
+        if (res.ok) {
+            const data = await res.json();
+            const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
+            const tier = isActive ? (data.planName?.toLowerCase().includes('premium') ? 'premium' : 'paid') : 'free';
+            membershipStatus = { isActive, tier };
+        } else {
+            log('WARN', `Squarespace API returned status ${res.status}`, { userId, feature: 'AUTH', isExternalAPIError: true });
+        }
+    } catch (error) {
+        log('ERROR', "Squarespace API failed during fetch.", { userId, feature: 'AUTH', details: error.message, isExternalAPIError: true });
+    }
 
-  const context = { userId, feature };
-  
-  if (!feature) {
-    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required "operation" or "action" parameter.', code: CustomErrorCodes.INVALID_INPUT }) };
-  }
-
-  let membership = { isActive: false, tier: 'free' };
-
-  if (!SQUARESPACE_TOKEN) {
-    log('FATAL', "SQUARESPACE_ACCESS_TOKEN is missing. Blocking access.");
+    // Cache result
+    membershipCache.set(userId, { ...membershipStatus, expiry: Date.now() + CACHE_TTL });
     return membershipStatus;
-  }
-
-  try {
-    const res = await fetchWithRetry(`https://api.squarespace.com/1.0/profiles/check-membership/${userId}`, {
-      method: 'GET',
-      headers: { 
-        'Authorization': `Bearer ${SQUARESPACE_TOKEN}`,
-        'User-Agent': 'RyGuyLabs-Netlify-Function'
-      }
-    }, { userId: userId, feature: 'AUTH' });
-
-    if (res.ok) {
-        const data = await res.json();
-        const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
-        
-        // MOCK: Replace this block with actual Squarespace metadata/tier extraction
-        const tier = isActive ? (data.planName?.toLowerCase().includes('premium') ? 'premium' : 'paid') : 'free';
-        // END MOCK
-        
-        membershipStatus = { isActive, tier };
-    } else {
-        log('WARN', `Squarespace API returned status ${res.status}`, { userId: userId, feature: 'AUTH', isExternalAPIError: true });
-    }
-  } catch (error) {
-    log('ERROR', "Squarespace API failed during fetch.", { userId: userId, feature: 'AUTH', details: error.message, isExternalAPIError: true });
-  }
-  
-  // 3. CACHE UPDATE
-  membershipCache.set(userId, {
-      isActive: membershipStatus.isActive,
-      tier: membershipStatus.tier,
-      expiry: Date.now() + CACHE_TTL
-  });
-
-  return membershipStatus;
 }
 
-function getUsageDocumentPath(userId) {
-    const today = new Date().toISOString().split('T')[0]; 
-    return `users/${userId}/usage/${today}`;
-}
-
-/**
- * Checks and increments the daily usage counter in Firestore based on the user's tier.
- * @returns The new request count, or -1 if the limit is exceeded.
- */
-async function checkRateLimit(userId, feature, context, tier) {
-    const dailyLimit = getDailyLimit(tier);
-    const path = getUsageDocumentPath(userId);
-    const firestoreUrl = `${FIRESTORE_BASE_URL}${path}?key=${FIRESTORE_KEY}`;
-
-    let currentCount = 0;
-    
-    try {
-        // 1. GET current count
-        const getRes = await fetchWithRetry(firestoreUrl, { method: 'GET' }, context);
-        
-        if (getRes.status === 200) {
-            const doc = await getRes.json();
-            const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
-            currentCount = fields?.count || 0;
-        } else if (getRes.status !== 404) {
-             log('WARN', `Rate limit GET failed with status ${getRes.status}. Continuing, but logging.`, context);
-        }
-
-        const newCount = currentCount + 1;
-
-        if (newCount > dailyLimit) {
-            log('WARN', `Rate limit exceeded for user (Tier: ${tier}). Count: ${newCount} / ${dailyLimit}`, context);
-            return -1; 
-        }
-
-        // 2. UPSERT the new count
-        const newFields = jsToFirestoreRest({ 
-            count: newCount, 
-            last_feature: feature,
-            tier: tier, // Log the tier at time of request
-            timestamp: new Date().toISOString()
-        });
-        
-        const upsertMethod = (getRes.status === 200) ? 'PATCH' : 'POST';
-        let upsertUrl = firestoreUrl;
-        
-        if (upsertMethod === 'POST') {
-             upsertUrl = `${FIRESTORE_BASE_URL}users/${userId}/usage?documentId=${path.split('/').pop()}&key=${FIRESTORE_KEY}`;
-        }
-
-        const upsertRes = await fetchWithRetry(upsertUrl, {
-            method: upsertMethod,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: newFields.mapValue.fields })
-        }, context);
-
-        if (!upsertRes.ok) {
-            log('ERROR', `Rate limit UPSERT failed. Status: ${upsertRes.status}`, context);
-        }
-
-        return newCount;
-
-    } catch (error) {
-        log('ERROR', `Rate limit check failed unexpectedly.`, { ...context, details: error.message });
-        return currentCount + 1; 
-    }
+// --- PLACEHOLDER AUTH TOKEN VERIFICATION ---
+function verifyAuthToken(userId, authToken) {
+    // Simple placeholder: In production, implement JWT/session validation
+    if (!authToken || !userId) return false;
+    return true;
 }
 
 // --- MAIN HANDLER ---
+exports.handler = async function(event) {
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+    }
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Method Not Allowed' }) };
+    }
 
-exports.handler = async function (event) {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
-  }
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Method Not Allowed' }) };
-  }
-  
-  // 1. Production Safety & Initial Parsing
-  if (IS_PRODUCTION && (!GEMINI_API_KEY || !FIRESTORE_KEY || !PROJECT_ID || !SQUARESPACE_TOKEN || !SESSION_SECRET)) {
-    log('FATAL', 'Missing critical API keys/secrets in production environment. Immediate fail.');
-    return { statusCode: 503, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Service Unavailable: Critical configuration missing.' }) };
-  }
+    if (IS_PRODUCTION && (!GEMINI_API_KEY || !FIRESTORE_KEY || !PROJECT_ID || !SQUARESPACE_TOKEN || !SESSION_SECRET)) {
+        log('FATAL', 'Missing critical API keys/secrets in production environment. Immediate fail.');
+        return { statusCode: 503, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Service Unavailable: Critical configuration missing.' }) };
+    }
 
-  let body;
-  try { body = event.body ? JSON.parse(event.body) : {}; } 
-  catch (e) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Invalid JSON body.', code: CustomErrorCodes.INVALID_INPUT }) }; }
+    let body;
+    try { body = event.body ? JSON.parse(event.body) : {}; } 
+    catch (e) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Invalid JSON body.', code: CustomErrorCodes.INVALID_INPUT }) }; }
 
-  const authToken = event.headers.authorization ? event.headers.authorization.split('Bearer ')[1] : null;
-  const { operation, action, userId, data, userGoal, textToSpeak, voice } = body;
-  const feature = operation || action || body.feature;
+    const authToken = event.headers.authorization ? event.headers.authorization.split('Bearer ')[1] : null;
+    const { operation, action, userId, data, userGoal, textToSpeak, voice } = body;
+    const feature = operation || action || body.feature;
+    const context = { userId, feature };
 
-  const context = { userId, feature };
-  
-  // 2. Auth Token Check (Essential for anti-abuse)
-  if (!verifyAuthToken(userId, authToken)) {
-      log('WARN', 'Unauthorized access attempt: Invalid or missing token.', context);
-      return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Unauthorized: Invalid session token or missing userId.', code: CustomErrorCodes.UNAUTHORIZED }) };
-  }
-  
-  if (!feature) {
-    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required "operation" or "action" parameter.', code: CustomErrorCodes.INVALID_INPUT }) };
-  }
+    if (!verifyAuthToken(userId, authToken)) {
+        log('WARN', 'Unauthorized access attempt: Invalid or missing token.', context);
+        return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Unauthorized: Invalid session token or missing userId.', code: CustomErrorCodes.UNAUTHORIZED }) };
+    }
 
-  let membership = { isActive: false, tier: 'free' };
-  if (userId) {
-      membership = await checkSquarespaceMembershipStatus(userId);
-  }
+    if (!feature) {
+        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Missing required "operation" or "action" parameter.', code: CustomErrorCodes.INVALID_INPUT }) };
+    }
 
-  try {
-    
-    // --- SECTION 1: DATA OPERATIONS (Requires Active Membership) ---
-    if (['SAVE_DREAM','LOAD_DREAMS','DELETE_DREAM'].includes(feature.toUpperCase())) {
-      if (!userId) { return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing userId for data access.`, code: CustomErrorCodes.UNAUTHORIZED }) }; }
+    const membership = userId ? await fetchMembership(userId) : { isActive: false, tier: 'free' };
 
-      if (!membership.isActive) {
-        return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Forbidden: No active RyGuyLabs membership found.', code: CustomErrorCodes.MEMBERSHIP_INACTIVE }) };
-      }
-      
-      const dreamDocumentPath = `users/${userId}/dreams`;
+    try {
+        // --- DATA OPERATIONS (SAVE/LOAD/DELETE DREAMS) ---
+        if (['SAVE_DREAM','LOAD_DREAMS','DELETE_DREAM'].includes(feature.toUpperCase())) {
+            if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing userId for data access.`, code: CustomErrorCodes.UNAUTHORIZED }) };
+            if (!membership.isActive) return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Forbidden: No active RyGuyLabs membership found.', code: CustomErrorCodes.MEMBERSHIP_INACTIVE }) };
 
-      switch (feature.toUpperCase()) {
-          case 'SAVE_DREAM': {
-             if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing data to save.`, code: CustomErrorCodes.INVALID_INPUT }) }; }
-          
-             const saveData = { ...data, timestamp: new Date().toISOString() };
-             const firestoreRest = jsToFirestoreRest(saveData);
-             const firestoreFields = firestoreRest.mapValue ? firestoreRest.mapValue.fields : null; 
-          
-             if (!firestoreFields) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Invalid data format for saving.`, code: CustomErrorCodes.INVALID_INPUT }) }; }
+            const dreamDocumentPath = `users/${userId}/dreams`;
+            switch (feature.toUpperCase()) {
+                case 'SAVE_DREAM': {
+                    if (!data) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing data to save.`, code: CustomErrorCodes.INVALID_INPUT }) };
+                    const saveData = { ...data, timestamp: new Date().toISOString() };
+                    const firestoreRest = jsToFirestoreRest(saveData);
+                    const firestoreFields = firestoreRest.mapValue ? firestoreRest.mapValue.fields : null;
+                    if (!firestoreFields) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Invalid data format for saving.`, code: CustomErrorCodes.INVALID_INPUT }) };
 
-             const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
+                    const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: firestoreFields }) }, context);
+                    if (!res.ok) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Firestore save failed.`, code: CustomErrorCodes.FIRESTORE_ERROR }) };
+                    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Dream saved successfully.' }) };
+                }
+                case 'LOAD_DREAMS': {
+                    const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, { method: 'GET' }, context);
+                    if (!res.ok) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Firestore load failed.`, code: CustomErrorCodes.FIRESTORE_ERROR }) };
+                    const doc = await res.json();
+                    const fields = firestoreRestToJs({ mapValue: { fields: doc.fields || {} } });
+                    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams: fields || [] }) };
+                }
+                case 'DELETE_DREAM': {
+                    if (!data?.dreamId) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing dreamId to delete.`, code: CustomErrorCodes.INVALID_INPUT }) };
+                    const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}/${data.dreamId}?key=${FIRESTORE_KEY}`, { method: 'DELETE' }, context);
+                    if (!res.ok) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Firestore delete failed.`, code: CustomErrorCodes.FIRESTORE_ERROR }) };
+                    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Dream deleted successfully.' }) };
+                }
+            }
+        }
+
+        // --- RATE LIMIT CHECK ---
+        if (membership.isActive) {
+            const currentCount = await checkRateLimit(userId, feature, context, membership.tier);
+            if (currentCount === -1) return { statusCode: 429, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Rate limit exceeded. Please try again tomorrow.', code: CustomErrorCodes.RATE_LIMIT_EXCEEDED }) };
+        } else {
+            return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Membership inactive. Upgrade to access AI features.', code: CustomErrorCodes.UPGRADE_REQUIRED }) };
+        }
+
+        // --- TEXT GENERATION FEATURES ---
+        if (FeatureConfig.TEXT_GENERATION_FEATURES.includes(feature)) {
+            if (!data?.prompt) return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing "prompt".`, code: CustomErrorCodes.INVALID_INPUT }) };
+
+            if (FeatureConfig.HIGH_COST_AI_FEATURES.includes(feature) && membership.tier === 'free') {
+                return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Upgrade required for this premium feature.', code: CustomErrorCodes.UPGRADE_REQUIRED }) };
+            }
+
+            const gptResponse = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fields: firestoreFields })
-             }, context);
+                headers: {
+                    'Authorization': `Bearer ${GEMINI_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4.1-mini',
+                    messages: [{ role: 'user', content: data.prompt }],
+                    temperature: 0.7,
+                    max_tokens: 1200
+                })
+            }, context);
 
-             if (!res.ok) throw new Error(await res.text());
-             const result = await res.json();
-             return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, documentName: result.name }) };
-          }
-          case 'LOAD_DREAMS': {
-             const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, { method: 'GET' }, context);
-             if (!res.ok) throw new Error(await res.text());
+            const resultJson = await gptResponse.json();
+            let finalContent = resultJson?.choices?.[0]?.message?.content || '';
+            
+            if (['smart_goal_structuring','dream_energy_analysis'].includes(feature)) {
+                finalContent = extractJsonFromText(finalContent);
+                if (finalContent?.error) return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: 'JSON generation failed', code: CustomErrorCodes.JSON_PARSING_ERROR }) };
+            }
 
-             const loadResult = await res.json();
-             const dreams = (loadResult.documents || [])
-                .map(doc => {
-                  const docId = doc.name.split('/').pop();
-                  const fields = doc.fields ? firestoreRestToJs({ mapValue: { fields: doc.fields } }) : {};
-                  return { id: docId, ...fields };
-                });
-             dreams.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-          
-             return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams }) };
-          }
-          case 'DELETE_DREAM': {
-             if (!data || !data.dreamId) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing dreamId for deletion.`, code: CustomErrorCodes.INVALID_INPUT }) }; }
-          
-             const fullDocumentPath = `${dreamDocumentPath}/${data.dreamId}`;
-             const res = await fetchWithRetry(`${FIRESTORE_BASE_URL}${fullDocumentPath}?key=${FIRESTORE_KEY}`, { method: 'DELETE' }, context);
-          
-             if (!res.ok) throw new Error(await res.text());
-          
-             return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` }) };
-          }
-          default:
-             return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `Invalid data operation: ${feature}` }) };
-      }
+            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ result: finalContent }) };
+        }
+
+        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Feature not recognized or implemented yet.', code: CustomErrorCodes.INVALID_INPUT }) };
+
+    } catch (error) {
+        log('ERROR', 'Unexpected error in handler.', { ...context, details: error.message });
+        return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Internal server error.', code: CustomErrorCodes.INTERNAL_SERVER_ERROR }) };
     }
-
-    // --- SECTION 2: AI GENERATION (Gated, Rate-Limited, and Validated) ---
-
-    if (FeatureConfig.TEXT_GENERATION_FEATURES.includes(feature)) {
-      if (!userGoal && feature !== 'tts') { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing required userGoal data for feature.`, code: CustomErrorCodes.INVALID_INPUT }) }; }
-
-      // 2a. Tier-Based Feature Gating
-      if (FeatureConfig.HIGH_COST_AI_FEATURES.includes(feature)) {
-          if (!userId) { 
-              return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: `[${feature}] Missing userId. Login required for this feature.`, code: CustomErrorCodes.UNAUTHORIZED }) }; 
-          }
-          if (!membership.isActive) {
-            return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Forbidden: Active membership required for this feature.', code: CustomErrorCodes.MEMBERSHIP_INACTIVE }) };
-          }
-          // Block 'free' tier from high-cost features
-          if (membership.tier === 'free') {
-              log('WARN', `Access Denied: Feature ${feature} blocked for free tier user ${userId}`, context);
-              return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: `Upgrade your membership to access this high-cost feature.`, code: CustomErrorCodes.UPGRADE_REQUIRED }) };
-          }
-      }
-
-      // 2b. Rate Limit Check (All AI features should be tracked)
-      if (userId) { // Only track usage for logged-in users
-          const newCount = await checkRateLimit(userId, feature, context, membership.tier);
-          if (newCount === -1) {
-              return { statusCode: 429, headers: CORS_HEADERS, body: JSON.stringify({ 
-                  message: `Daily rate limit exceeded for your tier (${membership.tier}).`, 
-                  code: CustomErrorCodes.RATE_LIMIT_EXCEEDED 
-              }) };
-          }
-      }
-
-      // 2c. Input Validation (Max Length)
-      if (userGoal && userGoal.length > MAX_GOAL_LENGTH) {
-          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `User goal exceeds maximum length of ${MAX_GOAL_LENGTH} characters.`, code: CustomErrorCodes.INVALID_INPUT }) };
-      }
-      if (textToSpeak && textToSpeak.length > MAX_GOAL_LENGTH) {
-          return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: `Text for TTS exceeds maximum length of ${MAX_GOAL_LENGTH} characters.`, code: CustomErrorCodes.INVALID_INPUT }) };
-      }
-
-
-      // --- 2d. Image Generation (vision_prompt) ---
-      if (feature === 'vision_prompt') {
-         // ... [Image Generation Logic using Gemini and Imagen] ...
-         const PROMPT_MODEL = "gemini-2.5-flash-preview-09-2025";
-         const PROMPT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${PROMPT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-         const promptPayload = {
-           contents: [{ parts: [{ text: userGoal }] }],
-           systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS["vision_prompt"] }] },
-           generationConfig: { temperature: 0.8 },
-         };
-
-         const promptRes = await fetchWithRetry(PROMPT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(promptPayload) }, context);
-         const promptResult = await promptRes.json();
-         if (!promptRes.ok) {
-             return { statusCode: promptRes.status, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Image prompt generation failed.', code: CustomErrorCodes.AI_API_ERROR }) };
-         }
-         
-         const generatedImagePrompt = promptResult?.candidates?.[0]?.content?.parts?.[0]?.text;
-         if (!generatedImagePrompt) throw new Error(`[${feature}] Image prompt generation failed.`);
-
-         const IMAGEN_MODEL = "imagen-3.0-generate-002";
-         const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
-         const imagenPayload = {
-           instances: [{ prompt: generatedImagePrompt }], 
-           parameters: { sampleCount: 1, aspectRatio: "1:1", outputMimeType: "image/png" }
-         };
-
-         const res = await fetchWithRetry(IMAGEN_API_URL, {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify(imagenPayload)
-         }, context);
-
-         if (!res.ok) { 
-             return { statusCode: res.status, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Image generation API failed.', code: CustomErrorCodes.AI_API_ERROR }) };
-         }
-         
-         const result = await res.json();
-         const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
-         if (!base64Data) { throw new Error(`[${feature}] Imagen API response did not contain image data.`); }
-
-         return {
-           statusCode: 200,
-           headers: CORS_HEADERS,
-           body: JSON.stringify({
-             imageUrl: `data:image/png;base64,${base64Data}`,
-             prompt: generatedImagePrompt 
-           })
-         };
-      }
-
-      // --- 2e. Handle TTS Generation ---
-      if (feature === 'tts') {
-         // ... [TTS Logic using Gemini TTS] ...
-         const voiceName = (typeof voice === 'string' && voice.length > 0) ? voice : "Puck";
-
-         const TTS_MODEL = "gemini-2.5-flash-preview-tts";
-         const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-         const ttsPayload = {
-           contents: [{ parts: [{ text: textToSpeak }] }],
-           generationConfig: {
-             responseModalities: ["AUDIO"],
-             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } }
-           },
-           model: TTS_MODEL
-         };
-
-         const res = await fetchWithRetry(TTS_API_URL, {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify(ttsPayload)
-         }, context);
-         
-         if (!res.ok) { 
-             return { statusCode: res.status, headers: CORS_HEADERS, body: JSON.stringify({ message: 'TTS API failed.', code: CustomErrorCodes.AI_API_ERROR }) };
-         }
-         
-         const result = await res.json();
-         const part = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-         const audioData = part?.data;
-         const mimeType = part?.mimeType;
-         
-         if (!audioData || !mimeType) { throw new Error(`[${feature}] TTS API response did not contain audio data.`); }
-
-         const dataUrl = `data:${mimeType};base64,${audioData}`;
-
-         return {
-           statusCode: 200,
-           headers: CORS_HEADERS,
-           body: JSON.stringify({ audioData: audioData, mimeType: mimeType, dataUrl: dataUrl })
-         };
-      }
-
-
-      // --- 2f. Handle Text Generation (Structured/Unstructured) ---
-      const TEXT_MODEL = "gemini-2.5-flash-preview-09-2025"; 
-      const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-      const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
-      const payload = {
-        contents: [{ parts: [{ text: userGoal }] }],
-        systemInstruction: { parts: [{ text: systemInstructionText }] },
-        generationConfig: { temperature: 0.7 }
-      };
-
-      const isJsonFeature = feature === 'smart_goal_structuring' || feature === 'dream_energy_analysis';
-
-      if (isJsonFeature) {
-        payload.generationConfig.temperature = 0.2; 
-        payload.generationConfig.maxTokens = 1024;
-        payload.generationConfig.responseMimeType = "application/json";
-        // NOTE: SMART_GOAL_SCHEMA and DREAM_ENERGY_SCHEMA are not defined here, 
-        // but assumed to be correctly defined in the full file scope.
-        payload.generationConfig.responseSchema = (feature === 'smart_goal_structuring') ? SMART_GOAL_SCHEMA : DREAM_ENERGY_SCHEMA;
-      } else {
-        payload.tools = [{ googleSearch: {} }];
-      }
-
-      const res = await fetchWithRetry(TEXT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, context);
-      const result = await res.json();
-      
-      if (!res.ok) { 
-        return { statusCode: res.status, headers: CORS_HEADERS, body: JSON.stringify({ message: `Gemini API error (Status ${res.status}).`, code: CustomErrorCodes.AI_API_ERROR }) };
-      }
-
-      const responseContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!responseContent) {
-        throw new Error(`[${feature}] AI generation failed: response was empty.`);
-      }
-      
-      // --- SERVER-SIDE JSON VALIDATION & CLEANUP ---
-      if (isJsonFeature) {
-          const parsedJson = extractJsonFromText(responseContent); 
-          
-          if (parsedJson.error) {
-              return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Failed to parse structured AI output.', code: parsedJson.code }) };
-          }
-          
-          // Apply validation and default logic (omitted for brevity, as assumed complete)
-
-          return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify(parsedJson) };
-      }
-
-      // Non-JSON features return raw text
-      return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ text: responseContent }) };
-    }
-
-
-    // --- Default Case ---
-    return {
-      statusCode: 400,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ message: `Invalid "operation/action" specified: ${feature}.`, code: CustomErrorCodes.INVALID_INPUT })
-    };
-
-  } catch (error) {
-    log('ERROR', `Fatal handler error.`, { ...context, details: error.message });
-    return {
-      statusCode: 500,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ message: `Internal server error during ${feature}.`, code: CustomErrorCodes.INTERNAL_SERVER_ERROR })
-    };
-  }
 };
