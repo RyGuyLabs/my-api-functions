@@ -52,7 +52,7 @@ const SYSTEM_INSTRUCTIONS = {
     "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
     "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
     "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
-    "smart_goal_structuring": "You are a highly analytical goal-setting specialist named RyGuy. Your tone is professional and precise. Take the user's goal and restructure it according to the five S.M.A.R.T. criteria in polished paragraph form. For each category (Specific, Measurable, Achievable, Relevant, Time-bound), write a separate paragraph. Separate paragraphs with blank lines. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text."
+"smart_goal_structuring": "You are a highly analytical goal-setting specialist named RyGuy. Take the user's goal and restructure it according to the five S.M.A.R.T. criteria. For each category (Specific, Measurable, Achievable, Relevant, Time-bound), provide a structured JSON object with these keys: 'description' (main explanation), 'motivation' (optional encouragement), and 'exampleAction' (optional concrete step). ONLY return valid JSON without extra text, code, or formatting."
 };
 
 const CORS_HEADERS = {
@@ -502,61 +502,78 @@ exports.handler = async function(event) {
             };
         }
 
-        // --- 2c. Handle Text Generation ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            if (!userGoal) {
-                return {
-                    statusCode: 400,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
-                };
-            }
+    if (!userGoal) {
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+        };
+    }
 
-            const TEXT_MODEL = "gemini-2.5-flash";
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const TEXT_MODEL = "gemini-2.5-flash";
+    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
-            
-            // CRITICAL FIX: The "systemInstruction" field must be a top-level property,
-            // structured as a Content object, and NOT nested inside "generationConfig".
-            const payload = {
-                contents: [{ parts: [{ text: userGoal }] }],
-                
-                // FIXED: Now top-level and correctly structured as a Content object
-                systemInstruction: { 
-                    parts: [{ text: systemInstructionText }] 
-                },
-                
-                // generationConfig removed as it was empty and causing the error due to 
-                // containing the misplaced systemInstruction.
-            };
+    let systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-            const response = await fetch(TEXT_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+    // If feature is smart_goal_structuring, enforce JSON schema
+    if (feature === "smart_goal_structuring") {
+        systemInstructionText = SYSTEM_INSTRUCTIONS["smart_goal_structuring"];
+    }
 
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Text Generation API Error:", response.status, errorBody);
-                throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
-            }
+    const payload = {
+        contents: [{ parts: [{ text: userGoal }] }],
+        systemInstruction: { parts: [{ text: systemInstructionText }] },
+        // Optional: you can add max output tokens or temperature here if needed
+    };
 
-            const result = await response.json();
-            const fullText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const response = await fetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
 
-            if (!fullText) {
-                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-                throw new Error("Text Generation API response did not contain generated text.");
-            }
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Text Generation API Error:", response.status, errorBody);
+        throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
+    }
 
+    const result = await response.json();
+    const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!rawText) {
+        console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+        throw new Error("Text Generation API response did not contain generated text.");
+    }
+
+    // Attempt to parse as JSON if S.M.A.R.T. Goal
+    if (feature === "smart_goal_structuring") {
+        try {
+            const smartJson = JSON.parse(rawText);
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ text: fullText })
+                body: JSON.stringify({ smartGoal: smartJson })
+            };
+        } catch (jsonError) {
+            console.error("Failed to parse SMART Goal JSON:", jsonError, rawText);
+            // Fallback: send as plain text
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ smartGoal: { error: "Failed to parse JSON", rawText } })
             };
         }
+    }
+
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ text: rawText })
+    };
+}
+
 
         // --- Default Case ---
         return {
