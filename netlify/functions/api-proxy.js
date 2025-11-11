@@ -45,7 +45,26 @@ const TEXT_GENERATION_FEATURES = [
 
 // Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
-    "plan": "You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable. Provide a detailed plan to achieve the user's goal in natural, polished paragraph form. Separate each step with a blank line. Avoid any symbols, lists, quotes, or code formatting. Deliver the output as clean, raw text suitable for direct display.",
+"plan": `
+You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
+Create a step-by-step action plan with 10–12 major milestones to help the user achieve their goal.
+
+Return your response STRICTLY in valid JSON format with this exact structure:
+{
+  "steps": [
+    {
+      "title": "Step title (short and actionable)",
+      "details": "Detailed explanation of how to complete this step."
+    },
+    ...
+  ]
+}
+
+Each 'title' should represent a clickable main task.
+Each 'details' should be a clear, motivational paragraph expanding on what the user can do.
+Do NOT include markdown, lists, or other formatting — return ONLY JSON.
+`
+",
     "pep_talk": "You are a motivational speaker named RyGuy. Your tone is energetic, inspiring, and positive. Write a short, powerful pep talk to help the user achieve their goal. Use uplifting, encouraging language. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
     "vision_prompt": "You are an imaginative guide named RyGuy. Your tone is vivid and creative. Provide a single-paragraph prompt that helps the user visualize their goal. Include sensory details to make the image clear and inspiring. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
     "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
@@ -586,11 +605,22 @@ exports.handler = async function(event) {
         }
     }
 
-    return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ text: rawText })
-    };
+    let parsedPlan = null;
+try {
+  parsedPlan = JSON.parse(rawText);
+} catch (err) {
+  console.warn("Plan JSON parse failed, sending raw text:", err);
+}
+
+return {
+  statusCode: 200,
+  headers: CORS_HEADERS,
+  body: JSON.stringify({
+    text: parsedPlan ? null : rawText,
+    plan: parsedPlan || null
+  })
+};
+
 }
 
 
