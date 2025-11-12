@@ -612,13 +612,19 @@ exports.handler = async function(event) {
         }
     }
 
-    let parsedPlan = null;
-try {
-  parsedPlan = JSON.parse(rawText);
-} catch (err) {
-  console.warn("Plan JSON parse failed, sending raw text:", err);
+    // Handle plain-text vs. JSON features cleanly
+let parsedPlan = null;
+
+// Only try to parse JSON for the "plan" or "smart_goal_structuring" features
+if (feature === "plan") {
+  try {
+    parsedPlan = JSON.parse(rawText);
+  } catch (err) {
+    console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
+  }
 }
 
+// Return normalized response for all features
 return {
   statusCode: 200,
   headers: CORS_HEADERS,
@@ -627,6 +633,7 @@ return {
     plan: parsedPlan || null
   })
 };
+
 
 }
 
