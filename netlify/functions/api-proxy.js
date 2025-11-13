@@ -513,10 +513,11 @@ exports.handler = async function(event) {
             };
 
             const response = await fetch(TTS_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ttsPayload)
-            });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ttsPayload),
+    signal: AbortSignal.timeout(60000) // ⏱️ allow up to 60 seconds for long TTS
+});
 
             if (!response.ok) {
                 const errorBody = await response.text();
