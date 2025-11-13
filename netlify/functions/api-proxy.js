@@ -497,6 +497,13 @@ exports.handler = async function(event) {
                 };
             }
 
+    // Limit TTS input length to prevent timeout
+    const MAX_TTS_LENGTH = 400; // safe limit under 10 seconds
+    if (textToSpeak.length > MAX_TTS_LENGTH) {
+        console.warn(`TTS input truncated from ${textToSpeak.length} to ${MAX_TTS_LENGTH} characters.`);
+        textToSpeak = textToSpeak.slice(0, MAX_TTS_LENGTH) + "...";
+    }
+            
             const TTS_MODEL = "gemini-2.5-flash-preview-tts";
             const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
