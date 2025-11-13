@@ -1,18 +1,3 @@
-/**
- * Netlify Function: secure-data-proxy
- * * This function serves as the single secure gateway for ALL features (AI & Data).
- * * It handles:
- * 1. AUTHORIZATION: Checks for an active subscription status via Squarespace.
- * 2. DATA ACCESS: Interacts with the secure Firestore database (REST API) using structured queries.
- * 3. AI GENERATION: Text (Gemini), Image (Imagen), and TTS (Gemini/Cloud TTS).
- * * * Environment Variables required:
- * - FIRST_API_KEY (Your existing key): Used for all Google AI calls (Gemini/Imagen/TTS).
- * - SQUARESPACE_ACCESS_TOKEN (NEW): Token to query Squarespace for membership status.
- * - DATA_API_KEY (NEW): Google API Key for Firestore REST API access.
- * - FIRESTORE_PROJECT_ID (NEW): The ID of the Firebase project.
- */
-
-// **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
 const fetch = require('node-fetch').default || require('node-fetch');
 
 // --- GLOBAL SETUP FOR DATA & SECURITY ---
@@ -513,11 +498,10 @@ exports.handler = async function(event) {
             };
 
             const response = await fetch(TTS_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(ttsPayload),
-    signal: AbortSignal.timeout(60000) // ⏱️ allow up to 60 seconds for long TTS
-});
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ttsPayload),
+            });
 
             if (!response.ok) {
                 const errorBody = await response.text();
@@ -549,94 +533,94 @@ exports.handler = async function(event) {
         }
 
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
-    if (!userGoal) {
-        return {
-            statusCode: 400,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
-        };
-    }
+            if (!userGoal) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+                };
+            }
 
-    const TEXT_MODEL = "gemini-2.5-flash";
-    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            const TEXT_MODEL = "gemini-2.5-flash";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-    let systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
+            let systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-    // If feature is smart_goal_structuring, enforce JSON schema
-    if (feature === "smart_goal_structuring") {
-        systemInstructionText = SYSTEM_INSTRUCTIONS["smart_goal_structuring"];
-    }
+            // If feature is smart_goal_structuring, enforce JSON schema
+            if (feature === "smart_goal_structuring") {
+                systemInstructionText = SYSTEM_INSTRUCTIONS["smart_goal_structuring"];
+            }
 
-    const payload = {
-        contents: [{ parts: [{ text: userGoal }] }],
-        systemInstruction: { parts: [{ text: systemInstructionText }] },
-        // Optional: you can add max output tokens or temperature here if needed
-    };
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
+                systemInstruction: { parts: [{ text: systemInstructionText }] },
+                // Optional: you can add max output tokens or temperature here if needed
+            };
 
-    const response = await fetch(TEXT_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+            const response = await fetch(TEXT_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-    if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("Text Generation API Error:", response.status, errorBody);
-        throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
-    }
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Text Generation API Error:", response.status, errorBody);
+                throw new Error(`Text Generation API failed with status ${response.status}: ${response.statusText}`);
+            }
 
-    const result = await response.json();
-    const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            const result = await response.json();
+            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    if (!rawText) {
-        console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-        throw new Error("Text Generation API response did not contain generated text.");
-    }
+            if (!rawText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
+            }
 
-    // Attempt to parse as JSON if S.M.A.R.T. Goal
-    if (feature === "smart_goal_structuring") {
-        try {
-            const smartJson = JSON.parse(rawText);
+            // Attempt to parse as JSON if S.M.A.R.T. Goal
+            if (feature === "smart_goal_structuring") {
+                try {
+                    const smartJson = JSON.parse(rawText);
+                    return {
+                        statusCode: 200,
+                        headers: CORS_HEADERS,
+                        body: JSON.stringify({ smartGoal: smartJson })
+                    };
+                } catch (jsonError) {
+                    console.error("Failed to parse SMART Goal JSON:", jsonError, rawText);
+                    // Fallback: send as plain text
+                    return {
+                        statusCode: 200,
+                        headers: CORS_HEADERS,
+                        body: JSON.stringify({ smartGoal: { error: "Failed to parse JSON", rawText } })
+                    };
+                }
+            }
+
+            // Handle plain-text vs. JSON features cleanly
+            let parsedPlan = null;
+
+            // Only try to parse JSON for the "plan" or "smart_goal_structuring" features
+            if (feature === "plan") {
+                try {
+                    parsedPlan = JSON.parse(rawText);
+                } catch (err) {
+                    console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
+                }
+            }
+
+            // Return normalized response for all features
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ smartGoal: smartJson })
+                body: JSON.stringify({
+                    text: parsedPlan ? null : rawText,
+                    plan: parsedPlan || null
+                })
             };
-        } catch (jsonError) {
-            console.error("Failed to parse SMART Goal JSON:", jsonError, rawText);
-            // Fallback: send as plain text
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ smartGoal: { error: "Failed to parse JSON", rawText } })
-            };
+
+
         }
-    }
-
-    // Handle plain-text vs. JSON features cleanly
-let parsedPlan = null;
-
-// Only try to parse JSON for the "plan" or "smart_goal_structuring" features
-if (feature === "plan") {
-  try {
-    parsedPlan = JSON.parse(rawText);
-  } catch (err) {
-    console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
-  }
-}
-
-// Return normalized response for all features
-return {
-  statusCode: 200,
-  headers: CORS_HEADERS,
-  body: JSON.stringify({
-    text: parsedPlan ? null : rawText,
-    plan: parsedPlan || null
-  })
-};
-
-
-}
 
 
         // --- Default Case ---
