@@ -489,64 +489,28 @@ exports.handler = async function(event) {
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
         if (feature === 'tts') {
-  if (!textToSpeak) {
-    return {
-      statusCode: 400,
-      headers: CORS_HEADERS,
-      body: JSON.stringify({ message: 'Missing required text data for TTS.' })
-    };
-  }
+            if (!textToSpeak) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required text data for TTS.' })
+                };
+            }
 
-  const TTS_MODEL = "gemini-2.5-flash-preview-tts";
-  const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-  const ttsPayload = {
-    contents: [{ parts: [{ text: textToSpeak }] }],
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      audioConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: "Kore" }
-        }
-      }
-    }
-  };
-
-  const response = await fetch(TTS_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(ttsPayload)
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error("TTS API Error:", response.status, errorBody);
-    throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
-  }
-
-  const result = await response.json();
-  const audioPart = result?.candidates?.[0]?.content?.parts?.find(
-    p => p.inlineData && p.inlineData.mimeType?.startsWith('audio/')
-  );
-
-  if (!audioPart?.inlineData?.data) {
-    console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
-    throw new Error("TTS API response did not contain audio data.");
-  }
-
-  // ✅ Return raw Base64 audio that frontend can convert
-  return {
-    statusCode: 200,
-    headers: {
-      ...CORS_HEADERS,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      base64Audio: audioPart.inlineData.data,
-      mimeType: audioPart.inlineData.mimeType
-    })
-  };
-}
+            const ttsPayload = {
+                contents: [{ parts: [{ text: textToSpeak }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Kore" }
+                        }
+                    }
+                }
+            };
 
             const response = await fetch(TTS_API_URL, {
                 method: 'POST',
