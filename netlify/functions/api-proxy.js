@@ -26,7 +26,7 @@ const DATA_OPERATIONS = [
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
-    "smart_goal_structuring"
+    "start_goal_structuring"
 ];
 
 // Map feature types to system instructions
@@ -62,27 +62,26 @@ Do NOT include markdown, lists, or other formatting — return ONLY JSON.
 
   "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
 
-  "smart_goal_structuring": `
-You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the evolved S.M.A.R.T. method — a belief-to-achievement framework built on clarity, structure, and motivation.
+  "start_goal_structuring": `
+You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the S.T.A.R.T. method — a belief-to-achievement framework built on clarity, structure, and momentum.
 
-Each letter represents a phase of momentum:
-S — See It → Clarify your dream in vivid, sensory detail. Define what success looks and feels like to you.
-M — Map It → Translate that vision into milestones, steps, and measurable priorities.
-A — Align It → Ensure your goal connects with your values, strengths, and long-term vision.
-R — Refine It → Review progress regularly, adjust strategies, and continue learning.
-T — Triumph → Celebrate every victory and reinforce the habits that sustain success.
+Each letter represents a phase of progress:
 
-🧭 Theme progression: Vision → Planning → Alignment → Growth → Success.
+S — See It → Define the ultimate goal or vision. Clarify what success looks and feels like.
+T — Trek It → Identify the milestones and outline the journey required to reach the goal.
+A — Align It → Break milestones into small tasks and ensure every effort aligns with the vision.
+R — Refine It → Check progress, get resources, and make necessary adjustments as you go.
+TR — Triumph → Highlight the moment of success. Reinforce habits and celebrate achievements.
 
-Return a directly usable JSON object with exactly five main keys: S, M, A, R, and T.
+Return a directly usable JSON object with exactly five main keys: S, T, A, R, and TR.
 Each key must contain:
-- "title" (e.g., "See It")
-- "description" (a vivid, supportive explanation)
-- "theme" (Vision, Planning, Alignment, Growth, or Success)
-- "motivation" (an encouraging one-liner that energizes the user)
-- "exampleAction" (a realistic example or next-step instruction)
+- "title"
+- "description"
+- "theme" (Vision / Journey / Alignment / Adaptation / Success)
+- "motivation" (an encouraging one-liner to energize the user)
+- "exampleAction" (a realistic next-step instruction)
 
-Return only valid JSON — no markdown, quotes, or commentary.
+Return ONLY valid JSON — no markdown, quotes, or commentary.
 `
 };
 
@@ -546,17 +545,11 @@ exports.handler = async function(event) {
     const TEXT_MODEL = "gemini-2.5-flash";
     const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-    let systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
-
-    // If feature is smart_goal_structuring, enforce JSON schema
-    if (feature === "smart_goal_structuring") {
-        systemInstructionText = SYSTEM_INSTRUCTIONS["smart_goal_structuring"];
-    }
+    const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
     const payload = {
         contents: [{ parts: [{ text: userGoal }] }],
-        systemInstruction: { parts: [{ text: systemInstructionText }] },
-        // Optional: you can add max output tokens or temperature here if needed
+        systemInstruction: { parts: [{ text: systemInstructionText }] }
     };
 
     const response = await fetch(TEXT_API_URL, {
@@ -579,51 +572,43 @@ exports.handler = async function(event) {
         throw new Error("Text Generation API response did not contain generated text.");
     }
 
-    // Attempt to parse as JSON if S.M.A.R.T. Goal
-    if (feature === "smart_goal_structuring") {
+    if (feature === "start_goal_structuring") {
         try {
-            const smartJson = JSON.parse(rawText);
+            const startJson = JSON.parse(rawText);
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ smartGoal: smartJson })
+                body: JSON.stringify({ startGoal: startJson })
             };
         } catch (jsonError) {
-            console.error("Failed to parse SMART Goal JSON:", jsonError, rawText);
-            // Fallback: send as plain text
+            console.error("Failed to parse START Goal JSON:", jsonError, rawText);
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ smartGoal: { error: "Failed to parse JSON", rawText } })
+                body: JSON.stringify({ startGoal: { error: "Failed to parse JSON", rawText } })
             };
         }
     }
 
-    // Handle plain-text vs. JSON features cleanly
-let parsedPlan = null;
+    let parsedPlan = null;
 
-// Only try to parse JSON for the "plan" or "smart_goal_structuring" features
-if (feature === "plan") {
-  try {
-    parsedPlan = JSON.parse(rawText);
-  } catch (err) {
-    console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
-  }
+    if (feature === "plan") {
+        try {
+            parsedPlan = JSON.parse(rawText);
+        } catch (err) {
+            console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
+        }
+    }
+
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+            text: parsedPlan ? null : rawText,
+            plan: parsedPlan || null
+        })
+    };
 }
-
-// Return normalized response for all features
-return {
-  statusCode: 200,
-  headers: CORS_HEADERS,
-  body: JSON.stringify({
-    text: parsedPlan ? null : rawText,
-    plan: parsedPlan || null
-  })
-};
-
-
-}
-
 
         // --- Default Case ---
         return {
