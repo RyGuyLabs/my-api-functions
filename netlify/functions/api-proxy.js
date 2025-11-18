@@ -547,9 +547,9 @@ exports.handler = async function(event) {
 
     let systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-    // If feature is smart_goal_structuring, enforce JSON schema
-    if (feature === "smart_goal_structuring") {
-        systemInstructionText = SYSTEM_INSTRUCTIONS["smart_goal_structuring"];
+    // If feature is start_goal_structuring, enforce JSON schema
+    if (feature === "start_goal_structuring") {
+        systemInstructionText = SYSTEM_INSTRUCTIONS["start_goal_structuring"];
     }
 
     const payload = {
@@ -581,19 +581,19 @@ exports.handler = async function(event) {
     // Attempt to parse as JSON if S.T.A.R.T. Goal
     if (feature === "start_goal_structuring") {
         try {
-            const smartJson = JSON.parse(rawText);
+            const startJson = JSON.parse(rawText);
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ smartGoal: smartJson })
+                body: JSON.stringify({ startGoal: startJson })
             };
         } catch (jsonError) {
-            console.error("Failed to parse SMART Goal JSON:", jsonError, rawText);
+            console.error("Failed to parse StART Goal JSON:", jsonError, rawText);
             // Fallback: send as plain text
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ smartGoal: { error: "Failed to parse JSON", rawText } })
+                body: JSON.stringify({ startGoal: { error: "Failed to parse JSON", rawText } })
             };
         }
     }
@@ -601,7 +601,7 @@ exports.handler = async function(event) {
     // Handle plain-text vs. JSON features cleanly
 let parsedPlan = null;
 
-// Only try to parse JSON for the "plan" or "smart_goal_structuring" features
+// Only try to parse JSON for the "plan" or "start_goal_structuring" features
 if (feature === "plan") {
   try {
     parsedPlan = JSON.parse(rawText);
