@@ -26,7 +26,7 @@ const DATA_OPERATIONS = [
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "vision_prompt", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
-    "start_goal_structuring"
+    "smart_goal_structuring"
 ];
 
 // Map feature types to system instructions
@@ -62,18 +62,19 @@ Do NOT include markdown, lists, or other formatting — return ONLY JSON.
 
   "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
 
-  "start_goal_structuring": `
-You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the evolved S.T.A.R.T. method — a belief-to-achievement framework built on defining the goal, identifying the trek towwards achievement, breaking milestones into small tasks to align efforts with the goal, reaffirming progress to make adjustments, and the final achievement and success of the goal." 
+  "smart_goal_structuring": `
+You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the evolved S.M.A.R.T. method — a belief-to-achievement framework built on clarity, structure, and motivation.
+
 Each letter represents a phase of momentum:
 S — See It → Clarify your dream in vivid, sensory detail. Define what success looks and feels like to you.
-T — Trek It → Translate that vision into milestones, steps, and measurable priorities.
-A — Align It → Break down your goal into milestones to ensure all efforts align with the goal and long-term vision.
+M — Map It → Translate that vision into milestones, steps, and measurable priorities.
+A — Align It → Ensure your goal connects with your values, strengths, and long-term vision.
 R — Refine It → Review progress regularly, adjust strategies, and continue learning.
 T — Triumph → Celebrate every victory and reinforce the habits that sustain success.
 
 🧭 Theme progression: Vision → Planning → Alignment → Growth → Success.
 
-Return a directly usable JSON object with exactly five main keys: S, T, A, R, and T.
+Return a directly usable JSON object with exactly five main keys: S, M, A, R, and T.
 Each key must contain:
 - "title" (e.g., "See It")
 - "description" (a vivid, supportive explanation)
@@ -547,9 +548,9 @@ exports.handler = async function(event) {
 
     let systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-    // If feature is start_goal_structuring, enforce JSON schema
-    if (feature === "start_goal_structuring") {
-        systemInstructionText = SYSTEM_INSTRUCTIONS["start_goal_structuring"];
+    // If feature is smart_goal_structuring, enforce JSON schema
+    if (feature === "smart_goal_structuring") {
+        systemInstructionText = SYSTEM_INSTRUCTIONS["smart_goal_structuring"];
     }
 
     const payload = {
@@ -578,22 +579,22 @@ exports.handler = async function(event) {
         throw new Error("Text Generation API response did not contain generated text.");
     }
 
-    // Attempt to parse as JSON if S.T.A.R.T. Goal
-    if (feature === "start_goal_structuring") {
+    // Attempt to parse as JSON if S.M.A.R.T. Goal
+    if (feature === "smart_goal_structuring") {
         try {
-            const startJson = JSON.parse(rawText);
+            const smartJson = JSON.parse(rawText);
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ startGoal: startJson })
+                body: JSON.stringify({ smartGoal: smartJson })
             };
         } catch (jsonError) {
-            console.error("Failed to parse StART Goal JSON:", jsonError, rawText);
+            console.error("Failed to parse SMART Goal JSON:", jsonError, rawText);
             // Fallback: send as plain text
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ startGoal: { error: "Failed to parse JSON", rawText } })
+                body: JSON.stringify({ smartGoal: { error: "Failed to parse JSON", rawText } })
             };
         }
     }
@@ -601,7 +602,7 @@ exports.handler = async function(event) {
     // Handle plain-text vs. JSON features cleanly
 let parsedPlan = null;
 
-// Only try to parse JSON for the "plan" or "start_goal_structuring" features
+// Only try to parse JSON for the "plan" or "smart_goal_structuring" features
 if (feature === "plan") {
   try {
     parsedPlan = JSON.parse(rawText);
