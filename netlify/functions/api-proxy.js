@@ -589,7 +589,6 @@ const featureNormalized = typeof feature === "string"
     : "";
 
  if (featureNormalized === "start_goal_structuring") {
-    // Return JSON with exactly the keys your frontend expects: S, T1, A, R, T2
     const startGoalJson = {
         S: { 
             title: "See It", 
@@ -634,8 +633,7 @@ const featureNormalized = typeof feature === "string"
         body: JSON.stringify({ startGoal: startGoalJson })
     };
 }
-
-        
+       
 
 let parsedPlan = null;
 
