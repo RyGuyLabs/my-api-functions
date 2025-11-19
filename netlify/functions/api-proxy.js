@@ -554,11 +554,22 @@ exports.handler = async function(event) {
         systemInstruction: { parts: [{ text: systemInstructionText }] }
     };
 
-    const response = await fetch(TEXT_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+    // Retry logic for handling 503 / unstable responses
+async function fetchWithRetry(url, options, retries = 2) {
+    for (let i = 0; i <= retries; i++) {
+        const res = await fetch(url, options);
+        if (res.status !== 503) return res; // SUCCESS
+        console.warn(`👀 Gemini API 503 — retrying... (${i + 1}/${retries + 1})`);
+        await new Promise(r => setTimeout(r, 800)); // wait before retry
+    }
+    return fetch(url, options); // last attempt
+}
+
+const response = await fetchWithRetry(TEXT_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+});
 
     if (!response.ok) {
         const errorBody = await response.text();
