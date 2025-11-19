@@ -590,14 +590,44 @@ const featureNormalized = typeof feature === "string"
     ? feature.toLowerCase().trim()
     : "";
 
- if (feature === "start_goal_structuring") {
-    // Hardcode JSON with correct keys
+ if (featureNormalized === "start_goal_structuring") {
+    // Return JSON with exactly the keys your frontend expects: S, T1, A, R, T2
     const startGoalJson = {
-        S: { description: "Clarity description", exampleAction: "Step 1, Step 2" },
-        T1: { description: "Trek description", exampleAction: "Step 1, Step 2" },
-        A: { description: "Align description", exampleAction: "Step 1, Step 2" },
-        R: { description: "Refine description", exampleAction: "Step 1, Step 2" },
-        T2: { description: "Triumph description", exampleAction: "Step 1, Step 2" }
+        S: { 
+            title: "See It", 
+            description: "Define your ultimate goal and vision clearly.", 
+            theme: "Vision", 
+            motivation: "Clarity drives action!", 
+            exampleAction: "Write down your dream in 1–2 sentences." 
+        },
+        T1: { 
+            title: "Trek It", 
+            description: "Outline milestones and the journey to reach your goal.", 
+            theme: "Journey", 
+            motivation: "Every step counts!", 
+            exampleAction: "Break your goal into 3–5 major milestones." 
+        },
+        A: { 
+            title: "Align It", 
+            description: "Ensure all actions align with your goal.", 
+            theme: "Alignment", 
+            motivation: "Consistency builds momentum!", 
+            exampleAction: "List daily tasks that directly move you toward your milestones." 
+        },
+        R: { 
+            title: "Refine It", 
+            description: "Adjust as needed and use resources effectively.", 
+            theme: "Adaptation", 
+            motivation: "Progress beats perfection!", 
+            exampleAction: "Review progress weekly and tweak your plan." 
+        },
+        T2: { 
+            title: "Triumph", 
+            description: "Celebrate achievements and reinforce habits.", 
+            theme: "Success", 
+            motivation: "Victory is yours!", 
+            exampleAction: "Mark milestones reached and reward yourself." 
+        }
     };
 
     return {
@@ -606,7 +636,8 @@ const featureNormalized = typeof feature === "string"
         body: JSON.stringify({ startGoal: startGoalJson })
     };
 }
-        }
+
+        
 
 let parsedPlan = null;
 
