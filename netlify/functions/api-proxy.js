@@ -574,43 +574,48 @@ exports.handler = async function(event) {
         throw new Error("Text Generation API response did not contain generated text.");
     }
 
-    if (feature === "start_goal_structuring") {
-        try {
-            const startJson = JSON.parse(rawText);
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ startGoal: startJson })
-            };
-        } catch (jsonError) {
-            console.error("Failed to parse START Goal JSON:", jsonError, rawText);
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ startGoal: { error: "Failed to parse JSON", rawText } })
-            };
-        }
+            // Normalize feature input for safer comparison
+const featureNormalized = typeof feature === "string"
+    ? feature.toLowerCase().trim()
+    : "";
+
+ if (featureNormalized === "start_goal_structuring") {
+    try {
+        const startJson = JSON.parse(rawText);
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ startGoal: startJson })
+        };
+    } catch (jsonError) {
+        console.error("Failed to parse START Goal JSON:", jsonError, rawText);
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ startGoal: { error: "Failed to parse JSON", rawText } })
+        };
     }
-
-    let parsedPlan = null;
-
-    if (feature === "plan") {
-        try {
-            parsedPlan = JSON.parse(rawText);
-        } catch (err) {
-            console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
-        }
-    }
-
-    return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-            text: parsedPlan ? null : rawText,
-            plan: parsedPlan || null
-        })
-    };
 }
+
+let parsedPlan = null;
+
+if (featureNormalized === "plan") {
+    try {
+        parsedPlan = JSON.parse(rawText);
+    } catch (err) {
+        console.warn("[RyGuyLabs] Plan feature returned plain text instead of JSON. Using fallback text.");
+    }
+}
+
+return {
+    statusCode: 200,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({
+        text: parsedPlan ? null : rawText,
+        plan: parsedPlan || null
+    })
+};
+        }
 
         // --- Default Case ---
         return {
