@@ -557,8 +557,12 @@ async function fetchWithRetry(url, options, retries = 2) {
     for (let i = 0; i <= retries; i++) {
         const res = await fetch(url, options);
         if (res.status !== 503) return res; // SUCCESS
-        console.warn(`👀 Gemini API 503 — retrying... (${i + 1}/${retries + 1})`);
-        await new Promise(r => setTimeout(r, 800)); // wait before retry
+        
+        // Calculate exponential backoff delay (800ms base * 2^i + random jitter)
+        const delay = Math.pow(2, i) * 800 + Math.random() * 200;
+
+        console.warn(`👀 Gemini API 503 — retrying in ${Math.round(delay)}ms... (${i + 1}/${retries + 1})`);
+        await new Promise(r => setTimeout(r, delay)); // wait before retry
     }
     return fetch(url, options); // last attempt
 }
@@ -589,29 +593,29 @@ const featureNormalized = typeof feature === "string"
     : "";
 
  if (featureNormalized === "start_goal_structuring") {
-    // FIX: Attempt to parse the AI-generated JSON (rawText) instead of returning a hardcoded fallback.
-    try {
-        const startJson = JSON.parse(rawText);
-        
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ startGoal: startJson })
-        };
-    } catch (jsonError) {
-        console.error("Failed to parse START Goal JSON:", jsonError, rawText);
-        // Fallback: send error message with raw text for debugging
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ 
-                startGoal: { 
-                    error: "Failed to parse S.T.A.R.T. Goal JSON. Check rawText for model output.", 
-                    rawText: rawText 
-                } 
-            }) 
-        };
-    }
+    // FIX: Attempt to parse the AI-generated JSON (rawText) instead of returning a hardcoded fallback.
+    try {
+        const startJson = JSON.parse(rawText);
+        
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ startGoal: startJson })
+        };
+    } catch (jsonError) {
+        console.error("Failed to parse START Goal JSON:", jsonError, rawText);
+        // Fallback: send error message with raw text for debugging
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ 
+                startGoal: { 
+                    error: "Failed to parse S.T.A.R.T. Goal JSON. Check rawText for model output.", 
+                    rawText: rawText 
+                } 
+            }) 
+        };
+    }
 }      
 
 let parsedPlan = null;
