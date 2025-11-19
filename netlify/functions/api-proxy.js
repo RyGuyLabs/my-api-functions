@@ -597,7 +597,7 @@ const featureNormalized = typeof feature === "string"
             motivation: "Clarity drives action!", 
             exampleAction: "Write down your dream in 1–2 sentences." 
         },
-        T1: { 
+        T: { 
             title: "Trek It", 
             description: "Outline milestones and the journey to reach your goal.", 
             theme: "Journey", 
@@ -618,7 +618,7 @@ const featureNormalized = typeof feature === "string"
             motivation: "Progress beats perfection!", 
             exampleAction: "Review progress weekly and tweak your plan." 
         },
-        T2: { 
+        T_final: { 
             title: "Triumph", 
             description: "Celebrate achievements and reinforce habits.", 
             theme: "Success", 
@@ -632,8 +632,7 @@ const featureNormalized = typeof feature === "string"
         headers: CORS_HEADERS,
         body: JSON.stringify({ startGoal: startGoalJson })
     };
-}
-       
+}      
 
 let parsedPlan = null;
 
