@@ -536,7 +536,7 @@ if (feature === 'tts') {
             responseModalities: ["AUDIO"],
             speechConfig: {                        
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Puck" }
+                    prebuiltVoiceConfig: { voiceName: "Alnilam" }
                 }
             }
         }
