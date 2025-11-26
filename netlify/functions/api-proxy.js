@@ -536,7 +536,7 @@ if (feature === 'tts') {
             responseModalities: ["AUDIO"],
             speechConfig: {                        
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Fenrir" }
+                    prebuiltVoiceConfig: { voiceName: "Rasalgethi" }
                 }
             }
         }
