@@ -270,8 +270,7 @@ async function checkSquarespaceMembershipStatus(userId) {
 }
 
 
-exports.handler = async function(event) {
-    // Handle pre-flight OPTIONS requests for CORS
+exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
