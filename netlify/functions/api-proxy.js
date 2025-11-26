@@ -536,11 +536,13 @@ exports.handler = async function(event) {
                 generationConfig: {
                     responseModalities: ["AUDIO"],
                     speechConfig: {
-                        // 🛑 CRITICAL FIX: Request MP3 encoding for web browser compatibility
-                        outputAudioEncoding: "MP3", 
+                        // 🛑 REVISED CONFIGURATION TO REQUEST MP3 🛑
                         voiceConfig: {
                             prebuiltVoiceConfig: { voiceName: "Kore" }
-                        }
+                        },
+                        audioConfig: { // <--- Added audioConfig object
+                            audioEncoding: "MP3" // <--- Standard property for MP3
+                        }
                     }
                 }
             };
