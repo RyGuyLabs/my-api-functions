@@ -538,13 +538,9 @@ exports.handler = async function(event) {
                     speechConfig: {                        
                         voiceConfig: {
                             prebuiltVoiceConfig: { voiceName: "Kore" }
-                        },
-                        audio_config: { // <--- Note the underscore (_) here
-                            output_audio_encoding: "MP3" // <--- Note the underscore (_) here
-                        }
+                        }
                     }
                 }
-            };
 
             const response = await retryFetch(TTS_API_URL, {
                 method: 'POST',
