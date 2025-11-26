@@ -520,65 +520,67 @@ exports.handler = async function(event) {
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
         if (feature === 'tts') {
-            if (!textToSpeak) {
-                return {
-                    statusCode: 400,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing required text data for TTS.' })
-                };
-            }
+            if (!textToSpeak) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required text data for TTS.' })
+                };
+            }
 
-            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
-            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-            const ttsPayload = {
-                contents: [{ parts: [{ text: textToSpeak }] }],
-                generationConfig: {
-                    responseModalities: ["AUDIO"],
-                    speechConfig: {
-                        voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: "Kore" }
-                        }
-                    }
-                }
-            };
+            const ttsPayload = {
+                contents: [{ parts: [{ text: textToSpeak }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        // 🛑 CRITICAL FIX: Request MP3 encoding for web browser compatibility
+                        outputAudioEncoding: "MP3", 
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Kore" }
+                        }
+                    }
+                }
+            };
 
-            const response = await retryFetch(TTS_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ttsPayload),
-                // ⏱️ allow up to 60 seconds for long TTS - AbortSignal is used within retryFetch too.
-                signal: AbortSignal.timeout(60000)
-            });
+            const response = await retryFetch(TTS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ttsPayload),
+                // ⏱️ allow up to 60 seconds for long TTS - AbortSignal is used within retryFetch too.
+                signal: AbortSignal.timeout(60000)
+            });
 
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("TTS API Error:", response.status, errorBody);
-                throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
-            }
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("TTS API Error:", response.status, errorBody);
+                throw new Error(`TTS API failed with status ${response.status}: ${response.statusText}`);
+            }
 
-            const result = await response.json();
-            const part = result?.candidates?.[0]?.content?.parts?.find(
-                p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
-            );
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.find(
+                p => p.inlineData && p.inlineData.mimeType.startsWith('audio/')
+            );
 
-            const audioData = part?.inlineData?.data;
-            const mimeType = part?.inlineData?.mimeType;
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType; // This will now likely be 'audio/mp3'
 
-            if (!audioData || !mimeType) {
-                console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
-                throw new Error("TTS API response did not contain audio data.");
-            }
+            if (!audioData || !mimeType) {
+                console.error("TTS API Response Missing Audio Data:", JSON.stringify(result));
+                throw new Error("TTS API response did not contain audio data.");
+            }
 
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    audioData: audioData,
-                    mimeType: mimeType
-                })
-            };
-        }
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    audioData: audioData,
+                    mimeType: mimeType
+                })
+            };
+        }
 
         // --- 2c. Handle Text Generation (Gemini Flash) ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
