@@ -535,11 +535,13 @@ exports.handler = async function(event) {
                 contents: [{ parts: [{ text: textToSpeak }] }],
                 generationConfig: {
                     responseModalities: ["AUDIO"],
-                    speechConfig: {
-                        outputAudioEncoding: "MP3", 
+                    speechConfig: {                        
                         voiceConfig: {
                             prebuiltVoiceConfig: { voiceName: "Kore" }
-                        }
+                        },
+                        audio_config: { // <--- Note the underscore (_) here
+                            output_audio_encoding: "MP3" // <--- Note the underscore (_) here
+                        }
                     }
                 }
             };
