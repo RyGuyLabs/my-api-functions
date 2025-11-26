@@ -63,7 +63,6 @@ Do NOT include markdown, lists, or other formatting — return ONLY JSON.
   "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
 
   // --- REVISED: Updated content to R.E.A.D.Y. framework ---
-  // --- REVISED: Updated content to R.E.A.D.Y. framework ---
   "smart_goal_structuring": `
 You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the powerful R.E.A.D.Y. framework—a belief-to-achievement system built on commitment, action, and continuous optimization.
 
@@ -537,7 +536,7 @@ if (feature === 'tts') {
             responseModalities: ["AUDIO"],
             speechConfig: {                        
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Kore" }
+                    prebuiltVoiceConfig: { voiceName: "Iapetus" }
                 }
             }
         }
