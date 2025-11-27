@@ -491,10 +491,18 @@ exports.handler = async (event, context) => {
             });
 
             if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Imagen API Error:", response.status, errorBody);
-                throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
-            }
+                const errorBody = await response.text();
+                console.error("Imagen API FAILED:", response.status, errorBody); // Logs detailed error to Netlify
+                // Return the error to the frontend for diagnosis
+                return {
+                    statusCode: response.status || 500,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ 
+                        message: "Image generation failed.", 
+                        details: errorBody // Sends the critical error details to your browser
+                    })
+                };
+            }
 
             const result = await response.json();
             const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
