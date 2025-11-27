@@ -577,6 +577,92 @@ if (feature === 'tts') {
         })
     };
 }
+
+// Inside exports.handler, where you check the 'feature' variable:
+
+// Add this block near your other feature handlers (e.g., 'tts', 'image_generation')
+else if (feature === 'prime_directive') {
+    // 1. Input Validation (Ensure data sent from frontend is present)
+    const userGoal = body.userGoal; // Assumes you pass this from the frontend
+    const emotionalFocus = body.emotionalFocus; // Assumes you pass this from the frontend
+
+    if (!userGoal || !emotionalFocus) {
+        return { 
+            statusCode: 400, 
+            headers: CORS_HEADERS, 
+            body: JSON.stringify({ message: 'Missing required goal or emotionalFocus data for Prime Directive.' }) 
+        };
+    }
+    
+    // 2. Define Assertive System Prompt
+    const PRIME_DIRECTIVE_INSTRUCTION = `
+You are a highly assertive, professional, and masculine executive coach. Your role is to deliver a direct, no-nonsense command and a hyper-specific, sensory-focused visual prompt.
+
+1. ASSERTIVE VOICE: Adopt a commanding, professional male tone.
+2. SENSORY FOCUS: Your IMAGE_PROMPT must focus purely on the visceral, positive *SENSORY FEELING* that directly COUNTERS the user's Emotional Anchor. (E.g., if the anchor is 'Fear of Regret,' the prompt must describe the feeling of 'Profound Relief' or 'Unstoppable Momentum' in vivid detail.)
+3. COMMAND TEXT: The COMMAND_TEXT must be under 30 words, reference scarcity (time, opportunity, etc.), and demand immediate, specific action.
+4. OUTPUT FORMAT: Respond ONLY with a valid JSON object matching the required schema.
+
+Schema:
+{
+  "image_prompt": "string: Detailed sensory description countering the fear.",
+  "command_text": "string: Assertive, scarcity-based command."
+}
+    `;
+
+    // 3. Prepare Payload
+    const TEXT_MODEL = "gemini-2.5-flash"; 
+    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+    const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR (Fear to counter): ${emotionalFocus}. Generate the required JSON output.`;
+
+    const payload = {
+        contents: [{ parts: [{ text: userPrompt }] }],
+        config: {
+            systemInstruction: PRIME_DIRECTIVE_INSTRUCTION,
+            responseMimeType: "application/json",
+            temperature: 0.2
+        }
+    };
+
+    // 4. Call Gemini API
+    const response = await retryFetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Prime Directive API Error:", response.status, errorBody);
+        throw new Error(`Prime Directive API failed.`);
+    }
+
+    const result = await response.json();
+    const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // 5. Parse and Return Structured Data
+    try {
+        const parsedContent = JSON.parse(rawText);
+
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                imagePrompt: parsedContent.image_prompt, // Image prompt for frontend to use in Step 2
+                commandText: parsedContent.command_text  // Assertive text for frontend to display in Step 1
+            })
+        };
+    } catch (e) {
+         console.error("Failed to parse Prime Directive JSON output:", rawText);
+         return {
+             statusCode: 500,
+             headers: CORS_HEADERS,
+             body: JSON.stringify({ message: "AI response failed to provide valid JSON for Prime Directive." })
+         };
+    }
+}
+        
         // --- 2c. Handle Text Generation (Gemini Flash) ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
             if (!userGoal) {
