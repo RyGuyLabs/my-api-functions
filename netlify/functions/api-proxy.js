@@ -463,6 +463,7 @@ exports.handler = async (event, context) => {
         // ------------------------------------------------------------------
 
         // --- 2a. Handle Image Generation (Imagen) ---
+        / --- 2a. Handle Image Generation (Imagen) ---
         if (feature === 'image_generation') {
             if (!imagePrompt) {
                 return {
@@ -472,8 +473,8 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            const IMAGEN_MODEL = "imagen-generate-002";
-            const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;
+            const IMAGEN_MODEL = "imagen-3.0-generate-002";
+            const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
 
             const imagenPayload = {
                 instances: [{ prompt: imagePrompt }],
@@ -484,25 +485,17 @@ exports.handler = async (event, context) => {
                 }
             };
 
-            const response = await retryFetch(IMAGEN_API_URL, {
+            const response = await fetch(IMAGEN_API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(imagenPayload)
             });
 
             if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Imagen API FAILED:", response.status, errorBody); // Logs detailed error to Netlify
-                // Return the error to the frontend for diagnosis
-                return {
-                    statusCode: response.status || 500,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ 
-                        message: "Image generation failed.", 
-                        details: errorBody // Sends the critical error details to your browser
-                    })
-                };
-            }
+                const errorBody = await response.text();
+                console.error("Imagen API Error:", response.status, errorBody);
+                throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
+            }
 
             const result = await response.json();
             const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
@@ -522,7 +515,6 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // --- 2b. Handle TTS Generation (Gemini TTS) ---
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
 if (feature === 'tts') {
     if (!textToSpeak) {
