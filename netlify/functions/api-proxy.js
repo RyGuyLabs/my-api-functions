@@ -608,23 +608,25 @@ Schema:
 }
     `;
 
-    // 3. Prepare Payload
-    const TEXT_MODEL = "gemini-2.5-flash"; 
-    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR (Fear to counter): ${emotionalFocus}. Generate the required JSON output.`;
+   // 3. Prepare Payload (STANDARD GEMINI REST API STRUCTURE)
+const TEXT_MODEL = "gemini-2.5-flash"; 
+const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR (Fear to counter): ${emotionalFocus}. Generate the required JSON output.`;
 
-    const payload = {
-        systemInstruction: PRIME_DIRECTIVE_INSTRUCTION, 
-        
-        contents: [{ parts: [{ text: userPrompt }] }],
-        
-        // Generation configuration is also a top-level field
-        generationConfig: {
-            temperature: 0.2, 
-            responseMimeType: "application/json" 
-        }
-    };
+const payload = {
+    // 1. User content
+    contents: [{ parts: [{ text: userPrompt }] }],
+    
+    // 2. System Instruction MUST be an object with 'parts' to match the working 'plan' feature
+    systemInstruction: { parts: [{ text: PRIME_DIRECTIVE_INSTRUCTION }] },
+    
+    // 3. Generation configuration (keep this structure for structured output)
+    generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json" // Crucial for getting JSON output
+    }
+};
 
     // 4. Call Gemini API
     const response = await retryFetch(TEXT_API_URL, {
