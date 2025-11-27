@@ -616,7 +616,7 @@ Schema:
 
     const payload = {
         contents: [{ parts: [{ text: userPrompt }] }],
-        config: {
+        configuration: {
             systemInstruction: PRIME_DIRECTIVE_INSTRUCTION,
             responseMimeType: "application/json",
             temperature: 0.2
