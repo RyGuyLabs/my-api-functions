@@ -615,13 +615,16 @@ Schema:
     const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR (Fear to counter): ${emotionalFocus}. Generate the required JSON output.`;
 
     const payload = {
-        contents: [{ parts: [{ text: userPrompt }] }],
-        configuration: {
-            systemInstruction: PRIME_DIRECTIVE_INSTRUCTION,
-            responseMimeType: "application/json",
-            temperature: 0.2
-        }
-    };
+        systemInstruction: PRIME_DIRECTIVE_INSTRUCTION, 
+        
+        contents: [{ parts: [{ text: userPrompt }] }],
+        
+        // Generation configuration is also a top-level field
+        generationConfig: {
+            temperature: 0.2, 
+            responseMimeType: "application/json" 
+        }
+    };
 
     // 4. Call Gemini API
     const response = await retryFetch(TEXT_API_URL, {
