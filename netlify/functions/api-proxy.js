@@ -463,7 +463,6 @@ exports.handler = async (event, context) => {
         // ------------------------------------------------------------------
 
         // --- 2a. Handle Image Generation (Imagen) ---
-        / --- 2a. Handle Image Generation (Imagen) ---
         if (feature === 'image_generation') {
             if (!imagePrompt) {
                 return {
