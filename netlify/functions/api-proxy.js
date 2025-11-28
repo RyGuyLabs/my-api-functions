@@ -498,7 +498,7 @@ const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
             }
 
             const result = await response.json();
-            const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+            const base64Data = result?.generatedImages?.[0]?.image?.imageBytes;
 
             if (!base64Data) {
                 console.error("Imagen API Response Missing Data:", JSON.stringify(result));
