@@ -691,7 +691,7 @@ try {
     // Use the confirmed API key variable name: FIRST_API_KEY
     const base64Data = await generateImageBase64(
         parsedContent.image_prompt, 
-        FIRST_API_KEY // <-- Using your correct environment variable
+        GEMINI_API_KEY
     );
     
     if (!base64Data) {
