@@ -657,38 +657,64 @@ if (feature === 'tts') {
             }
 
             const result = await response.json();
-            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-            if (!rawText) {
-                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-                throw new Error("Text Generation API response did not contain generated text.");
-            }
+            if (!rawText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
+            }
 
             let parsedContent = null;
-            let responseKey = 'text'; // Default to plain text response
+            let responseKey = 'text'; 
+            
+            // 💡 1. JSON CLEANUP: Clean the raw text before parsing
+            const cleanedText = rawText
+                .replace(/```json\s*|```/g, '') // Remove Markdown code block delimiters
+                .trim();
+            
+            // 2. Only attempt JSON parsing for structured output features (NOW INCLUDING prime_directive)
+            if (feature === "plan" || feature === "smart_goal_structuring" || feature === "prime_directive") {
+                try {
+                    const content = JSON.parse(cleanedText); // ⬅️ PARSE THE CLEANED TEXT
+                    parsedContent = content; 
+                    
+                    // Set the response key based on the feature
+                    responseKey = feature === "plan" ? 'plan' : 
+                                    (feature === "prime_directive" ? 'primeDirective' : 'smartGoal');
 
-            // Only attempt JSON parsing for specific structured output features
-            if (feature === "plan" || feature === "smart_goal_structuring") {
-                try {
-                    parsedContent = JSON.parse(rawText);
-                    responseKey = feature === "plan" ? 'plan' : 'smartGoal';
-                } catch (jsonError) {
-                    console.warn(`[RyGuyLabs] Feature ${feature} returned non-JSON. Sending raw text as fallback.`);
-                    // Fallback: use rawText as the content if parsing fails
-                    parsedContent = rawText;
-                }
+                    // ⬇️ 3. IMAGE CHAINING LOGIC (Only for Prime Directive) ⬇️
+                    if (feature === 'prime_directive' && parsedContent.image_prompt) {
+                        console.log(`[PRIME_DIR] Starting image generation for prompt: ${parsedContent.image_prompt.substring(0, 50)}...`);
+                        
+                        // Call the globally available helper function (Action 1)
+                        const imagenData = await generateImagenData(parsedContent.image_prompt);
+                        
+                        // Inject the image data into the final JSON response object
+                        parsedContent.imageUrl = imagenData.imageUrl;
+                        parsedContent.altText = imagenData.altText;
+                        console.log(`[PRIME_DIR] Image generation successful.`);
+                    }
+                    // ⬆️ END IMAGE CHAINING ⬆️
+
+                } catch (jsonError) {
+                    // This error is the 'AI response failed to provide valid JSON'
+                    console.error(`[RyGuyLabs] Failed to parse JSON for feature ${feature}. Raw text: ${rawText.substring(0, 200)}...`, jsonError);
+                    // Critical Error: Re-throw to use the 500 handler at the bottom of the function.
+                    throw new Error("AI response failed to provide valid JSON for a structured feature."); 
+                }
+            } else {
+                 // For all other non-JSON text features (pep_talk, etc.)
+                 parsedContent = rawText;
             }
 
-            // Return normalized response for all features
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    [responseKey]: parsedContent || rawText
-                })
-            };
-        }
-
+            // Return normalized response for all features
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    [responseKey]: parsedContent || rawText
+                })
+            };
 
         // --- Default Case ---
         return {
