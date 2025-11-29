@@ -209,14 +209,14 @@ function firestoreRestToJs(firestoreField) {
 }
 
 // Function to handle the Imagen API call
-async function generateImagenData(prompt) {
+async function generateImagenData(prompt, apiKey) { // ⬅️ NEW ARGUMENT
     if (!prompt) {
         throw new Error('Image prompt required for Imagen API call.');
     }
 
     const IMAGEN_MODEL = "imagen-2.0-generate-002";
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;
-
+    // Use the passed-in apiKey instead of the global GEMINI_API_KEY
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${apiKey}`; // ⬅️ USED NEW ARGUMENT
     const imagenPayload = {
         model: IMAGEN_MODEL,
         prompt: prompt, // Use the passed prompt
@@ -686,7 +686,7 @@ if (feature === 'tts') {
                         console.log(`[PRIME_DIR] Starting image generation for prompt: ${parsedContent.image_prompt.substring(0, 50)}...`);
                         
                         // Call the globally available helper function
-                        const imagenData = await generateImagenData(parsedContent.image_prompt);
+                        const imagenData = await generateImagenData(parsedContent.image_prompt, GEMINI_API_KEY);
                         
                         // Inject the image data into the final JSON response object
                         parsedContent.imageUrl = imagenData.imageUrl;
