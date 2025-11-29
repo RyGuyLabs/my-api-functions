@@ -505,13 +505,15 @@ exports.handler = async (event, context) => {
             }
 
             return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    imageUrl: `data:image/png;base64,${base64Data}`,
-                    altText: `Generated vision for: ${imagePrompt}`
-                })
-            };
+    statusCode: 200,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({
+        commandText: geminiCommand,
+        imagePrompt: geminiAnchor,
+        imageUrl: `data:image/png;base64,${base64Data}`, // <-- Imagen result added here
+        altText: `Generated vision for: ${geminiAnchor}`
+    })
+};
         }
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
