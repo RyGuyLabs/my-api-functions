@@ -228,6 +228,51 @@ async function checkSquarespaceMembershipStatus(userId) {
         return false;
     }
 
+    // Function to handle the Imagen API call
+async function generateImagenData(prompt) {
+    if (!prompt) {
+        throw new Error('Image prompt required for Imagen API call.');
+    }
+
+    const IMAGEN_MODEL = "imagen-2.0-generate-002";
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;
+
+    const imagenPayload = {
+        model: IMAGEN_MODEL,
+        prompt: prompt, // Use the passed prompt
+        config: {
+            numberOfImages: 1,
+            outputMimeType: "image/png",
+            aspectRatio: "1:1"
+        }
+    };
+
+    const response = await fetch(IMAGEN_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagenPayload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Imagen API Error:", response.status, errorBody);
+        throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const base64Data = result?.generatedImages?.[0]?.image?.imageBytes;
+
+    if (!base64Data) {
+        console.error("Imagen API Response Missing Data:", JSON.stringify(result));
+        throw new Error("Imagen API response did not contain image data.");
+    }
+    
+    // 💡 RETURN ONLY THE DATA URI, NOT THE FULL HTTP RESPONSE
+    return {
+        imageUrl: `data:image/png;base64,${base64Data}`,
+        altText: `Generated vision for: ${prompt}`
+    };
+}
     // !! CRITICAL CUSTOMIZATION REQUIRED !!
     // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
     // that can verify membership for the user's ID/Email.
