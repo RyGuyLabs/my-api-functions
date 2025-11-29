@@ -667,7 +667,6 @@ if (feature === 'tts') {
             let parsedContent = null;
             let responseKey = 'text'; 
             
-            // 💡 1. JSON CLEANUP: Clean the raw text before parsing
             const cleanedText = rawText
                 .replace(/```json\s*|```/g, '') // Remove Markdown code block delimiters
                 .trim();
@@ -686,7 +685,7 @@ if (feature === 'tts') {
                     if (feature === 'prime_directive' && parsedContent.image_prompt) {
                         console.log(`[PRIME_DIR] Starting image generation for prompt: ${parsedContent.image_prompt.substring(0, 50)}...`);
                         
-                        // Call the globally available helper function (Action 1)
+                        // Call the globally available helper function
                         const imagenData = await generateImagenData(parsedContent.image_prompt);
                         
                         // Inject the image data into the final JSON response object
@@ -697,9 +696,8 @@ if (feature === 'tts') {
                     // ⬆️ END IMAGE CHAINING ⬆️
 
                 } catch (jsonError) {
-                    // This error is the 'AI response failed to provide valid JSON'
+                    // This handles the original "AI response failed to provide valid JSON" error
                     console.error(`[RyGuyLabs] Failed to parse JSON for feature ${feature}. Raw text: ${rawText.substring(0, 200)}...`, jsonError);
-                    // Critical Error: Re-throw to use the 500 handler at the bottom of the function.
                     throw new Error("AI response failed to provide valid JSON for a structured feature."); 
                 }
             } else {
@@ -715,7 +713,6 @@ if (feature === 'tts') {
                     [responseKey]: parsedContent || rawText
                 })
             };
-
         // --- Default Case ---
         return {
             statusCode: 400,
