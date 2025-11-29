@@ -266,6 +266,46 @@ async function checkSquarespaceMembershipStatus(userId) {
     }
 }
 
+// --- IMAGE GENERATION HELPER (Place this block BEFORE exports.handler) ---
+/**
+ * Calls the Imagen API to generate an image and returns the raw base64 data.
+ * NOTE: It relies on the 'retryFetch' utility being defined elsewhere in this file.
+ * @param {string} prompt - The image description prompt.
+ * @param {string} apiKey - The Google AI API key (FIRST_API_KEY).
+ * @returns {Promise<string>} The base64 string of the generated image.
+ */
+async function generateImageBase64(prompt, apiKey) {
+    const IMAGEN_MODEL = "imagen-2.0-generate-002"; 
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${apiKey}`;
+
+    const imagenPayload = {
+        model: IMAGEN_MODEL,
+        prompt: prompt,
+        config: {
+            numberOfImages: 1,
+            outputMimeType: "image/png",
+            aspectRatio: "1:1"
+        }
+    };
+    
+    // NOTE: This assumes 'retryFetch' is defined. If not, replace with 'fetch'.
+    const response = await retryFetch(IMAGEN_API_URL, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagenPayload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Imagen API Error (Helper):", response.status, errorBody);
+        throw new Error(`Imagen API failed during Prime Directive chaining.`);
+    }
+
+    const result = await response.json();
+    // Return the raw base64 string
+    return result?.generatedImages?.[0]?.image?.imageBytes; 
+}
+
 
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
