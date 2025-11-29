@@ -644,25 +644,46 @@ const payload = {
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
     // 5. Parse and Return Structured Data
-    try {
-        const parsedContent = JSON.parse(rawText);
-
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({
-                imagePrompt: parsedContent.image_prompt, // Image prompt for frontend to use in Step 2
-                commandText: parsedContent.command_text  // Assertive text for frontend to display in Step 1
-            })
-        };
-    } catch (e) {
-         console.error("Failed to parse Prime Directive JSON output:", rawText);
-         return {
-             statusCode: 500,
-             headers: CORS_HEADERS,
-             body: JSON.stringify({ message: "AI response failed to provide valid JSON for Prime Directive." })
-         };
+try {
+    const parsedContent = JSON.parse(rawText);
+    
+    // --- 6. CALL IMAGE API (NEW BLOCK) ---
+    // Use the confirmed API key variable name: FIRST_API_KEY
+    const base64Data = await generateImageBase64(
+        parsedContent.image_prompt, 
+        FIRST_API_KEY // <-- Using your correct environment variable
+    );
+    
+    if (!base64Data) {
+        // Log the failure to Netlify logs for debugging
+        console.error("Image API did not return imageBytes data.");
+        throw new Error("Image API did not return data."); 
     }
+    
+    const imageUrl = `data:image/png;base64,${base64Data}`; // Create the data URL
+    // -----------------------------------
+
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+            imagePrompt: parsedContent.image_prompt,
+            commandText: parsedContent.command_text,
+            imageUrl: imageUrl // <-- NOW INCLUDED IN RESPONSE
+        })
+    };
+} catch (e) {
+    // Ensure you log the error details for debugging
+    console.error("Error during image generation or final processing:", e.message); 
+    
+    return {
+        statusCode: 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ 
+            message: "Failed to process the final result, check image generation steps.",
+            details: e.message 
+        })
+    };
 }
         
         // --- 2c. Handle Text Generation (Gemini Flash) ---
@@ -747,4 +768,3 @@ const payload = {
         };
     }
 };
-
