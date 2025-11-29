@@ -208,27 +208,7 @@ function firestoreRestToJs(firestoreField) {
     return null;
 }
 
-
-/**
- * [CRITICAL SECURITY GATE]
- * Checks the user's active membership status via the Squarespace API.
- * Includes a bypass for testing.
- * @param {string} userId - The unique user ID (from localStorage).
- * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
- */
-async function checkSquarespaceMembershipStatus(userId) {
-    // DEVELOPMENT BYPASS
-    if (userId.startsWith('mock-') || userId === 'TEST_USER') {
-        console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
-        return true;
-    }
-
-    if (!SQUARESPACE_TOKEN) {
-        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all data access.");
-        return false;
-    }
-
-    // Function to handle the Imagen API call
+// Function to handle the Imagen API call
 async function generateImagenData(prompt) {
     if (!prompt) {
         throw new Error('Image prompt required for Imagen API call.');
@@ -273,6 +253,26 @@ async function generateImagenData(prompt) {
         altText: `Generated vision for: ${prompt}`
     };
 }
+/**
+ * [CRITICAL SECURITY GATE]
+ * Checks the user's active membership status via the Squarespace API.
+ * Includes a bypass for testing.
+ * @param {string} userId - The unique user ID (from localStorage).
+ * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
+ */
+async function checkSquarespaceMembershipStatus(userId) {
+    // DEVELOPMENT BYPASS
+    if (userId.startsWith('mock-') || userId === 'TEST_USER') {
+        console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
+        return true;
+    }
+
+    if (!SQUARESPACE_TOKEN) {
+        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all data access.");
+        return false;
+    }
+
+    
     // !! CRITICAL CUSTOMIZATION REQUIRED !!
     // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
     // that can verify membership for the user's ID/Email.
