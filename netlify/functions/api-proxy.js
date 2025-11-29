@@ -61,7 +61,7 @@ Do NOT include markdown, lists, or other formatting — return ONLY JSON.
   "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
 
   // --- REVISED: Updated content to R.E.A.D.Y. framework ---
-  "smart_goal_structuring": `
+  "smart_goal_structuring": `
 You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the powerful R.E.A.D.Y. framework—a belief-to-achievement system built on commitment, action, and continuous optimization.
 
 Each letter represents a phase of momentum:
@@ -91,7 +91,7 @@ Return only valid JSON — no markdown, quotes, or commentary.
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
 };
@@ -208,51 +208,7 @@ function firestoreRestToJs(firestoreField) {
     return null;
 }
 
-// Function to handle the Imagen API call
-async function generateImagenData(prompt, apiKey) { // ⬅️ NEW ARGUMENT
-    if (!prompt) {
-        throw new Error('Image prompt required for Imagen API call.');
-    }
 
-    const IMAGEN_MODEL = "imagen-2.0-generate-002";
-    // Use the passed-in apiKey instead of the global GEMINI_API_KEY
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${apiKey}`; // ⬅️ USED NEW ARGUMENT
-    const imagenPayload = {
-        model: IMAGEN_MODEL,
-        prompt: prompt, // Use the passed prompt
-        config: {
-            numberOfImages: 1,
-            outputMimeType: "image/png",
-            aspectRatio: "1:1"
-        }
-    };
-
-    const response = await fetch(IMAGEN_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagenPayload)
-    });
-
-    if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("Imagen API Error:", response.status, errorBody);
-        throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    const base64Data = result?.generatedImages?.[0]?.image?.imageBytes;
-
-    if (!base64Data) {
-        console.error("Imagen API Response Missing Data:", JSON.stringify(result));
-        throw new Error("Imagen API response did not contain image data.");
-    }
-    
-    // 💡 RETURN ONLY THE DATA URI, NOT THE FULL HTTP RESPONSE
-    return {
-        imageUrl: `data:image/png;base64,${base64Data}`,
-        altText: `Generated vision for: ${prompt}`
-    };
-}
 /**
  * [CRITICAL SECURITY GATE]
  * Checks the user's active membership status via the Squarespace API.
@@ -272,7 +228,6 @@ async function checkSquarespaceMembershipStatus(userId) {
         return false;
     }
 
-    
     // !! CRITICAL CUSTOMIZATION REQUIRED !!
     // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
     // that can verify membership for the user's ID/Email.
@@ -550,15 +505,13 @@ exports.handler = async (event, context) => {
             }
 
             return {
-    statusCode: 200,
-    headers: CORS_HEADERS,
-    body: JSON.stringify({
-        commandText: geminiCommand,
-        imagePrompt: geminiAnchor,
-        imageUrl: `data:image/png;base64,${base64Data}`, // <-- Imagen result added here
-        altText: `Generated vision for: ${geminiAnchor}`
-    })
-};
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    imageUrl: `data:image/png;base64,${base64Data}`,
+                    altText: `Generated vision for: ${imagePrompt}`
+                })
+            };
         }
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
@@ -578,7 +531,7 @@ if (feature === 'tts') {
         contents: [{ parts: [{ text: textToSpeak }] }],
         generationConfig: {
             responseModalities: ["AUDIO"],
-            speechConfig: {                        
+            speechConfig: {                        
                 voiceConfig: {
                     prebuiltVoiceConfig: { voiceName: "Achird" }
                 }
@@ -623,6 +576,94 @@ if (feature === 'tts') {
 }
 
 // Inside exports.handler, where you check the 'feature' variable:
+
+// Add this block near your other feature handlers (e.g., 'tts', 'image_generation')
+else if (feature === 'prime_directive') {
+    // 1. Input Validation (Ensure data sent from frontend is present)
+    const userGoal = body.userGoal; // Assumes you pass this from the frontend
+    const emotionalFocus = body.emotionalFocus; // Assumes you pass this from the frontend
+
+    if (!userGoal || !emotionalFocus) {
+        return { 
+            statusCode: 400, 
+            headers: CORS_HEADERS, 
+            body: JSON.stringify({ message: 'Missing required goal or emotionalFocus data for Prime Directive.' }) 
+        };
+    }
+    
+    // 2. Define Assertive System Prompt
+    const PRIME_DIRECTIVE_INSTRUCTION = `
+You are a highly assertive, professional, and masculine executive coach. Your role is to deliver a direct, no-nonsense command and a hyper-specific, sensory-focused visual prompt.
+
+1. ASSERTIVE VOICE: Adopt a commanding, professional male tone.
+2. SENSORY FOCUS: Your IMAGE_PROMPT must focus purely on the visceral, positive *SENSORY FEELING* that directly COUNTERS the user's Emotional Anchor. (E.g., if the anchor is 'Fear of Regret,' the prompt must describe the feeling of 'Profound Relief' or 'Unstoppable Momentum' in vivid detail.)
+3. COMMAND TEXT: The COMMAND_TEXT must be under 30 words, reference scarcity (time, opportunity, etc.), and demand immediate, specific action.
+4. OUTPUT FORMAT: Respond ONLY with a valid JSON object matching the required schema.
+
+Schema:
+{
+  "image_prompt": "string: Detailed sensory description countering the fear.",
+  "command_text": "string: Assertive, scarcity-based command."
+}
+    `;
+
+   // 3. Prepare Payload (STANDARD GEMINI REST API STRUCTURE)
+const TEXT_MODEL = "gemini-2.5-flash"; 
+const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR (Fear to counter): ${emotionalFocus}. Generate the required JSON output.`;
+
+const payload = {
+    // 1. User content
+    contents: [{ parts: [{ text: userPrompt }] }],
+    
+    // 2. System Instruction MUST be an object with 'parts' to match the working 'plan' feature
+    systemInstruction: { parts: [{ text: PRIME_DIRECTIVE_INSTRUCTION }] },
+    
+    // 3. Generation configuration (keep this structure for structured output)
+    generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json" // Crucial for getting JSON output
+    }
+};
+
+    // 4. Call Gemini API
+    const response = await retryFetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Prime Directive API Error:", response.status, errorBody);
+        throw new Error(`Prime Directive API failed.`);
+    }
+
+    const result = await response.json();
+    const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // 5. Parse and Return Structured Data
+    try {
+        const parsedContent = JSON.parse(rawText);
+
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                imagePrompt: parsedContent.image_prompt, // Image prompt for frontend to use in Step 2
+                commandText: parsedContent.command_text  // Assertive text for frontend to display in Step 1
+            })
+        };
+    } catch (e) {
+         console.error("Failed to parse Prime Directive JSON output:", rawText);
+         return {
+             statusCode: 500,
+             headers: CORS_HEADERS,
+             body: JSON.stringify({ message: "AI response failed to provide valid JSON for Prime Directive." })
+         };
+    }
+}
         
         // --- 2c. Handle Text Generation (Gemini Flash) ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
@@ -657,62 +698,39 @@ if (feature === 'tts') {
             }
 
             const result = await response.json();
-            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-            if (!rawText) {
-                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
-                throw new Error("Text Generation API response did not contain generated text.");
-            }
-
-            let parsedContent = null;
-            let responseKey = 'text'; 
-            
-            const cleanedText = rawText
-                .replace(/```json\s*|```/g, '') // Remove Markdown code block delimiters
-                .trim();
-            
-            // 2. Only attempt JSON parsing for structured output features (NOW INCLUDING prime_directive)
-            if (feature === "plan" || feature === "smart_goal_structuring" || feature === "prime_directive") {
-                try {
-                    const content = JSON.parse(cleanedText); // ⬅️ PARSE THE CLEANED TEXT
-                    parsedContent = content; 
-                    
-                    // Set the response key based on the feature
-                    responseKey = feature === "plan" ? 'plan' : 
-                                    (feature === "prime_directive" ? 'primeDirective' : 'smartGoal');
-
-                    // ⬇️ 3. IMAGE CHAINING LOGIC (Only for Prime Directive) ⬇️
-                    if (feature === 'prime_directive' && parsedContent.image_prompt) {
-                        console.log(`[PRIME_DIR] Starting image generation for prompt: ${parsedContent.image_prompt.substring(0, 50)}...`);
-                        
-                        // Call the globally available helper function
-                        const imagenData = await generateImagenData(parsedContent.image_prompt, GEMINI_API_KEY);
-                        
-                        // Inject the image data into the final JSON response object
-                        parsedContent.imageUrl = imagenData.imageUrl;
-                        parsedContent.altText = imagenData.altText;
-                        console.log(`[PRIME_DIR] Image generation successful.`);
-                    }
-                    // ⬆️ END IMAGE CHAINING ⬆️
-
-                } catch (jsonError) {
-                    // This handles the original "AI response failed to provide valid JSON" error
-                    console.error(`[RyGuyLabs] Failed to parse JSON for feature ${feature}. Raw text: ${rawText.substring(0, 200)}...`, jsonError);
-                    throw new Error("AI response failed to provide valid JSON for a structured feature."); 
-                }
-            } else {
-                 // For all other non-JSON text features (pep_talk, etc.)
-                 parsedContent = rawText;
+            if (!rawText) {
+                console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
+                throw new Error("Text Generation API response did not contain generated text.");
             }
 
-            // Return normalized response for all features
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    [responseKey]: parsedContent || rawText
-                })
-            };
+            let parsedContent = null;
+            let responseKey = 'text'; // Default to plain text response
+
+            // Only attempt JSON parsing for specific structured output features
+            if (feature === "plan" || feature === "smart_goal_structuring") {
+                try {
+                    parsedContent = JSON.parse(rawText);
+                    responseKey = feature === "plan" ? 'plan' : 'smartGoal';
+                } catch (jsonError) {
+                    console.warn(`[RyGuyLabs] Feature ${feature} returned non-JSON. Sending raw text as fallback.`);
+                    // Fallback: use rawText as the content if parsing fails
+                    parsedContent = rawText;
+                }
+            }
+
+            // Return normalized response for all features
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    [responseKey]: parsedContent || rawText
+                })
+            };
+        }
+
+
         // --- Default Case ---
         return {
             statusCode: 400,
@@ -729,3 +747,4 @@ if (feature === 'tts') {
         };
     }
 };
+
