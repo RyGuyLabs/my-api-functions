@@ -650,9 +650,9 @@ const payload = {
         return {
             statusCode: 200,
             headers: CORS_HEADERS,
-            body: JSON.stringify({
-                imagePrompt: parsedContent.image_prompt, // Image prompt for frontend to use in Step 2
-                commandText: parsedContent.command_text  // Assertive text for frontend to display in Step 1
+            commandText: parsedContent.command_text, // Step 1 (text)
+        imagePrompt: parsedContent.image_prompt, // Step 2 (image)
+        nextAction: parsedContent.image_prompt ? "image_generation" : null
             })
         };
     } catch (e) {
