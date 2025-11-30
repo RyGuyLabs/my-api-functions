@@ -266,46 +266,6 @@ async function checkSquarespaceMembershipStatus(userId) {
     }
 }
 
-// --- IMAGE GENERATION HELPER (Place this block BEFORE exports.handler) ---
-/**
- * Calls the Imagen API to generate an image and returns the raw base64 data.
- * NOTE: It relies on the 'retryFetch' utility being defined elsewhere in this file.
- * @param {string} prompt - The image description prompt.
- * @param {string} apiKey - The Google AI API key (FIRST_API_KEY).
- * @returns {Promise<string>} The base64 string of the generated image.
- */
-async function generateImageBase64(prompt, apiKey) {
-    const IMAGEN_MODEL = "imagen-2.0-generate-002"; 
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${apiKey}`;
-
-    const imagenPayload = {
-        model: IMAGEN_MODEL,
-        prompt: prompt,
-        config: {
-            numberOfImages: 1,
-            outputMimeType: "image/png",
-            aspectRatio: "1:1"
-        }
-    };
-    
-    // NOTE: This assumes 'retryFetch' is defined. If not, replace with 'fetch'.
-    const response = await retryFetch(IMAGEN_API_URL, { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagenPayload)
-    });
-
-    if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("Imagen API Error (Helper):", response.status, errorBody);
-        throw new Error(`Imagen API failed during Prime Directive chaining.`);
-    }
-
-    const result = await response.json();
-    // Return the raw base64 string
-    return result?.generatedImages?.[0]?.image?.imageBytes; 
-}
-
 
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
@@ -684,46 +644,25 @@ const payload = {
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
     // 5. Parse and Return Structured Data
-try {
-    const parsedContent = JSON.parse(rawText);
-    
-    // --- 6. CALL IMAGE API (NEW BLOCK) ---
-    // Use the confirmed API key variable name: FIRST_API_KEY
-    const base64Data = await generateImageBase64(
-        parsedContent.image_prompt, 
-        GEMINI_API_KEY
-    );
-    
-    if (!base64Data) {
-        // Log the failure to Netlify logs for debugging
-        console.error("Image API did not return imageBytes data.");
-        throw new Error("Image API did not return data."); 
-    }
-    
-    const imageUrl = `data:image/png;base64,${base64Data}`; // Create the data URL
-    // -----------------------------------
+    try {
+        const parsedContent = JSON.parse(rawText);
 
-    return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-            imagePrompt: parsedContent.image_prompt,
-            commandText: parsedContent.command_text,
-            imageUrl: imageUrl // <-- NOW INCLUDED IN RESPONSE
-        })
-    };
-} catch (e) {
-    // Ensure you log the error details for debugging
-    console.error("Error during image generation or final processing:", e.message); 
-    
-    return {
-        statusCode: 500,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({ 
-            message: "Failed to process the final result, check image generation steps.",
-            details: e.message 
-        })
-    };
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                imagePrompt: parsedContent.image_prompt, // Image prompt for frontend to use in Step 2
+                commandText: parsedContent.command_text  // Assertive text for frontend to display in Step 1
+            })
+        };
+    } catch (e) {
+         console.error("Failed to parse Prime Directive JSON output:", rawText);
+         return {
+             statusCode: 500,
+             headers: CORS_HEADERS,
+             body: JSON.stringify({ message: "AI response failed to provide valid JSON for Prime Directive." })
+         };
+    }
 }
         
         // --- 2c. Handle Text Generation (Gemini Flash) ---
@@ -808,3 +747,4 @@ try {
         };
     }
 };
+
