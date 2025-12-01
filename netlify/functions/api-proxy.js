@@ -24,7 +24,7 @@ const DATA_OPERATIONS = [
 
 // List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
-    "plan", "pep_talk", "prime_directive", "obstacle_analysis",
+    "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
