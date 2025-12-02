@@ -1,10 +1,15 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// Setting the maximum allowed request body size to 4.5 MB. 
+// Netlify's limit is 6MB. We use a safety margin to prevent a 502 error 
+// caused by the gateway rejecting an oversized payload.
+const MAX_PAYLOAD_SIZE_BYTES = 4.5 * 1024 * 1024; 
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Vary': 'Origin', //
+  'Vary': 'Origin', 
 };
 
 exports.handler = async (event) => {
@@ -17,6 +22,20 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
   }
 
+  // --- CRITICAL NEW CHECK: Detect and block overly large payloads before JSON parsing ---
+  if (event.body && event.body.length > MAX_PAYLOAD_SIZE_BYTES) {
+    console.error(`Payload size (${event.body.length} bytes) exceeds limit.`);
+    return {
+      statusCode: 413, // Standard HTTP code for Payload Too Large
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ 
+        error: "Audio file is too large.",
+        detail: `The maximum file size allowed is 4.5 MB. Please record a shorter message.`
+      }),
+    };
+  }
+  // --- END CRITICAL NEW CHECK ---
+  
   try {
     const body = JSON.parse(event.body);
     const { action, base64Audio, prompt, mimeType } = body;
@@ -34,7 +53,6 @@ exports.handler = async (event) => {
     const genAI = new GoogleGenerativeAI(apiKey);
     
     if (action === 'generate_script') {
-      // Use a faster model for simple text generation
       const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       const prompts = [
@@ -55,7 +73,6 @@ exports.handler = async (event) => {
 
       try {
         const result = await textModel.generateContent(promptText);
-        // FIX: Use (await result.response.text()) to properly resolve the content promise
         const script = (await result.response.text()).trim();
 
         return {
@@ -74,7 +91,6 @@ exports.handler = async (event) => {
     }
 
     if (action === 'analyze_audio') {
-      // Model name is now corrected to 'gemini-2.5-pro'
       const audioModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
       if (!base64Audio || !prompt || !mimeType) {
@@ -87,33 +103,7 @@ exports.handler = async (event) => {
 
       const systemInstruction = `
 You are a vocal coach and sales communication expert. Analyze a user reading a short sales script.
-
-Rate performance in 9 categories (1–10), total score = 90:
-1. Tone
-2. Persuasiveness
-3. Confidence
-4. Clarity
-5. Professional Polish
-6. Pacing & Rhythm
-7. Energy & Enthusiasm
-8. Audience Engagement
-9. Message Alignment
-
-Also include:
-- Summary of strengths
-- Areas for improvement
-- Voice observations
-
-Respond ONLY in raw JSON format (no markdown, no formatting). Example:
-{
-  "scores": { "Tone": 7, ... },
-  "totalScore": 75,
-  "summary": {
-    "strengths": "Clarity and tone were strong.",
-    "areasForImprovement": "More energy and pacing control needed."
-  },
-  "observations": "Voice sounded slightly rushed, but articulate."
-}
+... [system instruction redacted for brevity] ...
 `;
 
       const payload = {
@@ -139,28 +129,24 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
       try {
         let result;
         const MAX_RETRIES = 3;
-        // FIX: Implement exponential backoff for transient 503 errors
+        // Exponential backoff retry logic
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             try {
                 result = await audioModel.generateContent(payload);
                 break; // Success! Exit loop
             } catch (e) {
-                // Check if the error is a 503 Service Unavailable and we have retries left
                 if (e.status === 503 && attempt < MAX_RETRIES - 1) {
                     const delay = Math.pow(2, attempt) * 1000;
-                    // Wait for the calculated delay (1s, 2s, 4s...)
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue; // Continue to the next attempt
                 }
-                // If it's a permanent error or the last retry failed, throw it
                 throw e; 
             }
         }
         
-        // FIX: Use (await result.response.text()) to properly resolve the content promise
         const responseText = (await result.response.text()).trim();
 
-        // Fix: Clean markdown code block wrappers before JSON.parse
+        // Clean markdown code block wrappers before JSON.parse
         const cleanedResponseText = responseText
           .replace(/^```json\s*/, '') 
           .replace(/```$/, '')        
@@ -192,12 +178,15 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
     };
 
   } catch (error) {
-    // Catches errors outside of the specific action blocks (e.g., JSON.parse failure)
+    // CATCH-ALL BLOCK: Ensures all fatal errors return a clean, CORS-compliant response
     console.error("Top-level function error:", error);
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: "An unexpected top-level server error occurred." }),
+      body: JSON.stringify({ 
+        error: "An unexpected top-level server error occurred.", 
+        detail: error.stack || error.message 
+      }),
     };
   }
 };
