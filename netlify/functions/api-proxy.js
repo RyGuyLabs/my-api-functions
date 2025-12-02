@@ -648,13 +648,14 @@ const payload = {
         const parsedContent = JSON.parse(rawText);
 
         return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({
-                imagePrompt: parsedContent.image_prompt, // Image prompt for frontend to use in Step 2
-                commandText: parsedContent.command_text  // Assertive text for frontend to display in Step 1
-            })
-        };
+    statusCode: 200,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({
+        imagePrompt: parsedContent.image_prompt,
+        commandText: parsedContent.command_text,
+        nextAction: "image_generation" 
+    })
+};
     } catch (e) {
          console.error("Failed to parse Prime Directive JSON output:", rawText);
          return {
