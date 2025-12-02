@@ -8,6 +8,8 @@ node_bundler = "esbuild"
 
 # Configuration for the vocal-coach function.
 [functions.vocal-coach]
+# CRITICAL FIX: Set timeout to 20 seconds to prevent 502 Bad Gateway error during AI processing.
+timeout = 20
 environment = ["FIRST_API_KEY"]
 
 # Configuration for the separate Lead Qualifier function.
@@ -27,7 +29,6 @@ environment = [
 ]
 
 # --- CRITICAL CORS FIX: Ensures all functions return the required header ---
-# Updated Access-Control-Allow-Headers to prevent preflight OPTIONS failure.
 [[headers]]
 for = "/.netlify/functions/*"
 [headers.values]
