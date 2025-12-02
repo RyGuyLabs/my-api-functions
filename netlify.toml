@@ -1,39 +1,37 @@
-# netlify.toml
-
 [build]
-  functions = "netlify/functions"
-  publish = "." 
+functions = "netlify/functions"
+publish = "." 
 
 # Global functions settings.
 [functions]
-  node_bundler = "esbuild"
+node_bundler = "esbuild"
 
 # Configuration for the vocal-coach function.
 [functions.vocal-coach]
-  environment = ["FIRST_API_KEY"]
+environment = ["FIRST_API_KEY"]
 
 # Configuration for the separate Lead Qualifier function.
 [functions.lead-qualifier]
-  environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
+environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
 
-# --- Configuration for the Lead Generator function (The one reporting the error) ---
+# Configuration for the Lead Generator function.
 [functions.lead-generator]
-  environment = [
-    # These are the 7 variables required by the Lead Generator Orchestrator logic:
+environment = [
     "LEAD_QUALIFIER_API_KEY", 
-    "RYGUY_SEARCH_API_KEY",   
-    "B2B_PAIN_CSE_ID",        
+    "RYGUY_SEARCH_API_KEY",     
+    "B2B_PAIN_CSE_ID",          
     "CORP_COMP_CSE_ID",
     "TECH_SIM_CSE_ID",
     "SOCIAL_PRO_CSE_ID",
-    "DIR_INFO_CSE_ID"         
-  ]
+    "DIR_INFO_CSE_ID"           
+]
 
 # --- CRITICAL CORS FIX: Ensures all functions return the required header ---
-# Netlify should apply this automatically to all function paths.
+# Updated Access-Control-Allow-Headers to prevent preflight OPTIONS failure.
 [[headers]]
-  for = "/.netlify/functions/*"
-  [headers.values]
-    Access-Control-Allow-Origin = "https://www.ryguylabs.com"
-    Access-Control-Allow-Methods = "POST, GET, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type"
+for = "/.netlify/functions/*"
+[headers.values]
+Access-Control-Allow-Origin = "https://www.ryguylabs.com"
+Access-Control-Allow-Methods = "POST, GET, OPTIONS"
+Access-Control-Allow-Headers = "Content-Type, Authorization, X-Requested-With"
+Vary = "Origin"
