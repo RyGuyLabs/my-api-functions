@@ -1,7 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
+  'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Vary': 'Origin', //
@@ -32,7 +32,7 @@ exports.handler = async (event) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    
+    
     if (action === 'generate_script') {
       // Use a faster model for simple text generation
       const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -50,7 +50,7 @@ exports.handler = async (event) => {
         "Deliver a sentence that would energize a sales team in the morning."
       ];
 
-      const promptText = "Generate only the requested short, professional speech/pitch. " + 
+      const promptText = "Generate only the requested short, professional speech/pitch. " + 
                          prompts[Math.floor(Math.random() * prompts.length)];
 
       try {
@@ -135,16 +135,35 @@ Respond ONLY in raw JSON format (no markdown, no formatting). Example:
           parts: [{ text: systemInstruction }],
         },
       };
-      
+      
       try {
-        const result = await audioModel.generateContent(payload);
+        let result;
+        const MAX_RETRIES = 3;
+        // FIX: Implement exponential backoff for transient 503 errors
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+                result = await audioModel.generateContent(payload);
+                break; // Success! Exit loop
+            } catch (e) {
+                // Check if the error is a 503 Service Unavailable and we have retries left
+                if (e.status === 503 && attempt < MAX_RETRIES - 1) {
+                    const delay = Math.pow(2, attempt) * 1000;
+                    // Wait for the calculated delay (1s, 2s, 4s...)
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue; // Continue to the next attempt
+                }
+                // If it's a permanent error or the last retry failed, throw it
+                throw e; 
+            }
+        }
+        
         // FIX: Use (await result.response.text()) to properly resolve the content promise
         const responseText = (await result.response.text()).trim();
 
         // Fix: Clean markdown code block wrappers before JSON.parse
         const cleanedResponseText = responseText
-          .replace(/^```json\s*/, '') 
-          .replace(/```$/, '')        
+          .replace(/^```json\s*/, '') 
+          .replace(/```$/, '')        
           .trim();
 
         const feedback = JSON.parse(cleanedResponseText);
