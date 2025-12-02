@@ -1,10 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Define standard CORS headers for all responses
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Vary': 'Origin', //
 };
 
 exports.handler = async (event) => {
