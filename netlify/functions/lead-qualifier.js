@@ -1,6 +1,5 @@
-// Configuration for the Gemini API
-const GEMINI_API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
-const MODEL_NAME = "gemini-2.5-flash-preview-05-20"; // Supports JSON output
+const GEMINI_API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const MODEL_NAME = "gemini-2.5-flash"; // Supports JSON output
 const CUSTOM_SEARCH_URL = "https://www.googleapis.com/customsearch/v1";
 
 /**
