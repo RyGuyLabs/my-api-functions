@@ -31,12 +31,11 @@
     "DIR_INFO_CSE_ID"          
   ]
 
-# --- CRITICAL CORS FIX: Ensures all functions return the required header ---
-# Netlify should apply this automatically to all function paths.
 [[headers]]
-  for = "/.netlify/functions/*"
+  for = "/.netlify/functions/:splat"
   [headers.values]
-    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Origin = "https://www.ryguylabs.com"
     Access-Control-Allow-Methods = "POST, GET, OPTIONS"
-    # REVISION 2: Added X-Gemini-Model to support your proxy function's custom header.
-    Access-Control-Allow-Headers = "Content-Type, X-Gemini-Model"
+    Access-Control-Allow-Headers = "Content-Type, X-Gemini-Model, Authorization"
+    Access-Control-Max-Age = "86400"
+
