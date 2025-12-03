@@ -1,6 +1,3 @@
-// Netlify Function to proxy requests to the Gemini API, protecting the API key.
-// File must be deployed under netlify/functions/executive-assistant.js
-
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Setting the maximum allowed request body size to 4.5 MB. 
@@ -8,10 +5,33 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 // caused by the gateway rejecting an oversized payload.
 const MAX_PAYLOAD_SIZE_BYTES = 4.5 * 1024 * 1024; 
 
+// --- NEW: SCHEMA DEFINITION FOR AUDIO ANALYSIS ---
+const AUDIO_ANALYSIS_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+        score: {
+            type: "INTEGER",
+            description: "A numerical score (0-100) assessing the vocal delivery.",
+        },
+        transcript: {
+            type: "STRING",
+            description: "The complete, cleaned text transcript of the audio.",
+        },
+        analysis: {
+            type: "STRING",
+            description: "A detailed, markdown-formatted report on pacing, tone, and confidence.",
+        },
+        actionable_feedback: {
+            type: "STRING",
+            description: "3-5 specific, clear bullet points for immediate improvement.",
+        },
+    },
+    required: ["score", "transcript", "analysis", "actionable_feedback"],
+};
+// ------------------------------------------------
+
 const CORS_HEADERS = {
-    // REVISED: Changed to '*' to allow requests from any origin (e.g., localhost, staging) 
-    // to prevent the type of CORS issues seen previously. Change back to specific URL 
-    // (e.g., 'https://www.ryguylabs.com') for production security when ready.
+    // REVISED: Using '*' to prevent CORS issues on different deployment environments
     'Access-Control-Allow-Origin': '*', 
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -21,8 +41,7 @@ const CORS_HEADERS = {
 exports.handler = async (event) => {
     // Handle preflight OPTIONS request for CORS
     if (event.httpMethod === 'OPTIONS') {
-        // Must return 204 or 200 for preflight to succeed
-        return { statusCode: 204, headers: CORS_HEADERS, body: '' }; 
+        return { statusCode: 204, headers: CORS_HEADERS, body: '' };
     }
 
     if (event.httpMethod !== 'POST') {
@@ -139,7 +158,14 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                 // Exponential backoff retry logic
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                     try {
-                        result = await audioModel.generateContent(payload);
+                        // REVISED: Pass responseMimeType and responseSchema to guarantee JSON output
+                        result = await audioModel.generateContent({
+                            ...payload,
+                            config: {
+                                responseMimeType: "application/json",
+                                responseSchema: AUDIO_ANALYSIS_SCHEMA,
+                            }
+                        });
                         break; // Success! Exit loop
                     } catch (e) {
                         if (e.status === 503 && attempt < MAX_RETRIES - 1) {
@@ -153,13 +179,9 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                 
                 const responseText = (await result.response.text()).trim();
 
-                // Clean markdown code block wrappers before JSON.parse
-                const cleanedResponseText = responseText
-                    .replace(/^```json\s*/, '') 
-                    .replace(/```$/, '')      
-                    .trim();
-
-                const feedback = JSON.parse(cleanedResponseText);
+                // REMOVED: Markdown cleaning is no longer needed since JSON output is guaranteed
+                const feedback = JSON.parse(responseText);
+                
                 return {
                     statusCode: 200,
                     headers: CORS_HEADERS,
