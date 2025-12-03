@@ -5,7 +5,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 // caused by the gateway rejecting an oversized payload.
 const MAX_PAYLOAD_SIZE_BYTES = 4.5 * 1024 * 1024; 
 
-// --- NEW: SCHEMA DEFINITION FOR AUDIO ANALYSIS ---
+// --- SCHEMA DEFINITION FOR AUDIO ANALYSIS ---
 const AUDIO_ANALYSIS_SCHEMA = {
     type: "OBJECT",
     properties: {
@@ -30,22 +30,18 @@ const AUDIO_ANALYSIS_SCHEMA = {
 };
 // ------------------------------------------------
 
-const CORS_HEADERS = {
-    // REVISED: Using '*' to prevent CORS issues on different deployment environments
-    'Access-Control-Allow-Origin': '*', 
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Vary': 'Origin', 
-};
+// CORS_HEADERS REMOVED: Relying on netlify.toml global configuration for resilience.
 
 exports.handler = async (event) => {
     // Handle preflight OPTIONS request for CORS
     if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+        // Netlify's global CORS header policy in netlify.toml handles the headers here.
+        return { statusCode: 204, body: '' }; 
     }
 
     if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, headers: CORS_HEADERS, body: 'Method Not Allowed' };
+        // Only return status code and body; global headers will be added by Netlify.
+        return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
     // --- CRITICAL NEW CHECK: Detect and block overly large payloads before JSON parsing ---
@@ -53,7 +49,6 @@ exports.handler = async (event) => {
         console.error(`Payload size (${event.body.length} bytes) exceeds limit.`);
         return {
             statusCode: 413, // Standard HTTP code for Payload Too Large
-            headers: CORS_HEADERS,
             body: JSON.stringify({ 
                 error: "Audio file is too large.",
                 detail: `The maximum file size allowed is 4.5 MB. Please record a shorter message.`
@@ -71,7 +66,6 @@ exports.handler = async (event) => {
             console.error("API Key (FIRST_API_KEY) is not set in environment variables.");
             return {
                 statusCode: 500,
-                headers: CORS_HEADERS,
                 body: JSON.stringify({ error: "Server configuration error: API key missing." }),
             };
         }
@@ -103,14 +97,12 @@ exports.handler = async (event) => {
 
                 return {
                     statusCode: 200,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify({ script: script }),
                 };
             } catch (apiError) {
                 console.error("Error during script generation:", apiError);
                 return {
                     statusCode: 500,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify({ error: "Failed to generate script from AI model." }),
                 };
             }
@@ -122,7 +114,6 @@ exports.handler = async (event) => {
             if (!base64Audio || !prompt || !mimeType) {
                 return {
                     statusCode: 400,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify({ error: "Missing required fields for audio analysis." }),
                 };
             }
@@ -168,7 +159,7 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                         });
                         break; // Success! Exit loop
                     } catch (e) {
-                        // ENHANCEMENT: Retry on both 503 (Service Unavailable) and 429 (Too Many Requests)
+                        // Retry on both 503 (Service Unavailable) and 429 (Too Many Requests)
                         if ((e.status === 503 || e.status === 429) && attempt < MAX_RETRIES - 1) { 
                             const delay = Math.pow(2, attempt) * 1000;
                             await new Promise(resolve => setTimeout(resolve, delay));
@@ -185,14 +176,12 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                 
                 return {
                     statusCode: 200,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify(feedback),
                 };
             } catch (jsonOrApiError) {
                 console.error("Error during audio analysis (AI response/API error):", jsonOrApiError);
                 return {
                     statusCode: 500,
-                    headers: CORS_HEADERS,
                     body: JSON.stringify({
                         error: "Failed to process audio analysis or model response.",
                         detail: (jsonOrApiError.message || "Unknown API/JSON failure").substring(0, 100) + "...",
@@ -203,7 +192,6 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
 
         return {
             statusCode: 400,
-            headers: CORS_HEADERS,
             body: JSON.stringify({ error: "Invalid action specified." }),
         };
 
@@ -212,7 +200,6 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
         console.error("Top-level function error:", error);
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,
             body: JSON.stringify({ 
                 error: "An unexpected top-level server error occurred.", 
                 detail: error.stack || error.message 
