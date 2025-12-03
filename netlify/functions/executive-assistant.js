@@ -81,8 +81,8 @@ exports.handler = async (event) => {
         // Netlify downcases custom headers, so check for 'x-gemini-model'.
         const modelFromHeader = event.headers['x-gemini-model'];
 
-        // Determine the actual model name. Use the header value first, then fallback to body.model (if present), then default.
-        const actualModel = modelFromHeader || body.model || 'gemini-2.5-flash-preview-09-2025';
+        // REVISED: Fallback model updated to the stable alias to prevent future retirement errors.
+        const actualModel = modelFromHeader || body.model || 'gemini-2.5-flash';
 
         // Destructure the rest of the configuration from the body.
         const { contents, tools, systemInstruction, generationConfig } = body;
