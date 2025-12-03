@@ -158,10 +158,10 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                 // Exponential backoff retry logic
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                     try {
-                        // REVISED: Pass responseMimeType and responseSchema to guarantee JSON output
+                        // FINAL REVISION: Pass 'generationConfig' as a top-level property alongside 'contents' and 'systemInstruction'
                         result = await audioModel.generateContent({
                             ...payload,
-                            config: {
+                            generationConfig: { // <-- CORRECT PROPERTY NAME
                                 responseMimeType: "application/json",
                                 responseSchema: AUDIO_ANALYSIS_SCHEMA,
                             }
@@ -179,7 +179,7 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                 
                 const responseText = (await result.response.text()).trim();
 
-                // REMOVED: Markdown cleaning is no longer needed since JSON output is guaranteed
+                // JSON.parse will now work because the model is forced to return JSON
                 const feedback = JSON.parse(responseText);
                 
                 return {
