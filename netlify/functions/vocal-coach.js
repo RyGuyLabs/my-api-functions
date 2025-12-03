@@ -158,22 +158,23 @@ You are a vocal coach and sales communication expert. Analyze a user reading a s
                 // Exponential backoff retry logic
                 for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                     try {
-                        // FINAL REVISION: Pass 'generationConfig' as a top-level property alongside 'contents' and 'systemInstruction'
+                        // Pass 'generationConfig' as a top-level property
                         result = await audioModel.generateContent({
                             ...payload,
-                            generationConfig: { // <-- CORRECT PROPERTY NAME
+                            generationConfig: { 
                                 responseMimeType: "application/json",
                                 responseSchema: AUDIO_ANALYSIS_SCHEMA,
                             }
                         });
                         break; // Success! Exit loop
                     } catch (e) {
-                        if (e.status === 503 && attempt < MAX_RETRIES - 1) {
+                        // ENHANCEMENT: Retry on both 503 (Service Unavailable) and 429 (Too Many Requests)
+                        if ((e.status === 503 || e.status === 429) && attempt < MAX_RETRIES - 1) { 
                             const delay = Math.pow(2, attempt) * 1000;
                             await new Promise(resolve => setTimeout(resolve, delay));
                             continue; // Continue to the next attempt
                         }
-                        throw e; 
+                        throw e; // Throw if not a retryable error or max attempts reached
                     }
                 }
                 
