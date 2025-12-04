@@ -123,9 +123,7 @@ ${goalsText}
         });
 
         // Extract the text using the SDK's safe response structure
-        const aiText =
-        response?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "No response received from AI.";
+        const aiText = response?.text || "No response received from AI.";
 
         // -----------------------------------------------------
         // 4. Return Success Response
