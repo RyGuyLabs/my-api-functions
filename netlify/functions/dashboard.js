@@ -97,7 +97,7 @@ ${goalsText}
     if (!promptMap[feature]) {
         return {
             statusCode: 400,
-            headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+            headers: { "Access-Control-Allow-Origin": "*" },
             body: JSON.stringify({ text: `Unknown feature: ${feature}` }),
         };
     }
@@ -134,7 +134,7 @@ ${goalsText}
             statusCode: 200,
             headers: {
                 // Ensure all CORS headers are present on success
-                "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+                "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "Content-Type",
                 "Access-Control-Allow-Methods": "POST, OPTIONS",
             },
@@ -146,7 +146,7 @@ ${goalsText}
         console.error("Server or AI SDK Error:", e);
         return {
             statusCode: 500,
-            headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+            headers: { "Access-Control-Allow-Origin": "*" },
             body: JSON.stringify({ text: "Server error: " + (e.message || "An unknown error occurred.") }),
         };
     }
