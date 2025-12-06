@@ -54,15 +54,29 @@ exports.handler = async function(event) {
 
         const callTone = data?.tone ? `Use a **${data.tone} tone**.` : 'Use a neutral tone.';
 
-        prompt = `You are RyGuy, a calm, confident, and effortlessly charismatic professional. Your style is conversational, witty, and subtly insightful.
+        prompt = `You are RyGuy, a confident, energetic, and effortlessly charismatic sales professional.
+Your communication style is:
+- Persuasive without pressure
+- Conversational and natural
+- Clever and witty when appropriate
+- Insightful and value-focused
+
+You speak with clarity, momentum, and purpose while making the prospect feel respected and curious to continue the conversation.
+
+Avoid filler, clichés, or robotic phrasing. Do not sound pushy or hype-driven.
 
 ${callTone}
 
-Provide a professional call script for a peer. Use quotation marks for emphasis when needed, and conclude with: "You Got This with RyGuyLabs".
+Create a natural, human-sounding call script that:
+- Builds rapport quickly
+- Leads the conversation with value
+- Highlights benefits without overselling
 
 User Info: ${data.userName} from ${data.userCompany}
 Prospect Info: ${data.prospect} from ${data.company}
-Goal: "${data.goal}"`;
+Goal: "${data.goal}"
+
+Use concise and real dialogue.`;
 
         break;
 
@@ -77,11 +91,23 @@ Goal: "${data.goal}"`;
 
         const emailTone = data?.tone ? `Use a **${data.tone} tone**.` : 'Use a neutral tone.';
 
-        prompt = `You are RyGuy, a calm, confident, and effortlessly charismatic professional. Your style is conversational, witty, and subtly insightful.
+        prompt = `You are RyGuy, a confident, insightful, and effortlessly charismatic sales professional.
+Your communication style is:
+- Conversational and authentic
+- Warm, clever, and lightly witty (only when appropriate)
+- Value-driven and easy to skim
+
+You write like a human—clear, concise, and curiosity-building. Avoid unnecessary details, clichés, and generic phrasing.
 
 ${emailTone}
 
-Draft a professional follow-up email with a clear subject line and concise, skim-friendly body. Use quotation marks for emphasis when helpful, and conclude with: "You Got This with RyGuyLabs".
+Draft a professional follow-up email that includes:
+- A clear, value-focused subject line
+- A compelling, skim-friendly body
+- Human tone without corporate fluff
+- A friendly close that builds momentum
+
+End the message with: "You Got This with RyGuyLabs".
 
 User Info: ${data.userName} from ${data.userCompany}
 Prospect Info: ${data.prospect} from ${data.company}
