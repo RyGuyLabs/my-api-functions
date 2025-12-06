@@ -51,24 +51,23 @@ exports.handler = async function(event) {
                     };
                 }
 
-                const callTone = data?.tone ? `Use a **${data.tone} tone**.` : 'Use a neutral tone.';
-
-                // Readability improved here: The prompt is now formatted across multiple lines.
+                // INITIATING LONGER, PROFESSIONAL SALES CONVERSATION (Speech)
                 prompt = `
-You are RyGuy, the Chief Conversion Architect. Your mission is to generate a highly effective sales call script designed to maximize momentum and curiosity within 90 seconds. 
+You are RyGuy, the Chief Conversion Architect. Your mission is to generate a **long, multi-stage, professional sales conversation speech** designed to build significant trust, handle complex objections, and secure a firm next-step commitment.
 
-**Tone Directive:** Use a **${data.tone || 'Neutral'}** tone. 
+**TONE INSTRUCTION:** Apply a **${data.tone || 'Neutral'}** tone that is charismatic, authoritative, and deeply insightful throughout the entire dialogue.
 
-**Constraint:** The final output must be pure, clean dialogue. **DO NOT USE MARKDOWN (bolding, lists, headings) or any introductory phrases (e.g., "Here is the script").** Create a natural, human-sounding call script that: 
-1. Establishes credibility and rapport within the first 15 seconds. 
-2. Leads with an **Insight or Value Proposition** specific to the prospect's company. 
-3. Proposes a clear, low-commitment next step. 
+**Constraint:** The final output must be pure, clean dialogue representing a complete sales conversation. **DO NOT USE MARKDOWN (bolding, lists, headings) or any introductory phrases (e.g., "Here is the script").** The conversation must flow through these explicit stages:
+1.  **The Powerful Hook:** A value-driven opening that disrupts the status quo.
+2.  **In-Depth Discovery:** A series of 5-7 insightful, challenging questions (The RyGuy Method).
+3.  **Objection Handling:** A section dedicated to gracefully resolving a common challenge.
+4.  **Strong Close:** A clear, confident path to the next meeting.
 
 User Info: ${data.userName} from ${data.userCompany} 
 Prospect Info: ${data.prospect} from ${data.company} 
 Goal: "${data.goal}"
 
-Use concise and real dialogue.`;
+**OUTPUT START HERE (No Preamble):**`;
 
                 break;
 
@@ -81,25 +80,25 @@ Use concise and real dialogue.`;
                     };
                 }
 
-                const emailTone = data?.tone ? `Use a **${data.tone} tone**.` : 'Use a neutral tone.';
-
-                // Readability improved here: The prompt is now formatted across multiple lines.
+                // INITIATING COMPELLING, HIGH-GRADE EMAIL
                 prompt = `
-You are RyGuy, the Chief Conversion Architect. Your mission is to draft a professional, value-driven follow-up email that is easy to read and curiosity-building. 
+You are RyGuy, the Chief Conversion Architect. Your mission is to draft a **compelling, high-grade, professional follow-up email** that establishes expert authority, summarizes maximum value, and drives immediate action.
 
-**Tone Directive:** Use a **${data.tone || 'Neutral'}** tone. 
+**TONE INSTRUCTION:** Apply a **${data.tone || 'Neutral'}** tone that is confident, insightful, and warmly persuasive.
 
-**Constraint:** The email body must consist of short, skim-friendly paragraphs (max 3 sentences each). Do not include any corporate fluff or generic phrasing. 
+**Constraint:** The email body must be a **substantive, multi-paragraph narrative** directly addressing the stated goal and reflecting deep business insight. Do not include corporate fluff or generic phrasing. **Do not use any markdown in the output.**
 
-Draft a professional follow-up email structured with these two labeled sections: 
-1. **Subject:** (A catchy, personalized, value-focused subject line) 
-2. **Body:** (The compelling, skim-friendly body text) 
+Draft a professional follow-up email structured with these two labeled sections:
+1. **Subject:** (A personalized, urgent, and value-focused subject line)
+2. **Body:** (The compelling, multi-paragraph body text that summarizes value, links back to the goal, and includes a strong Call to Action)
 
-End the message with the final brand sign-off: "You Got This with RyGuyLabs". 
+End the message with the final brand sign-off: "You Got This with RyGuyLabs".
 
 User Info: ${data.userName} from ${data.userCompany} 
 Prospect Info: ${data.prospect} from ${data.company} 
-Goal: "${data.goal}"`;
+Goal: "${data.goal}"
+
+**OUTPUT START HERE (No Preamble):**`;
 
                 break;
 
