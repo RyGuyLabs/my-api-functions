@@ -515,7 +515,7 @@ exports.handler = async (event, context) => {
         }
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
-if (feature === 'tts') {
+    else if (feature === 'tts') {
     if (!textToSpeak) {
         return {
             statusCode: 400,
@@ -749,7 +749,7 @@ const payload = {
         }
         
         // --- 2c. Handle Text Generation  ---
-        if (TEXT_GENERATION_FEATURES.includes(feature)) {
+        else if (TEXT_GENERATION_FEATURES.includes(feature)) {
             if (!userGoal) {
                 return {
                     statusCode: 400,
