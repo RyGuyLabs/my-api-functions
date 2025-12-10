@@ -468,7 +468,7 @@ exports.handler = async (event, context) => {
     }
 
     const IMAGEN_MODEL = "imagen-4.0-ultra-generate-001"; 
-    const IMAGEN_API_URL = `https://imagemaking.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;            
+    const IMAGEN_API_URL = `https://imagemaking.googleapis.com/v1/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;            
     
     const imagenPayload = {
         model: IMAGEN_MODEL, 
