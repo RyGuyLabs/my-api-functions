@@ -641,26 +641,40 @@ const payload = {
     const result = await response.json();
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    // 5. Parse and Return Structured Data
+    // 5. Parse and Process Structured Data
     try {
         const parsedContent = JSON.parse(rawText);
+        const imagePrompt = parsedContent.image_prompt;
+        const commandText = parsedContent.command_text;
+
+        let imageUrl = '';
+        
+        // **FIX: Synchronously generate the image before returning**
+        if (imagePrompt) {
+            try {
+                imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
+            } catch (e) {
+                console.warn("Prime Directive Image Generation Failed (Continuing with text):", e.message);
+                // The main handler will still return the text, just without an image.
+            }
+        }
 
         return {
-    statusCode: 200,
-    headers: CORS_HEADERS,
-    body: JSON.stringify({
-        imagePrompt: parsedContent.image_prompt,
-        commandText: parsedContent.command_text,
-        nextAction: "image_generation" 
-    })
-};
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                imagePrompt: imagePrompt,
+                commandText: commandText,
+                imageUrl: imageUrl // <--- CRITICAL FIX: Include the final image URL
+            })
+        };
     } catch (e) {
-         console.error("Failed to parse Prime Directive JSON output:", rawText);
-         return {
-             statusCode: 500,
-             headers: CORS_HEADERS,
-             body: JSON.stringify({ message: "AI response failed to provide valid JSON for Prime Directive." })
-         };
+        console.error("Failed to parse Prime Directive JSON output:", rawText, e);
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "AI response failed to provide valid JSON for Prime Directive." })
+        };
     }
 }
         // --- 2c. Handle BARRIER BREAKER (Gemini Flash - Structured JSON) ---
