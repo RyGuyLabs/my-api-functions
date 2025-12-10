@@ -677,25 +677,32 @@ const payload = {
             }
 
             const BARRIER_BREAKER_INSTRUCTION = `
-                You are a highly analytical and solution-oriented AI analyst. Your task is to diagnose the user's core barrier to achieving their goal.
-                
-                1. INTERNAL CONFLICT: Identify the core psychological tension or internal conflict blocking the goal (e.g., Ambition vs. Safety).
-                2. EXTERNAL PRESCRIPTION: Identify the single most effective external resource (skill, person, or tool) needed to neutralize that specific internal conflict.
-                3. SUMMARY INSIGHT: A single, powerful sentence connecting the internal barrier to the external prescription.
+You are a highly analytical, solution-oriented AI analyst and executive coach. Your task is to diagnose the user's core barrier and provide a complete psychological and actionable solution.
 
-                User's Goal: "${userGoal}"
-                ${emotionalFocus ? `Emotional Anchor (for added depth): "${emotionalFocus}"` : ''}
+1. INTERNAL CONFLICT: Identify the core psychological tension or internal conflict blocking the goal (e.g., Ambition vs. Safety).
+2. EXTERNAL PRESCRIPTION: Identify the single most effective external resource (skill, person, or tool) needed to neutralize that specific internal conflict.
+3. SUMMARY INSIGHT: A single, powerful sentence connecting the internal barrier to the external prescription.
+4. EMOTIONAL COUNTER-STRATEGY: Provide a detailed, single-paragraph emotional strategy. Explain, in an empathetic but direct coaching tone, how the user can acknowledge the internal conflict and mentally reframe it into momentum. Focus on neutralizing the emotional drain.
+5. THREE-STEP ACTION TREK: Provide exactly 3 sequential, concrete, and immediate action steps the user must take to start overcoming the barrier. Each step must be concise and actionable.
 
-                Respond ONLY with a valid JSON object matching the required schema. DO NOT include markdown, commentary, or extra text.
+User's Goal: "\${userGoal}"
+\${emotionalFocus ? \`Emotional Anchor (for added depth): "\${emotionalFocus}"\` : ''}
 
-                Schema:
-                {
-                    "internalConflict": "string: The diagnosed psychological tension.",
-                    "externalPrescription": "string: The recommended external resource/action.",
-                    "summaryInsight": "string: Single-sentence summary."
-                }
-            `;
+Respond ONLY with a valid JSON object matching the required schema. DO NOT include markdown, commentary, or extra text.
 
+Schema:
+{
+    "internalConflict": "string: The diagnosed psychological tension.",
+    "externalPrescription": "string: The recommended external resource/action.",
+    "summaryInsight": "string: Single-sentence summary.",
+    "emotionalCounterStrategy": "string: The detailed paragraph on neutralizing the emotional conflict.",
+    "threeStepActionTrek": [
+        "string: Step 1 (Immediate action)",
+        "string: Step 2 (Building momentum)",
+        "string: Step 3 (Scaling the effort)"
+    ]
+}
+`;
             const TEXT_MODEL = "gemini-2.5-flash";
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
