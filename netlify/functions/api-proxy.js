@@ -462,57 +462,69 @@ exports.handler = async (event, context) => {
         // SECTION 2: GOOGLE AI GENERATION FEATURES (UN-GATED)
         // ------------------------------------------------------------------
 
-        // --- 2a. Handle Image Generation (Imagen) ---
-        if (feature === 'image_generation') {
-            if (!imagePrompt) {
-                return {
-                    statusCode: 400,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing "imagePrompt" data for image generation.' })
-                };
-            }
+        const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
+    if (!imagePrompt) {
+        throw new Error('Missing "imagePrompt" for image generation.');
+    }
 
-            const IMAGEN_MODEL = "imagen-2.0-generate-002"; 
-            const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;            
-            const imagenPayload = {
-    model: IMAGEN_MODEL, 
-    prompt: imagePrompt, 
-    config: {
-        numberOfImages: 1,
-        outputMimeType: "image/png",
-        aspectRatio: "1:1"
-                }
-            };
-
-            const response = await fetch(IMAGEN_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(imagenPayload)
-            });
-
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Imagen API Error:", response.status, errorBody);
-                throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            const base64Data = result?.generatedImages?.[0]?.image?.imageBytes;
-
-            if (!base64Data) {
-                console.error("Imagen API Response Missing Data:", JSON.stringify(result));
-                throw new Error("Imagen API response did not contain image data.");
-            }
-
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    imageUrl: `data:image/png;base64,${base64Data}`,
-                    altText: `Generated vision for: ${imagePrompt}`
-                })
-            };
+    const IMAGEN_MODEL = "imagen-2.0-generate-002"; 
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;            
+    
+    const imagenPayload = {
+        model: IMAGEN_MODEL, 
+        prompt: imagePrompt, 
+        config: {
+            numberOfImages: 1,
+            outputMimeType: "image/png",
+            aspectRatio: "1:1"
         }
+    };
+
+    const response = await fetch(IMAGEN_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagenPayload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Imagen API Error:", response.status, errorBody);
+        throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const base64Data = result?.generatedImages?.[0]?.image?.imageBytes;
+
+    if (!base64Data) {
+        console.error("Imagen API Response Missing Data:", JSON.stringify(result));
+        throw new Error("Imagen API response did not contain image data.");
+    }
+
+    return `data:image/png;base64,${base64Data}`;
+};
+
+// --- NEW 2a. Handle Image Generation (Redirect to Helper) ---
+// This handles the original standalone 'image_generation' feature.
+if (feature === 'image_generation') {
+    try {
+        const imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
+        
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                imageUrl: imageUrl,
+                altText: `Generated vision for: ${imagePrompt}`
+            })
+        };
+    } catch (error) {
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: error.message })
+        };
+    }
+}
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
     else if (feature === 'tts') {
