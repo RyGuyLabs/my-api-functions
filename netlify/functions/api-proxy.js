@@ -537,7 +537,7 @@ if (feature === 'tts') {
                 }
             }
         }
-    }; // <--- THIS SEMICOLON CLOSES THE TTS PAYLOAD
+    }
 
     const response = await retryFetch(TTS_API_URL, {
         method: 'POST',
@@ -574,8 +574,6 @@ if (feature === 'tts') {
         })
     };
 }
-
-// Inside exports.handler, where you check the 'feature' variable:
 
 // Add this block near your other feature handlers (e.g., 'tts', 'image_generation')
 else if (feature === 'prime_directive') {
@@ -665,8 +663,92 @@ const payload = {
          };
     }
 }
+        // --- 2c. Handle BARRIER BREAKER (Gemini Flash - Structured JSON) ---
+        else if (feature === 'BREAK_BARRIER' || feature === 'dream_energy_analysis') {
+            const userGoal = body.userGoal;
+            const emotionalFocus = body.emotionalFocus || ''; // Optional
+
+            if (!userGoal) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required userGoal data for Barrier Breaker.' })
+                };
+            }
+
+            const BARRIER_BREAKER_INSTRUCTION = `
+                You are a highly analytical and solution-oriented AI analyst. Your task is to diagnose the user's core barrier to achieving their goal.
+                
+                1. INTERNAL CONFLICT: Identify the core psychological tension or internal conflict blocking the goal (e.g., Ambition vs. Safety).
+                2. EXTERNAL PRESCRIPTION: Identify the single most effective external resource (skill, person, or tool) needed to neutralize that specific internal conflict.
+                3. SUMMARY INSIGHT: A single, powerful sentence connecting the internal barrier to the external prescription.
+
+                User's Goal: "${userGoal}"
+                ${emotionalFocus ? `Emotional Anchor (for added depth): "${emotionalFocus}"` : ''}
+
+                Respond ONLY with a valid JSON object matching the required schema. DO NOT include markdown, commentary, or extra text.
+
+                Schema:
+                {
+                    "internalConflict": "string: The diagnosed psychological tension.",
+                    "externalPrescription": "string: The recommended external resource/action.",
+                    "summaryInsight": "string: Single-sentence summary."
+                }
+            `;
+
+            const TEXT_MODEL = "gemini-2.5-flash";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+            const userPrompt = `Generate the Barrier Breaker analysis based on the Goal and Emotional Anchor.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: BARRIER_BREAKER_INSTRUCTION }] },
+                generationConfig: {
+                    temperature: 0.3,
+                    responseMimeType: "application/json"
+                }
+            };
+
+            const response = await retryFetch(TEXT_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Barrier Breaker API Error:", response.status, errorBody);
+                throw new Error(`Barrier Breaker API failed.`);
+            }
+
+            const result = await response.json();
+            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            try {
+                const parsedContent = JSON.parse(rawText);
+
+                // Ensure the required keys are present before returning
+                if (!parsedContent.internalConflict || !parsedContent.externalPrescription) {
+                    throw new Error("Parsed JSON missing required Barrier Breaker fields.");
+                }
+
+                return {
+                    statusCode: 200,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify(parsedContent) // Return the full object
+                };
+            } catch (e) {
+                console.error("Failed to parse Barrier Breaker JSON output:", rawText);
+                return {
+                    statusCode: 500,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: "AI response failed to provide valid JSON for Barrier Breaker." })
+                };
+            }
+        }
         
-        // --- 2c. Handle Text Generation (Gemini Flash) ---
+        // --- 2c. Handle Text Generation  ---
         if (TEXT_GENERATION_FEATURES.includes(feature)) {
             if (!userGoal) {
                 return {
