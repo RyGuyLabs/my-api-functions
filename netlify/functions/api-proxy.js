@@ -471,24 +471,28 @@ exports.handler = async (event, context) => {
     const IMAGEN_MODEL = "gemini-2.5-flash-image";
     const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
-    // --- FIX 2: Correct Payload Structure for generateContent (Minimal Working Version) ---
-    // The prompt must be sent in a 'contents' array.
+    // --- FIX 2 & 3: Correct Payload Structure with Mandated Image Output ---
     const geminiImagePayload = {
         contents: [
             { 
-                // The role is optional for the first prompt, but good practice
                 role: "user", 
                 parts: [{ text: imagePrompt }] 
             }
         ],
-        // The old 'config' and 'prompt' fields that caused the 400 error are removed.
-        // We will test with minimal payload first.
+        // *** THIS IS THE CRITICAL SECTION THAT FORCES IMAGE GENERATION ***
+        generationConfig: {
+            responseMimeType: "image/png", 
+            responseModalities: ["IMAGE"],
+            imageConfig: {
+                aspectRatio: "1:1" 
+            }
+        }
     };
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiImagePayload) // Use the new payload
+        body: JSON.stringify(geminiImagePayload)
     });
 
     if (!response.ok) {
@@ -499,12 +503,10 @@ exports.handler = async (event, context) => {
 
     const result = await response.json();
     
-    // --- FIX 3: Correct Response Parsing for generateContent ---
-    // The image data is now nested deeper under candidates/content/parts/inlineData/data
+    // --- FIX 4: Correct Response Parsing ---
     const base64Data = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
     if (!base64Data) {
-        // If no image is returned, the model might have returned text instead.
         const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (textResponse) {
              console.warn("Gemini Image API returned text instead of image:", textResponse);
@@ -516,28 +518,6 @@ exports.handler = async (event, context) => {
 
     return `data:image/png;base64,${base64Data}`;
 };
-// --- NEW 2a. Handle Image Generation (Redirect to Helper) ---
-// This handles the original standalone 'image_generation' feature.
-if (feature === 'image_generation') {
-    try {
-        const imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
-        
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({
-                imageUrl: imageUrl,
-                altText: `Generated vision for: ${imagePrompt}`
-            })
-        };
-    } catch (error) {
-        return {
-            statusCode: 500,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: error.message })
-        };
-    }
-}
 
         // --- 2b. Handle TTS Generation (Gemini TTS) ---
     else if (feature === 'tts') {
