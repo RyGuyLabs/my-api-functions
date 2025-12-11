@@ -467,7 +467,7 @@ exports.handler = async (event, context) => {
         throw new Error('Missing "imagePrompt" for image generation.');
     }
 
-    const IMAGEN_MODEL = "imagen-4.0-generate"; 
+    const IMAGEN_MODEL = "imagen-3.0-generate-002";
     const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateImages?key=${GEMINI_API_KEY}`;            
     
     const imagenPayload = {
