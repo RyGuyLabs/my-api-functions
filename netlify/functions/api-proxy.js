@@ -467,42 +467,55 @@ exports.handler = async (event, context) => {
         throw new Error('Missing "imagePrompt" for image generation.');
     }
 
+    // --- FIX 1: Correct Model and generateContent Endpoint ---
     const IMAGEN_MODEL = "gemini-2.5-flash-image";
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;            
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
-    const imagenPayload = {
-        model: IMAGEN_MODEL, 
-        prompt: imagePrompt, 
-        config: {
-            numberOfImages: 1,
-            outputMimeType: "image/png",
-            aspectRatio: "1:1"
-        }
+    // --- FIX 2: Correct Payload Structure for generateContent (Minimal Working Version) ---
+    // The prompt must be sent in a 'contents' array.
+    const geminiImagePayload = {
+        contents: [
+            { 
+                // The role is optional for the first prompt, but good practice
+                role: "user", 
+                parts: [{ text: imagePrompt }] 
+            }
+        ],
+        // The old 'config' and 'prompt' fields that caused the 400 error are removed.
+        // We will test with minimal payload first.
     };
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagenPayload)
+        body: JSON.stringify(geminiImagePayload) // Use the new payload
     });
 
     if (!response.ok) {
         const errorBody = await response.text();
-        console.error("Imagen API Error:", response.status, errorBody);
-        throw new Error(`Imagen API failed with status ${response.status}: ${response.statusText}`);
+        console.error("Gemini API Error:", response.status, errorBody);
+        throw new Error(`Gemini API failed with status ${response.status}: ${response.statusText}. Error body: ${errorBody}`);
     }
 
     const result = await response.json();
-    const base64Data = result?.generatedImages?.[0]?.image?.imageBytes;
+    
+    // --- FIX 3: Correct Response Parsing for generateContent ---
+    // The image data is now nested deeper under candidates/content/parts/inlineData/data
+    const base64Data = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
     if (!base64Data) {
-        console.error("Imagen API Response Missing Data:", JSON.stringify(result));
-        throw new Error("Imagen API response did not contain image data.");
+        // If no image is returned, the model might have returned text instead.
+        const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (textResponse) {
+             console.warn("Gemini Image API returned text instead of image:", textResponse);
+             throw new Error(`Gemini Image API did not return an image. Model response: ${textResponse.substring(0, 100)}...`);
+        }
+        console.error("Gemini Image Response Missing Data:", JSON.stringify(result));
+        throw new Error("Gemini Image API response did not contain image data.");
     }
 
     return `data:image/png;base64,${base64Data}`;
 };
-
 // --- NEW 2a. Handle Image Generation (Redirect to Helper) ---
 // This handles the original standalone 'image_generation' feature.
 if (feature === 'image_generation') {
