@@ -23,7 +23,7 @@ exports.handler = async (event) => {
 
     try {
         // 1. Get the userInput sent from the frontend
-        const { userInput } = JSON.parse(event.body);
+        const { userInput, userId } = JSON.parse(event.body);
 
         if (!userInput) {
             return { statusCode: 400, body: 'Missing userInput in request body.' };
