@@ -53,9 +53,41 @@ exports.handler = async (event) => {
             }
         });
 
-        // 4. Extract the JSON text and parse it
-        const jsonText = response.text;
-        const parsedTasks = JSON.parse(jsonText);
+       // 4. Extract the JSON text and parse it
+const jsonText = response.text;
+const parsedTasks = JSON.parse(jsonText);
+
+// 5. Store each generated task in Firestore using the REST API
+const BATCH_URL = `${FIRESTORE_BASE_URL}artifacts/appId/users/${userId}/tasks:batchWrite`;
+
+const writes = parsedTasks.map(task => ({
+    update: {
+        // Construct the full document path. Note: taskName is URL-safe here.
+        name: `${FIRESTORE_BASE_URL}artifacts/appId/users/${userId}/tasks/${task.taskName.replace(/\s/g, '-')}`,
+        fields: {
+            taskName: { stringValue: task.taskName },
+            estimatedValue: { integerValue: task.estimatedValue },
+            status: { stringValue: 'pending' }, // Default status
+            timestamp: { timestampValue: new Date().toISOString() }
+        }
+    }
+}));
+
+const firestoreResponse = await fetch(BATCH_URL, {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        // IMPORTANT: FIRESTORE_KEY must be a valid Service Account Token/ID Token for write access
+        'Authorization': `Bearer ${FIRESTORE_KEY}` 
+    },
+    body: JSON.stringify({ writes })
+});
+
+if (!firestoreResponse.ok) {
+    const errorDetails = await firestoreResponse.json();
+    console.error('Firestore Batch Write Failed:', firestoreResponse.status, errorDetails);
+    // Continue execution to return the tasks even if storage failed initially
+}
 
         // 5. Return the parsed JSON directly to the frontend
         return {
