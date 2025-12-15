@@ -97,7 +97,7 @@ if (!firestoreResponse.ok) {
             'Access-Control-Allow-Origin': '*', 
             },
             body: JSON.stringify(parsedTasks)
-
+        };
     } catch (error) {
         console.error('LLM Function Error:', error);
         return {
