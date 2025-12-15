@@ -92,9 +92,11 @@ if (!firestoreResponse.ok) {
         // 5. Return the parsed JSON directly to the frontend
         return {
             statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*', 
+            },
             body: JSON.stringify(parsedTasks)
-        };
 
     } catch (error) {
         console.error('LLM Function Error:', error);
