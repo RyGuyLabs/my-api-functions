@@ -25,8 +25,8 @@ exports.handler = async (event) => {
         // 1. Get the userInput sent from the frontend
         const { userInput, userId } = JSON.parse(event.body);
 
-        if (!userInput) {
-            return { statusCode: 400, body: 'Missing userInput in request body.' };
+        if (!userInput || !userId) {
+            return { statusCode: 400, body: 'Missing userInput or userId in request body.' };
         }
 
         // 2. Define the secure prompt and JSON schema
