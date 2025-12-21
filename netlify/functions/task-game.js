@@ -91,8 +91,12 @@ exports.handler = async (event) => {
         });
 
        // 4. Extract the JSON text and parse it
-const jsonText = response.text;
-const parsedTasks = JSON.parse(jsonText);
+        // We call .text() as a function and then clean up any Markdown backticks
+        const rawResponse = await response.text(); 
+        const jsonText = rawResponse.replace(/```json|```/g, "").trim();
+        
+        const parsedTasks = JSON.parse(jsonText);
+        console.log("Successfully parsed tasks:", parsedTasks.length);
 
 // 5. Store each generated task in Firestore using the REST API
 const BATCH_URL = `${FIRESTORE_BASE_URL}artifacts/appId/users/${userId}/tasks:batchWrite`;
