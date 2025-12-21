@@ -72,19 +72,19 @@ Example Output:
 [{"taskName": "Mow Lawn", "estimatedValue": 20}, {"taskName": "Fix Sink", "estimatedValue": 50}]
 
 STRICT RULE: Do not include ANY conversational text, greetings, or explanations. Only the JSON array.`;        
-        // 3. Make the secure call to the Gemini API
-        const result = await ai.models.generateContent({
+        // Use getGenerativeModel - this is the reliable way to set JSON mode
+        const model = ai.getGenerativeModel({ 
             model: LLM_MODEL,
-            systemInstruction: systemPrompt, // Simplified top-level string
-            contents: [{ parts: [{ text: userInput }] }],
-            generationConfig: {
-                responseMimeType: "application/json"
-            }
+            generationConfig: { responseMimeType: "application/json" }
         });
 
-        // The @google/genai SDK provides the text as a direct property
-        // 1. Get the raw text (use result.response.text() if result.text fails)
-        const rawResponse = (typeof result.text === 'string') ? result.text : result.response.text();
+        // Combine prompt and input to ensure the AI follows instructions
+        const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
+
+        const result = await model.generateContent(combinedPrompt);
+        const response = await result.response;
+        const rawResponse = response.text();
+        
         console.log("Raw AI Response:", rawResponse);
 
         // 2. The "Safety Filter": Find the [ and ] brackets
