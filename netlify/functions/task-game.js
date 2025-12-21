@@ -72,10 +72,7 @@ Example Output:
 
 STRICT RULE: Do not include ANY conversational text, greetings, or explanations. Only the JSON array.`;        
         // Use getGenerativeModel - this is the reliable way to set JSON mode
-        const model = ai.getGenerativeModel({ 
-            model: LLM_MODEL,
-            generationConfig: { responseMimeType: "application/json" }
-        });
+        const model = genAI.getGenerativeModel({ model: LLM_MODEL });
 
         // Combine prompt and input to ensure the AI follows instructions
         const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
