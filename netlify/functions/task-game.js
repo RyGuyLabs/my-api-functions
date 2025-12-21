@@ -66,11 +66,14 @@ exports.handler = async (event) => {
         const systemPrompt = `You are a specialized AI designed to gamify tasks. The user provides a list of tasks in natural language. Your job is to break these down into concrete, single tasks, and assign an 'estimatedValue' in USD that represents the perceived value or cost of outsourcing/completing that task (e.g., 'Mow the lawn' might be $50). The output MUST be a JSON array conforming to the provided schema. Only output the JSON object.`;
         
         // 3. Make the secure call to the Gemini API
-        // FIX: Ensure the call structure matches the GoogleGenAI SDK expectations
-        const result = await ai.getGenerativeModel({ model: LLM_MODEL }).generateContent({
+        // Using the .models.get() syntax required by the @google/genai library
+        const model = ai.models.get(LLM_MODEL);
+        const result = await model.generateContent({
             contents: [{ parts: [{ text: userInput }] }],
             generationConfig: {
                 responseMimeType: "application/json",
+                // Moved systemPrompt inside here as it's required for this library version
+                systemInstruction: { parts: [{ text: systemPrompt }] }
             }
         });
 
