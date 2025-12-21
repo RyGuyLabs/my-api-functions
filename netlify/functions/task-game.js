@@ -52,7 +52,6 @@ exports.handler = async (event) => {
                 appId: FIREBASE_APP_ID
             })
         };
-    }
     // --- END: SINGLE-FILE FIX FOR FIREBASE CONFIG (GET) ---
 
     // Now, ensure only POST requests continue past this point for LLM logic
