@@ -1,5 +1,4 @@
-const { GoogleGenAI } = require('@google/genai');
-
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 
 // Firestore/Google Cloud Data Keys (Ready for future data operations)
