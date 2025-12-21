@@ -67,15 +67,20 @@ exports.handler = async (event) => {
         
         // 3. Make the secure call to the Gemini API
         // Using the .models.get() syntax required by the @google/genai library
-        const model = ai.models.get(LLM_MODEL);
-        const result = await model.generateContent({
+        // 3. Make the secure call to the Gemini API
+        // This syntax is specific to the @google/genai library structure
+        const result = await ai.generate({
+            model: LLM_MODEL,
             contents: [{ parts: [{ text: userInput }] }],
-            generationConfig: {
-                responseMimeType: "application/json",
-                // Moved systemPrompt inside here as it's required for this library version
-                systemInstruction: { parts: [{ text: systemPrompt }] }
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            config: {
+                responseMimeType: "application/json"
             }
         });
+
+        // 4. Extract the JSON text and parse it
+        // In this SDK, the response is usually direct
+        const rawResponse = await result.text();
 
         // 4. Extract the JSON text and parse it
         const response = await result.response;
