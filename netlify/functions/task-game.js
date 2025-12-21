@@ -39,21 +39,26 @@ exports.handler = async (event) => {
         };
     }
         
-        // CRITICAL: Return config with CORS header for the sandboxed environment
+        // --- SINGLE-FILE FIX FOR FIREBASE CONFIG (GET) ---
+    // If this is a GET request, we return the config and STOP.
+    // If it is a POST request, we SKIP this and move to the AI logic.
+    if (event.httpMethod.toUpperCase() === 'GET') {
+        const config = {
+            apiKey: process.env.FIREBASE_API_KEY || null,
+            projectId: process.env.FIRESTORE_PROJECT_ID || null,
+            appId: process.env.FIREBASE_APP_ID || null
+        };
+
         return {
-            statusCode: 200,
+            statusCode: (config.apiKey && config.projectId) ? 200 : 500,
             headers: {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*', 
+                'Access-Control-Allow-Origin': '*'
             },
-            body: JSON.stringify({
-                apiKey: FIREBASE_API_KEY,
-                projectId: FIRESTORE_PROJECT_ID,
-                appId: FIREBASE_APP_ID
-            })
+            body: JSON.stringify(config)
         };
-    // --- END: SINGLE-FILE FIX FOR FIREBASE CONFIG (GET) ---
-
+    }
+    
     // Now, ensure only POST requests continue past this point for LLM logic
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
