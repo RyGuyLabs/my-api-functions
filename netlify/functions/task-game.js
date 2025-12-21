@@ -91,34 +91,18 @@ exports.handler = async (event) => {
         const parsedTasks = JSON.parse(jsonText);
         console.log("Successfully parsed tasks:", parsedTasks.length);
 
-        // --- RESTORED: FIRESTORE STORAGE LOGIC ---
-        const BATCH_URL = `${FIRESTORE_BASE_URL}artifacts/appId/users/${userId}/tasks:batchWrite`;
-
-        const writes = parsedTasks.map(task => ({
-            update: {
-                name: `${FIRESTORE_BASE_URL}artifacts/appId/users/${userId}/tasks/${task.taskName.replace(/\s/g, '-')}`,
-                fields: {
-                    taskName: { stringValue: task.taskName },
-                    estimatedValue: { integerValue: Math.floor(task.estimatedValue) },
-                    status: { stringValue: 'pending' },
-                    timestamp: { timestampValue: new Date().toISOString() }
-                }
-            }
-        }));
-
-        const firestoreResponse = await fetch(BATCH_URL, {
-            method: 'POST',
-            headers: {
+        // --- DATA RETURN ONLY ---
+        // We removed the backend Firestore logic to prevent duplicate tasks.
+        // The tasks are now sent to the frontend for user confirmation.
+        return {
+            statusCode: 200,
+            headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${FIRESTORE_KEY}` 
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type'
             },
-            body: JSON.stringify({ writes })
-        });
-
-        if (!firestoreResponse.ok) {
-            const errorDetails = await firestoreResponse.json();
-            console.error('Firestore Batch Write Failed:', firestoreResponse.status, errorDetails);
-        }
+            body: JSON.stringify(parsedTasks)
+        };
 
         return {
             statusCode: 200,
