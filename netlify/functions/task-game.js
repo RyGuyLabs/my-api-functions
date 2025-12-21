@@ -18,18 +18,26 @@ const FIRESTORE_BASE_URL =
 
 exports.handler = async (event) => {
     // --- START: SINGLE-FILE FIX FOR FIREBASE CONFIG (GET) ---
-    if (event.httpMethod === 'GET') {
-        // This block securely returns Firebase config keys on a GET request
-        const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
-        const FIRESTORE_PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
-        const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID;
+    // Use case-insensitive check and guaranteed JSON response
+    if (event.httpMethod.toUpperCase() === 'GET') {
+        const config = {
+            apiKey: process.env.FIREBASE_API_KEY || null,
+            projectId: process.env.FIRESTORE_PROJECT_ID || null,
+            appId: process.env.FIREBASE_APP_ID || null
+        };
 
-        if (!FIREBASE_API_KEY || !FIRESTORE_PROJECT_ID) {
-            return {
-                statusCode: 500,
-                body: JSON.stringify({ error: 'Server config missing Firebase keys.' })
-            };
-        }
+        // If keys are missing, we still return JSON so the frontend doesn't crash
+        const statusCode = (config.apiKey && config.projectId) ? 200 : 500;
+        
+        return {
+            statusCode: statusCode,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify(config)
+        };
+    }
         
         // CRITICAL: Return config with CORS header for the sandboxed environment
         return {
