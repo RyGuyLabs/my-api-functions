@@ -74,9 +74,20 @@ exports.handler = async (event) => {
         });
 
         // The @google/genai SDK provides the text as a direct property
-        const rawResponse = result.text; 
-        const jsonText = rawResponse.replace(/```json|```/g, "").trim();
+        // 1. Get the raw text (use result.response.text() if result.text fails)
+        const rawResponse = (typeof result.text === 'string') ? result.text : result.response.text();
+        console.log("Raw AI Response:", rawResponse);
+
+        // 2. The "Safety Filter": Find the [ and ] brackets
+        // This ignores "Okay, I've got it!" and extracts ONLY the data
+        const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
         
+        if (!jsonMatch) {
+            console.error("No JSON array found in response:", rawResponse);
+            throw new Error("AI response did not contain a valid task list.");
+        }
+
+        const jsonText = jsonMatch[0];
         const parsedTasks = JSON.parse(jsonText);
         console.log("Successfully parsed tasks:", parsedTasks.length);
 
