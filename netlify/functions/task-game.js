@@ -61,8 +61,17 @@ exports.handler = async (event) => {
             return { statusCode: 400, body: 'Missing userInput or userId in request body.' };
         }
 
-        const systemPrompt = `You are a specialized AI designed to gamify tasks. The user provides a list of tasks in natural language. Your job is to break these down into concrete, single tasks, and assign an 'estimatedValue' in USD that represents the perceived value or cost of outsourcing/completing that task. The output MUST be a JSON array. Only output the JSON object.`;
-        
+        const systemPrompt = `CRITICAL INSTRUCTION: You are a data extraction engine. 
+The user will provide a text directive. 
+You must extract the tasks and return ONLY a valid JSON array of objects. 
+Each object MUST have:
+1. "taskName": A concise name of the task.
+2. "estimatedValue": The dollar amount as a NUMBER (no symbols).
+
+Example Output:
+[{"taskName": "Mow Lawn", "estimatedValue": 20}, {"taskName": "Fix Sink", "estimatedValue": 50}]
+
+STRICT RULE: Do not include ANY conversational text, greetings, or explanations. Only the JSON array.`;        
         // 3. Make the secure call to the Gemini API
         const result = await ai.models.generateContent({
             model: LLM_MODEL,
