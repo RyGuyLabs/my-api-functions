@@ -31,12 +31,37 @@ exports.handler = async (event) => {
     }
 
     // --- START: SINGLE-FILE FIX FOR FIREBASE CONFIG (GET) ---
-    if (event.httpMethod.toUpperCase() === 'GET') {
-        const config = {
-            apiKey: process.env.FIREBASE_API_KEY || null,
-            projectId: process.env.FIRESTORE_PROJECT_ID || null,
-            appId: process.env.FIREBASE_APP_ID || null
+    // --- 1. HANDLE CORS PREFLIGHT ---
+    if (event.httpMethod.toUpperCase() === 'OPTIONS') {
+        return {
+            statusCode: 204,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+            },
+            body: ''
         };
+    }
+
+    // --- 2. HANDLE CONFIG REQUEST (GET) ---
+    if (event.httpMethod.toUpperCase() === 'GET') {
+        // We use process.env to grab the keys you saved in Netlify
+        const config = {
+            apiKey: process.env.FIREBASE_API_KEY,
+            projectId: process.env.FIRESTORE_PROJECT_ID,
+            appId: process.env.FIREBASE_APP_ID
+        };
+
+        return {
+            statusCode: (config.apiKey) ? 200 : 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify(config)
+        };
+    }
 
         const statusCode = (config.apiKey && config.projectId) ? 200 : 500;
         
