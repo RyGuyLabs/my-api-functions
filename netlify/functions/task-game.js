@@ -53,7 +53,7 @@ exports.handler = async (event) => {
 
     try {
         // Initialize the client inside the handler for better error catching
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
         const { userInput, userId } = JSON.parse(event.body);
         if (!userInput || !userId) {
