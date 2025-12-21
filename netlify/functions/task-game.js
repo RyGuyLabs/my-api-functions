@@ -77,7 +77,10 @@ STRICT RULE: Do not include ANY conversational text, greetings, or explanations.
         // Combine prompt and input to ensure the AI follows instructions
         const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
 
-        const result = await model.generateContent(combinedPrompt);
+        const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
+    generationConfig: { responseMimeType: "application/json" }
+});
         const response = await result.response;
         const rawResponse = response.text();
         
