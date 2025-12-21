@@ -63,11 +63,12 @@ exports.handler = async (event) => {
 
         const systemPrompt = `You are a specialized AI designed to gamify tasks. The user provides a list of tasks in natural language. Your job is to break these down into concrete, single tasks, and assign an 'estimatedValue' in USD that represents the perceived value or cost of outsourcing/completing that task. The output MUST be a JSON array. Only output the JSON object.`;
         
-        // FIX 3: Correct syntax for the @google/genai library
-        const result = await ai.models.generateContent(LLM_MODEL, {
+        // 3. Make the secure call to the Gemini API
+        const result = await ai.models.generateContent({
+            model: LLM_MODEL,
+            systemInstruction: systemPrompt, // Simplified top-level string
             contents: [{ parts: [{ text: userInput }] }],
-            config: {
-                systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: {
                 responseMimeType: "application/json"
             }
         });
