@@ -9,7 +9,7 @@ const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN; 
 
 // FIX 1: Use a valid model name (2.5 is not released/stable in this SDK yet)
-const LLM_MODEL = 'gemini-1.5-flash'; 
+const LLM_MODEL = 'gemini-2.0-flash-001'; 
 
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
