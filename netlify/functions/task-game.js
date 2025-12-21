@@ -104,15 +104,6 @@ exports.handler = async (event) => {
             body: JSON.stringify(parsedTasks)
         };
 
-        return {
-            statusCode: 200,
-            headers: { 
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*', 
-            },
-            body: JSON.stringify(parsedTasks)
-        };
-
     } catch (error) {
         console.error('LLM Function Error:', error);
         return {
