@@ -55,22 +55,30 @@ exports.handler = async (event) => {
         // Initialize the client inside the handler for better error catching
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-        const { userInput, userId } = JSON.parse(event.body);
+        const { userInput, userId, action } = JSON.parse(event.body);
+
+        // --- NEW CLEAR LOGIC START ---
+        if (action === 'CLEAR_ALL') {
+            console.log("Action: Clearing all tasks for user", userId);
+            // This tells the frontend "Done" without calling the AI
+            return {
+                statusCode: 200,
+                headers: { 'Access-Control-Allow-Origin': '*' },
+                body: JSON.stringify({ message: "Task list cleared successfully" })
+            };
+        }
+
         if (!userInput || !userId) {
             return { statusCode: 400, body: 'Missing userInput or userId in request body.' };
         }
 
-        const systemPrompt = `CRITICAL INSTRUCTION: You are a data extraction engine. 
-The user will provide a text directive. 
-You must extract the tasks and return ONLY a valid JSON array of objects. 
-Each object MUST have:
-1. "taskName": A concise name of the task.
-2. "estimatedValue": The dollar amount as a NUMBER (no symbols).
+        const systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
+1. Extract tasks into a JSON array of objects with "taskName" and "estimatedValue".
+2. Identify the most difficult or high-impact task.
+3. Add ONE final object to the array: 
+   {"type": "strategy", "bossTask": "Name of hardest task", "advice": "How to beat this task first to unlock your day"}.
 
-Example Output:
-[{"taskName": "Mow Lawn", "estimatedValue": 20}, {"taskName": "Fix Sink", "estimatedValue": 50}]
-
-STRICT RULE: Do not include ANY conversational text, greetings, or explanations. Only the JSON array.`;        
+STRICT: Return ONLY the JSON array.`;        
         // Use getGenerativeModel - this is the reliable way to set JSON mode
         const model = genAI.getGenerativeModel({ model: LLM_MODEL });
 
