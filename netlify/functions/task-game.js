@@ -73,10 +73,10 @@ exports.handler = async (event) => {
         }
 
         const systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
-1. Extract tasks into a JSON array of objects with "taskName" and "estimatedValue".
+1. Extract tasks into a JSON array of objects with: "taskName", "estimatedValue", and "type": "task".
 2. Identify the most difficult or high-impact task.
 3. Add ONE final object to the array: 
-   {"type": "strategy", "bossTask": "Name of hardest task", "advice": "How to beat this task first to unlock your day"}.
+   {"type": "strategy", "bossTask": "Name of hardest task", "advice": "Short RPG-style tactical advice"}.
 
 STRICT: Return ONLY the JSON array.`;        
         // Use getGenerativeModel - this is the reliable way to set JSON mode
