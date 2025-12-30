@@ -1,20 +1,18 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 
-// Firestore/Google Cloud Data Keys (Ready for future data operations)
+// Firestore/Google Cloud Data Keys (Preserved for future operations)
 const FIRESTORE_KEY = process.env.DATA_API_KEY; 
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID; 
-
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN; 
 
-// FIX 1: Use a valid model name (2.5 is not released/stable in this SDK yet)
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 exports.handler = async (event) => {
-    // FIX 2: Added CORS PREFLIGHT. Without this, ryguylabs.com cannot talk to Netlify.
+    // FIX 2: CORS PREFLIGHT (Preserved)
     if (event.httpMethod.toUpperCase() === 'OPTIONS') {
         return {
             statusCode: 204,
@@ -27,7 +25,7 @@ exports.handler = async (event) => {
         };
     }
 
-    // --- START: SINGLE-FILE FIX FOR FIREBASE CONFIG (GET) ---
+    // FIREBASE CONFIG (GET) (Preserved)
     if (event.httpMethod.toUpperCase() === 'GET') {
         const config = {
             apiKey: process.env.FIREBASE_API_KEY || null,
@@ -52,15 +50,14 @@ exports.handler = async (event) => {
     }
 
     try {
-        // Initialize the client inside the handler for better error catching
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-        const { userInput, userId, action } = JSON.parse(event.body);
+        // ADDED: isBossFight to the destructured body
+        const { userInput, userId, action, isBossFight } = JSON.parse(event.body);
 
-        // --- NEW CLEAR LOGIC START ---
+        // NEW CLEAR LOGIC (Preserved)
         if (action === 'CLEAR_ALL') {
             console.log("Action: Clearing all tasks for user", userId);
-            // This tells the frontend "Done" without calling the AI
             return {
                 statusCode: 200,
                 headers: { 'Access-Control-Allow-Origin': '*' },
@@ -72,23 +69,32 @@ exports.handler = async (event) => {
             return { statusCode: 400, body: 'Missing userInput or userId in request body.' };
         }
 
-        const systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
+        // --- ENHANCED SYSTEM PROMPT ---
+        let systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
 1. Extract tasks into a JSON array of objects with: "taskName", "estimatedValue", and "type": "task".
 2. Identify the most difficult or high-impact task.
 3. Add ONE final object to the array: 
    {"type": "strategy", "bossTask": "Name of hardest task", "advice": "Short RPG-style tactical advice"}.
 
-STRICT: Return ONLY the JSON array.`;        
-        // Use getGenerativeModel - this is the reliable way to set JSON mode
-        const model = genAI.getGenerativeModel({ model: LLM_MODEL });
+STRICT: Return ONLY the JSON array.`;
 
-        // Combine prompt and input to ensure the AI follows instructions
+        // BOSS FIGHT INJECTION: We only add this if the frontend sends the flag
+        if (isBossFight) {
+            systemPrompt += `
+CRITICAL: THE AGENT IS IN A BOSS FIGHT. 
+- Consolidate input into ONE major "Strategic Boss Task".
+- Set "estimatedValue" between 5000 and 10000.
+- Make the advice extremely high-stakes and intense.`;
+        }
+
+        const model = genAI.getGenerativeModel({ model: LLM_MODEL });
         const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
 
         const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
-    generationConfig: { responseMimeType: "application/json" }
-});
+            contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+        });
+
         const response = await result.response;
         const rawResponse = response.text();
         
@@ -96,10 +102,8 @@ STRICT: Return ONLY the JSON array.`;
 
         let parsedTasks;
         try {
-            // Attempt to parse the response directly
             parsedTasks = JSON.parse(rawResponse);
         } catch (e) {
-            // Fallback: search for brackets if the AI included extra text
             const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
             if (!jsonMatch) {
                 console.error("No JSON array found in response:", rawResponse);
@@ -107,11 +111,8 @@ STRICT: Return ONLY the JSON array.`;
             }
             parsedTasks = JSON.parse(jsonMatch[0]);
         }
-        console.log("Successfully parsed tasks:", parsedTasks.length);
 
-        // --- DATA RETURN ONLY ---
-        // We removed the backend Firestore logic to prevent duplicate tasks.
-        // The tasks are now sent to the frontend for user confirmation.
+        // DATA RETURN ONLY (Preserved logic)
         return {
             statusCode: 200,
             headers: { 
