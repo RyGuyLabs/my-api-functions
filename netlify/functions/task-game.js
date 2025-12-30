@@ -94,17 +94,19 @@ STRICT: Return ONLY the JSON array.`;
         
         console.log("Raw AI Response:", rawResponse);
 
-        // 2. The "Safety Filter": Find the [ and ] brackets
-        // This ignores "Okay, I've got it!" and extracts ONLY the data
-        const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-        
-        if (!jsonMatch) {
-            console.error("No JSON array found in response:", rawResponse);
-            throw new Error("AI response did not contain a valid task list.");
+        let parsedTasks;
+        try {
+            // Attempt to parse the response directly
+            parsedTasks = JSON.parse(rawResponse);
+        } catch (e) {
+            // Fallback: search for brackets if the AI included extra text
+            const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) {
+                console.error("No JSON array found in response:", rawResponse);
+                throw new Error("AI response did not contain a valid task list.");
+            }
+            parsedTasks = JSON.parse(jsonMatch[0]);
         }
-
-        const jsonText = jsonMatch[0];
-        const parsedTasks = JSON.parse(jsonText);
         console.log("Successfully parsed tasks:", parsedTasks.length);
 
         // --- DATA RETURN ONLY ---
