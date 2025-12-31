@@ -164,7 +164,7 @@ const sanitizedTasks = parsedTasks.map(t => {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type'
             },
-            body: JSON.stringify(parsedTasks)
+            body: JSON.stringify(sanitizedTasks)
         };
 
     } catch (error) {
