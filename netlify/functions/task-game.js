@@ -1,3 +1,12 @@
+const admin = require("firebase-admin");
+
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(
+            JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+        )
+    });
+}
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 
