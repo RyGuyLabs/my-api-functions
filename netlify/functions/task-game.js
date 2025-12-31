@@ -1,19 +1,30 @@
 const admin = require("firebase-admin");
-
-if (!admin.apps.length) {
-    admin.initializeApp();
-}
-
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
+
+// --- Secure Firebase Initialization ---
+if (!admin.apps.length) {
+    if (!process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+        throw new Error("Missing Firebase credentials in environment variables.");
+    }
+
+    admin.initializeApp({
+        credential: admin.credential.cert({
+            projectId: PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+        }),
+        databaseURL: `https://${PROJECT_ID}.firebaseio.com`
+    });
+}
 
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 exports.handler = async (event) => {
-
     if (event.httpMethod.toUpperCase() === 'OPTIONS') {
         return {
             statusCode: 204,
@@ -34,9 +45,8 @@ exports.handler = async (event) => {
         };
 
         const statusCode = (config.apiKey && config.projectId) ? 200 : 500;
-        
         return {
-            statusCode: statusCode,
+            statusCode,
             headers: {
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
@@ -44,7 +54,7 @@ exports.handler = async (event) => {
             body: JSON.stringify(config)
         };
     }
-        
+
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
