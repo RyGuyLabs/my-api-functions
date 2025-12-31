@@ -1,5 +1,3 @@
-// Remove admin import since we won't use service account keys
-// const admin = require("firebase-admin");
 import { db } from './firebaseClient.js';
 import { collection, addDoc, getDocs } from 'firebase/firestore';
 const { GoogleGenerativeAI } = require('@google/generative-ai');
