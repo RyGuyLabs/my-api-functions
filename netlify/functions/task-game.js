@@ -10,11 +10,6 @@ if (!admin.apps.length) {
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 
-// Firestore/Google Cloud Data Keys (Preserved for future operations)
-const FIRESTORE_KEY = process.env.DATA_API_KEY; 
-const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID; 
-const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN; 
-
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 
 const FIRESTORE_BASE_URL =
