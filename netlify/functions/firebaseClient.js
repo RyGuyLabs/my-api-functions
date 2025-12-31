@@ -1,12 +1,13 @@
-const { initializeApp } = require("firebase/app");
-const { getFirestore } = require("firebase/firestore");
+// firebaseClient.js
+import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,   // your API key
-  projectId: process.env.FIREBASE_PROJECT_ID // your project ID
+  apiKey: process.env.FIREBASE_API_KEY,
+  projectId: process.env.FIRESTORE_PROJECT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-module.exports = { db };
+export { db };
