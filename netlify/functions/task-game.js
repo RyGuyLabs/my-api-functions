@@ -88,12 +88,15 @@ const { userInput, action, isBossFight } = JSON.parse(event.body);
             };
         }
 
-        if (!userInput || !userId) {
-            return { statusCode: 400, body: 'Missing userInput or userId in request body.' };
-        }
+        if (!userInput) {
+    return {
+        statusCode: 400,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: 'Missing userInput.' })
+    };
+}
 
-        // --- ENHANCED SYSTEM PROMPT ---
-        let systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
+         let systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
 1. Extract tasks into a JSON array of objects with: "taskName", "estimatedValue", and "type": "task".
 2. Identify the most difficult or high-impact task.
 3. Add ONE final object to the array: 
