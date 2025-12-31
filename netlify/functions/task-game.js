@@ -121,7 +121,19 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
         
         console.log("Raw AI Response:", rawResponse);
 
-        const MAX_TASK_VALUE = 5000;
+        let parsedTasks;
+try {
+    parsedTasks = JSON.parse(rawResponse);
+} catch (e) {
+    const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+        console.error("No JSON array found in response:", rawResponse);
+        throw new Error("AI response did not contain a valid task list.");
+    }
+    parsedTasks = JSON.parse(jsonMatch[0]);
+}
+
+const MAX_TASK_VALUE = 5000;
 
 const sanitizedTasks = parsedTasks.map(t => {
     if (t.type === 'strategy') return t;
@@ -134,10 +146,7 @@ const sanitizedTasks = parsedTasks.map(t => {
         )
     };
 });
-        
-        let parsedTasks;
-        try {
-            parsedTasks = JSON.parse(rawResponse);
+
         } catch (e) {
             const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
             if (!jsonMatch) {
