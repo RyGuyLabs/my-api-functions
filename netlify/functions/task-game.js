@@ -61,8 +61,22 @@ exports.handler = async (event) => {
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-        // ADDED: isBossFight to the destructured body
-        const { userInput, userId, action, isBossFight } = JSON.parse(event.body);
+const authHeader = event.headers.authorization;
+if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return {
+        statusCode: 401,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: JSON.stringify({ error: "Unauthorized" })
+    };
+}
+
+const idToken = authHeader.replace("Bearer ", "");
+const decodedToken = await admin.auth().verifyIdToken(idToken);
+const userId = decodedToken.uid; // ✅ TRUST ONLY THIS
+
+// Parse body AFTER auth
+const { userInput, action, isBossFight } = JSON.parse(event.body);
+
 
         // NEW CLEAR LOGIC (Preserved)
         if (action === 'CLEAR_ALL') {
