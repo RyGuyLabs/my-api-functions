@@ -7,24 +7,29 @@ if (!admin.apps.length) {
         )
     });
 }
+
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 
+// FIX 1: PROJECT_ID WAS UNDEFINED
+const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
+
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 exports.handler = async (event) => {
-    // FIX 2: CORS PREFLIGHT (Preserved)
+
+    // FIX 2: CORS PREFLIGHT (missing comma)
     if (event.httpMethod.toUpperCase() === 'OPTIONS') {
         return {
             statusCode: 204,
             headers: { 
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-}
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            },
             body: ''
         };
     }
@@ -56,26 +61,23 @@ exports.handler = async (event) => {
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-const authHeader = event.headers.authorization;
-if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return {
-        statusCode: 401,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ error: "Unauthorized" })
-    };
-}
+        const authHeader = event.headers.authorization;
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+            return {
+                statusCode: 401,
+                headers: { 'Access-Control-Allow-Origin': '*' },
+                body: JSON.stringify({ error: "Unauthorized" })
+            };
+        }
 
-const idToken = authHeader.replace("Bearer ", "");
-const decodedToken = await admin.auth().verifyIdToken(idToken);
-const userId = decodedToken.uid; // ✅ TRUST ONLY THIS
+        const idToken = authHeader.replace("Bearer ", "");
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const userId = decodedToken.uid;
 
-// Parse body AFTER auth
-const { userInput, action, isBossFight } = JSON.parse(event.body);
+        // Parse body AFTER auth
+        const { userInput, action, isBossFight } = JSON.parse(event.body);
 
-
-        // NEW CLEAR LOGIC (Preserved)
         if (action === 'CLEAR_ALL') {
-            console.log("Action: Clearing all tasks for user", userId);
             return {
                 statusCode: 200,
                 headers: { 'Access-Control-Allow-Origin': '*' },
@@ -84,22 +86,21 @@ const { userInput, action, isBossFight } = JSON.parse(event.body);
         }
 
         if (!userInput) {
-    return {
-        statusCode: 400,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: JSON.stringify({ error: 'Missing userInput.' })
-    };
-}
+            return {
+                statusCode: 400,
+                headers: { 'Access-Control-Allow-Origin': '*' },
+                body: JSON.stringify({ error: 'Missing userInput.' })
+            };
+        }
 
-         let systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
+        let systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
 1. Extract tasks into a JSON array of objects with: "taskName", "estimatedValue", and "type": "task".
 2. Identify the most difficult or high-impact task.
 3. Add ONE final object to the array: 
-   {"type": "strategy", "bossTask": "Name of hardest task", "advice": "Short RPG-style tactical advice"}.
+{"type": "strategy", "bossTask": "Name of hardest task", "advice": "Short RPG-style tactical advice"}.
 
 STRICT: Return ONLY the JSON array.`;
 
-        // BOSS FIGHT INJECTION: We only add this if the frontend sends the flag
         if (isBossFight) {
             systemPrompt += `
 CRITICAL: THE AGENT IS IN A BOSS FIGHT. 
@@ -118,45 +119,28 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
 
         const response = await result.response;
         const rawResponse = response.text();
-        
-        console.log("Raw AI Response:", rawResponse);
 
         let parsedTasks;
-try {
-    parsedTasks = JSON.parse(rawResponse);
-} catch (e) {
-    const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-        console.error("No JSON array found in response:", rawResponse);
-        throw new Error("AI response did not contain a valid task list.");
-    }
-    parsedTasks = JSON.parse(jsonMatch[0]);
-}
-
-const MAX_TASK_VALUE = 5000;
-
-const sanitizedTasks = parsedTasks.map(t => {
-    if (t.type === 'strategy') return t;
-
-    return {
-        ...t,
-        estimatedValue: Math.min(
-            Number(t.estimatedValue) || 0,
-            MAX_TASK_VALUE
-        )
-    };
-});
-
+        try {
+            parsedTasks = JSON.parse(rawResponse);
         } catch (e) {
             const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
             if (!jsonMatch) {
-                console.error("No JSON array found in response:", rawResponse);
                 throw new Error("AI response did not contain a valid task list.");
             }
             parsedTasks = JSON.parse(jsonMatch[0]);
         }
 
-        // DATA RETURN ONLY (Preserved logic)
+        const MAX_TASK_VALUE = 5000;
+
+        const sanitizedTasks = parsedTasks.map(t => {
+            if (t.type === 'strategy') return t;
+            return {
+                ...t,
+                estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_TASK_VALUE)
+            };
+        });
+
         return {
             statusCode: 200,
             headers: { 
