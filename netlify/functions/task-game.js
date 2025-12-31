@@ -20,11 +20,11 @@ exports.handler = async (event) => {
     if (event.httpMethod.toUpperCase() === 'OPTIONS') {
         return {
             statusCode: 204,
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-            },
+            headers: { 
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+}
             body: ''
         };
     }
