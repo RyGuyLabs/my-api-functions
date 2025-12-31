@@ -109,7 +109,7 @@ STRICT: Return ONLY the JSON array.`;
             systemPrompt += `
 CRITICAL: THE AGENT IS IN A BOSS FIGHT. 
 - Consolidate input into ONE major "Strategic Boss Task".
-- Set "estimatedValue" between 5000 and 10000.
+- Set "estimatedValue" between 3000 and 5000.
 - Make the advice extremely high-stakes and intense.`;
         }
 
