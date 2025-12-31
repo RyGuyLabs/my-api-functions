@@ -126,6 +126,20 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
         
         console.log("Raw AI Response:", rawResponse);
 
+        const MAX_TASK_VALUE = 5000;
+
+const sanitizedTasks = parsedTasks.map(t => {
+    if (t.type === 'strategy') return t;
+
+    return {
+        ...t,
+        estimatedValue: Math.min(
+            Number(t.estimatedValue) || 0,
+            MAX_TASK_VALUE
+        )
+    };
+});
+        
         let parsedTasks;
         try {
             parsedTasks = JSON.parse(rawResponse);
