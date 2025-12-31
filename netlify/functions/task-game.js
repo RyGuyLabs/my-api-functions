@@ -1,25 +1,12 @@
-const admin = require("firebase-admin");
+// Remove admin import since we won't use service account keys
+// const admin = require("firebase-admin");
+import { db } from './firebaseClient.js';
+import { collection, addDoc, getDocs } from 'firebase/firestore';
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
-
-// --- Secure Firebase Initialization ---
-if (!admin.apps.length) {
-    if (!process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
-        throw new Error("Missing Firebase credentials in environment variables.");
-    }
-
-    admin.initializeApp({
-        credential: admin.credential.cert({
-            projectId: PROJECT_ID,
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-        }),
-        databaseURL: `https://${PROJECT_ID}.firebaseio.com`
-    });
-}
 
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
@@ -62,18 +49,8 @@ exports.handler = async (event) => {
     try {
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-        const authHeader = event.headers.authorization;
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return {
-                statusCode: 401,
-                headers: { 'Access-Control-Allow-Origin': '*' },
-                body: JSON.stringify({ error: "Unauthorized" })
-            };
-        }
-
-        const idToken = authHeader.replace("Bearer ", "");
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        const userId = decodedToken.uid;
+        // Auth verification removed since client SDK doesn't verify ID tokens server-side
+        // You can optionally implement Firebase Auth REST API to verify tokens if needed
 
         const { userInput, action, isBossFight } = JSON.parse(event.body);
 
@@ -138,6 +115,10 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
                 estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_TASK_VALUE)
             };
         });
+
+        // --- Save tasks to Firestore using client SDK ---
+        const tasksCollection = collection(db, 'tasks');
+        await addDoc(tasksCollection, { tasks: sanitizedTasks });
 
         return {
             statusCode: 200,
