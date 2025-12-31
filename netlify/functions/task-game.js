@@ -10,10 +10,7 @@ if (!admin.apps.length) {
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
-
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
-
-// FIX 1: PROJECT_ID WAS UNDEFINED
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 
 const FIRESTORE_BASE_URL =
@@ -21,7 +18,6 @@ const FIRESTORE_BASE_URL =
 
 exports.handler = async (event) => {
 
-    // FIX 2: CORS PREFLIGHT (missing comma)
     if (event.httpMethod.toUpperCase() === 'OPTIONS') {
         return {
             statusCode: 204,
@@ -34,11 +30,10 @@ exports.handler = async (event) => {
         };
     }
 
-    // FIREBASE CONFIG (GET) (Preserved)
     if (event.httpMethod.toUpperCase() === 'GET') {
         const config = {
             apiKey: process.env.FIREBASE_API_KEY || null,
-            projectId: process.env.FIRESTORE_PROJECT_ID || null,
+            projectId: PROJECT_ID || null,
             appId: process.env.FIREBASE_APP_ID || null
         };
 
@@ -74,7 +69,6 @@ exports.handler = async (event) => {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const userId = decodedToken.uid;
 
-        // Parse body AFTER auth
         const { userInput, action, isBossFight } = JSON.parse(event.body);
 
         if (action === 'CLEAR_ALL') {
@@ -125,9 +119,7 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
             parsedTasks = JSON.parse(rawResponse);
         } catch (e) {
             const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-            if (!jsonMatch) {
-                throw new Error("AI response did not contain a valid task list.");
-            }
+            if (!jsonMatch) throw new Error("AI response did not contain a valid task list.");
             parsedTasks = JSON.parse(jsonMatch[0]);
         }
 
