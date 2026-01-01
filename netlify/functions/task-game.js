@@ -1,5 +1,5 @@
 import { db } from './firebaseClient.js';
-import { collection, addDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore';
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
@@ -9,53 +9,48 @@ const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
+// --- Default CORS headers ---
+const defaultHeaders = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
+
 exports.handler = async (event) => {
-    if (event.httpMethod.toUpperCase() === 'OPTIONS') {
-        return {
-            statusCode: 204,
-            headers: { 
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-            },
-            body: ''
-        };
-    }
-
-    if (event.httpMethod.toUpperCase() === 'GET') {
-        const config = {
-            apiKey: process.env.FIREBASE_API_KEY || null,
-            projectId: PROJECT_ID || null,
-            appId: process.env.FIREBASE_APP_ID || null
-        };
-
-        const statusCode = (config.apiKey && config.projectId) ? 200 : 500;
-        return {
-            statusCode,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            body: JSON.stringify(config)
-        };
-    }
-
-    if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        if (event.httpMethod.toUpperCase() === 'OPTIONS') {
+            return {
+                statusCode: 204,
+                headers: defaultHeaders,
+                body: ''
+            };
+        }
 
-        // Auth verification removed since client SDK doesn't verify ID tokens server-side
-        // You can optionally implement Firebase Auth REST API to verify tokens if needed
+        if (event.httpMethod.toUpperCase() === 'GET') {
+            const config = {
+                apiKey: process.env.FIREBASE_API_KEY || null,
+                projectId: PROJECT_ID || null,
+                appId: process.env.FIREBASE_APP_ID || null
+            };
+            return {
+                statusCode: (config.apiKey && config.projectId) ? 200 : 500,
+                headers: defaultHeaders,
+                body: JSON.stringify(config)
+            };
+        }
+
+        if (event.httpMethod !== 'POST') {
+            return { statusCode: 405, headers: defaultHeaders, body: 'Method Not Allowed' };
+        }
+
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
         const { userInput, action, isBossFight } = JSON.parse(event.body);
 
         if (action === 'CLEAR_ALL') {
             return {
                 statusCode: 200,
-                headers: { 'Access-Control-Allow-Origin': '*' },
+                headers: defaultHeaders,
                 body: JSON.stringify({ message: "Task list cleared successfully" })
             };
         }
@@ -63,7 +58,7 @@ exports.handler = async (event) => {
         if (!userInput) {
             return {
                 statusCode: 400,
-                headers: { 'Access-Control-Allow-Origin': '*' },
+                headers: defaultHeaders,
                 body: JSON.stringify({ error: 'Missing userInput.' })
             };
         }
@@ -114,17 +109,13 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
             };
         });
 
-        // --- Save tasks to Firestore using client SDK ---
+        // --- Save tasks to Firestore ---
         const tasksCollection = collection(db, 'tasks');
         await addDoc(tasksCollection, { tasks: sanitizedTasks });
 
         return {
             statusCode: 200,
-            headers: { 
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type'
-            },
+            headers: defaultHeaders,
             body: JSON.stringify(sanitizedTasks)
         };
 
@@ -132,7 +123,7 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
         console.error('LLM Function Error:', error);
         return {
             statusCode: 500,
-            headers: { 'Access-Control-Allow-Origin': '*' },
+            headers: defaultHeaders,
             body: JSON.stringify({ error: 'Failed to process request via LLM.', details: error.message })
         };
     }
