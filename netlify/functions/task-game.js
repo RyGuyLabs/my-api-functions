@@ -45,6 +45,41 @@ exports.handler = async (event) => {
 
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
+        // --- AUTH: Require Firebase ID Token ---
+const authHeader = event.headers.authorization;
+
+if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return {
+        statusCode: 401,
+        headers: defaultHeaders,
+        body: JSON.stringify({ error: 'Missing or invalid Authorization header' })
+    };
+}
+
+const idToken = authHeader.replace('Bearer ', '');
+
+// --- VERIFY TOKEN WITH FIREBASE REST API ---
+const verifyResponse = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${process.env.FIREBASE_API_KEY}`,
+    {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken })
+    }
+);
+
+const verifyData = await verifyResponse.json();
+
+if (!verifyData.users || !verifyData.users[0]?.localId) {
+    return {
+        statusCode: 401,
+        headers: defaultHeaders,
+        body: JSON.stringify({ error: 'Invalid Firebase authentication token' })
+    };
+}
+
+const userId = verifyData.users[0].localId;
+
         const { userInput, action, isBossFight } = JSON.parse(event.body);
 
         if (action === 'CLEAR_ALL') {
