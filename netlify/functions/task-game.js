@@ -144,8 +144,7 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
             };
         });
 
-        // --- Save tasks to Firestore ---
-        const tasksCollection = collection(db, 'tasks');
+        const tasksCollection = collection(db, `users/${userId}/tasks`);
         await addDoc(tasksCollection, { tasks: sanitizedTasks });
 
         return {
