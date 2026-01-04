@@ -662,10 +662,11 @@ const payload = {
 
     const result = await response.json();
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
+    const sanitizedText = (rawText || "").replace(/```json|```/g, "").trim();
+    
     // 5. Parse and Process Structured Data
     try {
-        const parsedContent = JSON.parse(rawText);
+        const parsedContent = JSON.parse(sanitizedText); 
         const imagePrompt = parsedContent.image_prompt;
         const commandText = parsedContent.command_text;
 
