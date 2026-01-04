@@ -812,35 +812,31 @@ Schema:
         
         // --- 2c. Handle Text Generation  ---
         else if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            if (!userGoal) {
-                return {
-                    statusCode: 400,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
-                };
-            }
-
-            const TEXT_MODEL = "gemini-2.5-flash";
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-
-            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
-
-            const payload = {
-    contents: [{ parts: [{ text: userGoal }] }],
-    systemInstruction: { parts: [{ text: systemInstructionText }] },
-    generationConfig: {
-        temperature: 0.75,
-        responseMimeType: "application/json" 
+    if (!userGoal) {
+        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Goal required.' }) };
     }
 
-            };
+    // 1. DYNAMIC INJECTION: Replace the placeholder with the actual goal
+    let systemInstructionText = SYSTEM_INSTRUCTIONS[feature].replace("{{USER_GOAL}}", userGoal);
 
-            const response = await retryFetch(TEXT_API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+    // 2. MODEL CONFIG: Use the 2026 stable Flash model
+    const TEXT_MODEL = "gemini-1.5-flash"; // Or your preferred 2026 stable version
+    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
+    const payload = {
+        contents: [{ parts: [{ text: `GOAL: ${userGoal}` }] }],
+        systemInstruction: { parts: [{ text: systemInstructionText }] },
+        generationConfig: {
+            temperature: 0.8, // Raised to 0.8 for "RyGuy" blunt personality
+            responseMimeType: "application/json" 
+        }
+    };
+
+    const response = await retryFetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
             if (!response.ok) {
                 const errorBody = await response.text();
                 console.error("Text Generation API Error:", response.status, errorBody);
