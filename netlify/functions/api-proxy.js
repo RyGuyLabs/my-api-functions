@@ -1,13 +1,18 @@
+
+// **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
 const fetch = require('node-fetch').default || require('node-fetch');
 
+// --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
+// Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
+// Base URL for Firestore queries (Used for secure, filtered reads/writes)
 const FIRESTORE_QUERY_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
@@ -25,53 +30,120 @@ const TEXT_GENERATION_FEATURES = [
     "smart_goal_structuring"
 ];
 
-const GLOBAL_OPERATIONAL_CONTRACT = `
-You are a high-reliability, API-only backend processing engine. 
-
-CORE OPERATIONAL RULES:
-1. JSON INTEGRITY: If JSON is requested, the response MUST start with '{' and end with '}'. No whitespace or markdown blocks.
-2. SCHEMA COMPLETENESS: Every requested key must be present. Do not omit or merge fields.
-3. FAIL-SAFE: If constraints cannot be satisfied or input is nonsensical, return ONLY an empty object {} and nothing else.
-4. NULL INTENT: If a field has no viable data based on context, return "INSUFFICIENT_CONTEXT" instead of an empty string.
-5. DISCIPLINE: No apologies, no disclaimers, no meta-commentary.
-6. VERIFICATION: Internally verify all rules before outputting the final character.
-`;
-
+// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
-  "plan": `Role: Action Planner (RyGuy). Objective: 10–12 step plan. Rules: Base steps on goal AND emotional resistance. Progress from low-risk to high-impact. Return ONLY JSON: {"steps": [{"title": "string", "details": "string"}]}`,
-  "pep_talk": `Role: Motivational Speaker (RyGuy). Rules: Max 300 chars. Mirror emotion, then redirect. Concise language. Raw text only.`,
-  "obstacle_analysis": `Role: Strategic Consultant (RyGuy). Rules: 1-3 obstacles. One paragraph each with strategy. Separate with blank lines. No lists. Raw text only.`,
-  "positive_spin": `Role: Optimistic Reframer (RyGuy). Rules: Single paragraph reframing negative to positive. Raw text only.`,
-  "mindset_reset": `Role: Pragmatic Mindset Coach (RyGuy). Rules: One practical mental adjustment. One paragraph. Raw text only.`,
-  "objection_handler": `Role: Sales Trainer (RyGuy). Rules: Acknowledge objection, provide strategy. One paragraph. Raw text only.`,
-  "smart_goal_structuring": `Role: R.E.A.D.Y. Framework Architect. Rules: Populate R, E, A, D, Y keys. Each must have: title, description, theme, motivation, exampleAction, aiGuidance (Strategic Why), aiTip (Tactical How <20 words). Parity: D and Y must be as detailed as R and E.`
+  "plan": `
+You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
+Create a step-by-step action plan with 10–12 major milestones to help the user achieve their goal.
+
+Return your response STRICTLY in valid JSON format with this exact structure:
+{
+  "steps": [
+    {
+      "title": "Step title (short and actionable)",
+      "details": "Detailed explanation of how to complete this step."
+    }
+  ]
+}
+
+Each 'title' should represent a clickable main task.
+Each 'details' should be a clear, motivational paragraph expanding on what the user can do.
+Do NOT include markdown, lists, or other formatting — return ONLY JSON.
+`,
+
+  "pep_talk": "You are a motivational speaker named RyGuy. Your tone is energetic, inspiring, and positive. Write a powerful pep talk to help the user achieve their goal in **300 characters or less**. Use extremely concise, uplifting language. Separate sentences naturally, avoid quotes, symbols, or code formatting, and deliver the output as raw text.",
+
+  "obstacle_analysis": "You are a strategic consultant named RyGuy. Your tone is analytical and practical. Identify up to three potential obstacles the user might face and provide a paragraph for each with practical strategies to overcome them. Separate each obstacle paragraph with a blank line. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+
+  "positive_spin": "You are an optimistic reframer named RyGuy. Your tone is positive and encouraging. Take the user's negative statement and rewrite it in a single paragraph that highlights opportunities and strengths. Avoid quotes, symbols, or code formatting. Deliver as raw text.",
+
+  "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+
+  "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+
+  // --- REVISED: Updated content to R.E.A.D.Y. framework ---
+  "smart_goal_structuring": `
+You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the powerful R.E.A.D.Y. framework—a belief-to-achievement system built on commitment, action, and continuous optimization.
+
+Each letter represents a phase of momentum:
+R — Reflect → Engage with your desired outcome and build deep commitment.
+E — Execute → Commit to the plan and take the first concrete action step (the "Trek").
+A — Assess → Analyze your progress using milestones and receive custom insight reports.
+D — Dial In → Check key performance data (like the DEI score) to inform strategy correction.
+Y — Yield → Receive your immediate emotional feedback and motivation (the "Pep Talk").
+
+🧭 Theme progression: Commitment → Action → Review → Correction → Sustain.
+
+Return a directly usable JSON object with exactly five main keys: R, E, A, D, and Y.
+Each key must contain:
+- "title" (e.g., "Reflect")
+- "description" (a vivid, supportive explanation based on the letter's function)
+- "theme" (Commitment, Action, Review, Correction, or Sustain)
+- "motivation" (an encouraging one-liner that energizes the user)
+- "exampleAction" (a realistic example or next-step instruction)
+- "aiGuidance" (A **unique, strategic piece of guidance** for this specific step, written in a professional, coaching tone.)
+- "aiTip" (A **unique, actionable, short tip** designed to get the user immediate results for this specific action step.)
+
+Ensure the content of "aiGuidance" and "aiTip" is **distinct and highly tailored** to the user's main goal.
+
+Return only valid JSON — no markdown, quotes, or commentary.
+`
 };
 
-const CORS_HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
+const CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json'
+};
+
+// --- API FETCH HELPER WITH EXPONENTIAL BACKOFF (Max 3 Retries) ---
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
+/**
+ * Executes a fetch request with exponential backoff for temporary errors (429, 5xx).
+ * @param {string} url - The URL to fetch.
+ * @param {object} options - Fetch options (method, headers, body, etc.).
+ * @param {number} [maxRetries=MAX_RETRIES] - Maximum number of retries.
+ * @returns {Promise<Response>} The successful response object.
+ * @throws {Error} If all retries fail.
+ */
 async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             const response = await fetch(url, options);
+
+            // Check for retryable errors (Too Many Requests or Server Errors)
             if (response.status === 429 || response.status >= 500) {
-                if (i === maxRetries - 1) throw new Error(`Fetch failed after ${maxRetries} retries.`);
+                if (i === maxRetries - 1) {
+                    throw new Error(`Fetch failed after ${maxRetries} retries with status ${response.status}.`);
+                }
+
                 const delay = RETRY_DELAY_MS * Math.pow(2, i);
                 await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
+                continue; // retry loop
             }
-            return response;
+            return response; // Success or non-retryable client error (e.g., 400, 401)
         } catch (error) {
-            if (i === maxRetries - 1) throw error;
+            // Catch network errors (e.g., DNS failure, timeout)
+            if (i === maxRetries - 1) throw error; // Re-throw after max retries
             const delay = RETRY_DELAY_MS * Math.pow(2, i);
             await new Promise(resolve => setTimeout(resolve, delay));
+            // Do not log retry as an error in the console.
         }
     }
-    throw new Error("Fetch failed.");
+    // Should be unreachable if maxRetries > 0
+    throw new Error("Fetch failed without a retryable status or network error.");
 }
 
+
+// --- FIRESTORE REST API HELPERS ---
+
+/**
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
+ */
 function jsToFirestoreRest(value) {
     if (value === null || value === undefined) {
         return { nullValue: null };
@@ -105,6 +177,10 @@ function jsToFirestoreRest(value) {
     return { stringValue: String(value) };
 }
 
+/**
+ * Recursively unwraps the verbose Firestore REST API field object
+ * into a standard JavaScript object.
+ */
 function firestoreRestToJs(firestoreField) {
     if (!firestoreField) return null;
 
@@ -133,6 +209,14 @@ function firestoreRestToJs(firestoreField) {
     return null;
 }
 
+
+/**
+ * [CRITICAL SECURITY GATE]
+ * Checks the user's active membership status via the Squarespace API.
+ * Includes a bypass for testing.
+ * @param {string} userId - The unique user ID (from localStorage).
+ * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
+ */
 async function checkSquarespaceMembershipStatus(userId) {
     // DEVELOPMENT BYPASS
     if (userId.startsWith('mock-') || userId === 'TEST_USER') {
@@ -145,6 +229,9 @@ async function checkSquarespaceMembershipStatus(userId) {
         return false;
     }
 
+    // !! CRITICAL CUSTOMIZATION REQUIRED !!
+    // REPLACE the URL below with the actual Squarespace API endpoint (e.g., /1.0/profiles or /1.0/orders)
+    // that can verify membership for the user's ID/Email.
     const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
 
     try {
@@ -164,6 +251,8 @@ async function checkSquarespaceMembershipStatus(userId) {
 
         const data = await response.json();
 
+        // !! CRITICAL CUSTOMIZATION REQUIRED !!
+        // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
         const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
 
         if (!isActive) {
