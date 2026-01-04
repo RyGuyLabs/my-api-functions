@@ -476,30 +476,18 @@ exports.handler = async (event, context) => {
         throw new Error('Missing "imagePrompt" for image generation.');
     }
 
-    // --- FIX 1: Correct Model and generateContent Endpoint ---
-    const IMAGEN_MODEL = "gemini-2.5-flash-image";
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    // --- FIX 2: Correct Payload Structure for generateContent (Minimal Working Version) ---
-    // The prompt must be sent in a 'contents' array.
-    const geminiImagePayload = {
-        contents: [
-            { 
-                // The role is optional for the first prompt, but good practice
-                role: "user", 
-                parts: [{ text: imagePrompt }] 
-            }
-        ],
-        // The old 'config' and 'prompt' fields that caused the 400 error are removed.
-        // We will test with minimal payload first.
+    const IMAGEN_MODEL = "imagen-3"; 
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
+
+    const payload = {
+        instances: [{ prompt: imagePrompt }],
+        parameters: { sampleCount: 1 }
     };
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiImagePayload) // Use the new payload
+        body: JSON.stringify(payload)
     });
-
     if (!response.ok) {
         const errorBody = await response.text();
         console.error("Gemini API Error:", response.status, errorBody);
