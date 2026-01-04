@@ -1,28 +1,34 @@
 const fetch = require('node-fetch').default || require('node-fetch');
 
+// --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
+// Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
+// Base URL for Firestore queries (Used for secure, filtered reads/writes)
 const FIRESTORE_QUERY_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
+// List of features that perform data operations (GATED BY MEMBERSHIP)
 const DATA_OPERATIONS = [
     'SAVE_DREAM',
     'LOAD_DREAMS',
     'DELETE_DREAM'
 ];
 
+// List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
 
+// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
   "plan": `
 You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
@@ -55,38 +61,30 @@ Do NOT include markdown, lists, or other formatting — return ONLY JSON.
 
   // --- REVISED: Updated content to R.E.A.D.Y. framework ---
   "smart_goal_structuring": `
-You are the "R.E.A.D.Y. Framework Architect," a high-performance coach named RyGuy. Your tone is blunt, insightful, and anchored in reality. Convert the user's dream into a high-fidelity roadmap.
+You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the powerful R.E.A.D.Y. framework—a belief-to-achievement system built on commitment, action, and continuous optimization.
 
-[DYNAMIC TONE & ANCHORING]:
-- Every field must strictly reference specific nouns from the user's goal: "{{USER_GOAL}}"
-- Use "Grit-Based" vocabulary. Replace corporate verbs like "leverage" or "optimize" with visceral terms like "wedge," "friction," "acceleration," or "dead-weight."
-- If the advice could apply to *any* goal, it is too generic. Rewrite it to be exclusive to THIS goal.
+Each letter represents a phase of momentum:
+R — Reflect → Engage with your desired outcome and build deep commitment.
+E — Execute → Commit to the plan and take the first concrete action step (the "Trek").
+A — Assess → Analyze your progress using milestones and receive custom insight reports.
+D — Dial In → Check key performance data (like the DEI score) to inform strategy correction.
+Y — Yield → Receive your immediate emotional feedback and motivation (the "Pep Talk").
 
-[THEMATIC ENGINE]:
-R (Reflect): Commitment & Psychology.
-E (Execute): The Initial Trek & High-Leverage Action.
-A (Assess): Objective Milestones & Feedback Loops.
-D (Dial In): Correction, Optimization, and Friction Removal.
-Y (Yield): Long-term Sustainability & Emotional Harvest.
+🧭 Theme progression: Commitment → Action → Review → Correction → Sustain.
 
-[OUTPUT REQUIREMENTS]:
-1. FORMAT: Return ONLY a valid JSON object. No markdown backticks.
-2. SENTINEL CHECK: If the input is nonsensical, return {} immediately.
-3. DEPTH PARITY: D and Y must match R and E in granular detail.
-4. CONTENT DELINEATION: 
-   - "aiGuidance": The "Strategic Why." Explain the psychological or structural logic.
-   - "aiTip": The "Tactical How." A specific, sub-20-word execution hack.
+Return a directly usable JSON object with exactly five main keys: R, E, A, D, and Y.
+Each key must contain:
+- "title" (e.g., "Reflect")
+- "description" (a vivid, supportive explanation based on the letter's function)
+- "theme" (Commitment, Action, Review, Correction, or Sustain)
+- "motivation" (an encouraging one-liner that energizes the user)
+- "exampleAction" (a realistic example or next-step instruction)
+- "aiGuidance" (A **unique, strategic piece of guidance** for this specific step, written in a professional, coaching tone.)
+- "aiTip" (A **unique, actionable, short tip** designed to get the user immediate results for this specific action step.)
 
-[JSON SCHEMA]:
-{
-  "R": { "title": "string", "description": "string", "theme": "Commitment", "motivation": "string", "exampleAction": "string", "aiGuidance": "string", "aiTip": "string" },
-  "E": { ... }, "A": { ... }, "D": { ... }, "Y": { ... }
-}
+Ensure the content of "aiGuidance" and "aiTip" is **distinct and highly tailored** to the user's main goal.
 
-[FINAL VERIFICATION]: 
-- Do not reuse phrasing or concepts across phases. 
-- "aiGuidance" must offer a NEW insight that was not mentioned in the "description."
-- If context is missing, use "INSUFFICIENT_CONTEXT".
+Return only valid JSON — no markdown, quotes, or commentary.
 `
 };
 
@@ -96,6 +94,8 @@ const CORS_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
 };
+
+// --- API FETCH HELPER WITH EXPONENTIAL BACKOFF (Max 3 Retries) ---
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
@@ -136,6 +136,12 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     throw new Error("Fetch failed without a retryable status or network error.");
 }
 
+
+// --- FIRESTORE REST API HELPERS ---
+
+/**
+ * Converts a standard JavaScript object into the verbose Firestore REST API format.
+ */
 function jsToFirestoreRest(value) {
     if (value === null || value === undefined) {
         return { nullValue: null };
@@ -169,6 +175,10 @@ function jsToFirestoreRest(value) {
     return { stringValue: String(value) };
 }
 
+/**
+ * Recursively unwraps the verbose Firestore REST API field object
+ * into a standard JavaScript object.
+ */
 function firestoreRestToJs(firestoreField) {
     if (!firestoreField) return null;
 
@@ -197,6 +207,14 @@ function firestoreRestToJs(firestoreField) {
     return null;
 }
 
+
+/**
+ * [CRITICAL SECURITY GATE]
+ * Checks the user's active membership status via the Squarespace API.
+ * Includes a bypass for testing.
+ * @param {string} userId - The unique user ID (from localStorage).
+ * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
+ */
 async function checkSquarespaceMembershipStatus(userId) {
     // DEVELOPMENT BYPASS
     if (userId.startsWith('mock-') || userId === 'TEST_USER') {
@@ -230,6 +248,9 @@ async function checkSquarespaceMembershipStatus(userId) {
         }
 
         const data = await response.json();
+
+        // !! CRITICAL CUSTOMIZATION REQUIRED !!
+        // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
         const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
 
         if (!isActive) {
@@ -262,6 +283,7 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // --- API Key and Initialization Checks ---
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
         return {
             statusCode: 500,
@@ -444,18 +466,30 @@ exports.handler = async (event, context) => {
         throw new Error('Missing "imagePrompt" for image generation.');
     }
 
-    const IMAGEN_MODEL = "imagen-3"; 
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${GEMINI_API_KEY}`;
-
-    const payload = {
-        instances: [{ prompt: imagePrompt }],
-        parameters: { sampleCount: 1 }
+    // --- FIX 1: Correct Model and generateContent Endpoint ---
+    const IMAGEN_MODEL = "gemini-2.5-flash-image";
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+    // --- FIX 2: Correct Payload Structure for generateContent (Minimal Working Version) ---
+    // The prompt must be sent in a 'contents' array.
+    const geminiImagePayload = {
+        contents: [
+            { 
+                // The role is optional for the first prompt, but good practice
+                role: "user", 
+                parts: [{ text: imagePrompt }] 
+            }
+        ],
+        // The old 'config' and 'prompt' fields that caused the 400 error are removed.
+        // We will test with minimal payload first.
     };
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(geminiImagePayload) // Use the new payload
     });
+
     if (!response.ok) {
         const errorBody = await response.text();
         console.error("Gemini API Error:", response.status, errorBody);
@@ -630,11 +664,10 @@ const payload = {
 
     const result = await response.json();
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    const sanitizedText = (rawText || "").replace(/```json|```/g, "").trim();
-    
+
     // 5. Parse and Process Structured Data
     try {
-        const parsedContent = JSON.parse(sanitizedText); 
+        const parsedContent = JSON.parse(rawText);
         const imagePrompt = parsedContent.image_prompt;
         const commandText = parsedContent.command_text;
 
@@ -743,10 +776,10 @@ Schema:
 
             const result = await response.json();
             const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-            const sanitizedText = (rawText || "").replace(/```json|```/g, "").trim(); // ADD THIS
 
-        try {
-            const parsedContent = JSON.parse(sanitizedText); // USE THIS
+            try {
+                const parsedContent = JSON.parse(rawText);
+
                 // Ensure the required keys are present before returning
                 if (!parsedContent.internalConflict || !parsedContent.externalPrescription) {
                     throw new Error("Parsed JSON missing required Barrier Breaker fields.");
@@ -769,31 +802,30 @@ Schema:
         
         // --- 2c. Handle Text Generation  ---
         else if (TEXT_GENERATION_FEATURES.includes(feature)) {
-    if (!userGoal) {
-        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Goal required.' }) };
-    }
+            if (!userGoal) {
+                return {
+                    statusCode: 400,
+                    headers: CORS_HEADERS,
+                    body: JSON.stringify({ message: 'Missing required userGoal data for feature.' })
+                };
+            }
 
-    // 1. DYNAMIC INJECTION: Replace the placeholder with the actual goal
-    let systemInstructionText = SYSTEM_INSTRUCTIONS[feature].replace("{{USER_GOAL}}", userGoal);
+            const TEXT_MODEL = "gemini-2.5-flash";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-    // 2. MODEL CONFIG: Use the 2026 stable Flash model
-    const TEXT_MODEL = "gemini-1.5-flash"; // Or your preferred 2026 stable version
-    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
-    const payload = {
-        contents: [{ parts: [{ text: `GOAL: ${userGoal}` }] }],
-        systemInstruction: { parts: [{ text: systemInstructionText }] },
-        generationConfig: {
-            temperature: 0.8, // Raised to 0.8 for "RyGuy" blunt personality
-            responseMimeType: "application/json" 
-        }
-    };
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
+                systemInstruction: { parts: [{ text: systemInstructionText }] },
+            };
 
-    const response = await retryFetch(TEXT_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+            const response = await retryFetch(TEXT_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
             if (!response.ok) {
                 const errorBody = await response.text();
                 console.error("Text Generation API Error:", response.status, errorBody);
@@ -802,8 +834,7 @@ Schema:
 
             const result = await response.json();
             const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-            const sanitizedText = (rawText || "").replace(/```json|```/g, "").trim();
-            
+
             if (!rawText) {
                 console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
                 throw new Error("Text Generation API response did not contain generated text.");
@@ -815,7 +846,7 @@ Schema:
             // Only attempt JSON parsing for specific structured output features
             if (feature === "plan" || feature === "smart_goal_structuring") {
                 try {
-                    parsedContent = JSON.parse(sanitizedText);
+                    parsedContent = JSON.parse(rawText);
                     responseKey = feature === "plan" ? 'plan' : 'smartGoal';
                 } catch (jsonError) {
                     console.warn(`[RyGuyLabs] Feature ${feature} returned non-JSON. Sending raw text as fallback.`);
