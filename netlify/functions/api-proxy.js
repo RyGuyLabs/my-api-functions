@@ -847,7 +847,7 @@ Schema:
             // Only attempt JSON parsing for specific structured output features
             if (feature === "plan" || feature === "smart_goal_structuring") {
                 try {
-                    parsedContent = JSON.parse(rawText);
+                    parsedContent = JSON.parse(sanitizedText);
                     responseKey = feature === "plan" ? 'plan' : 'smartGoal';
                 } catch (jsonError) {
                     console.warn(`[RyGuyLabs] Feature ${feature} returned non-JSON. Sending raw text as fallback.`);
