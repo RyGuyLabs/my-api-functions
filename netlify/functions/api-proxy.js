@@ -826,8 +826,13 @@ Schema:
             const systemInstructionText = SYSTEM_INSTRUCTIONS[feature];
 
             const payload = {
-                contents: [{ parts: [{ text: userGoal }] }],
-                systemInstruction: { parts: [{ text: systemInstructionText }] },
+    contents: [{ parts: [{ text: userGoal }] }],
+    systemInstruction: { parts: [{ text: systemInstructionText }] },
+    generationConfig: {
+        temperature: 0.75,
+        responseMimeType: "application/json" 
+    }
+
             };
 
             const response = await retryFetch(TEXT_API_URL, {
