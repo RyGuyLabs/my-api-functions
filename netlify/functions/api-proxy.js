@@ -833,7 +833,8 @@ Schema:
 
             const result = await response.json();
             const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
+            const sanitizedText = (rawText || "").replace(/```json|```/g, "").trim();
+            
             if (!rawText) {
                 console.error("Text Generation API Response Missing Text:", JSON.stringify(result));
                 throw new Error("Text Generation API response did not contain generated text.");
