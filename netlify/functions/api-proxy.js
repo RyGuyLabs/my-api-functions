@@ -1,36 +1,28 @@
-
-// **CRITICAL FIX for Netlify/Lambda:** Use .default for robust node-fetch import
 const fetch = require('node-fetch').default || require('node-fetch');
 
-// --- GLOBAL SETUP FOR DATA & SECURITY ---
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
-// Base URL for the Firestore REST API (Used for document-specific operations like POST/DELETE)
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
-// Base URL for Firestore queries (Used for secure, filtered reads/writes)
 const FIRESTORE_QUERY_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
-// List of features that perform data operations (GATED BY MEMBERSHIP)
 const DATA_OPERATIONS = [
     'SAVE_DREAM',
     'LOAD_DREAMS',
     'DELETE_DREAM'
 ];
 
-// List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
 
-// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
   "plan": `
 You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
@@ -105,8 +97,6 @@ const CORS_HEADERS = {
     'Content-Type': 'application/json'
 };
 
-// --- API FETCH HELPER WITH EXPONENTIAL BACKOFF (Max 3 Retries) ---
-
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
@@ -146,12 +136,6 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     throw new Error("Fetch failed without a retryable status or network error.");
 }
 
-
-// --- FIRESTORE REST API HELPERS ---
-
-/**
- * Converts a standard JavaScript object into the verbose Firestore REST API format.
- */
 function jsToFirestoreRest(value) {
     if (value === null || value === undefined) {
         return { nullValue: null };
@@ -185,10 +169,6 @@ function jsToFirestoreRest(value) {
     return { stringValue: String(value) };
 }
 
-/**
- * Recursively unwraps the verbose Firestore REST API field object
- * into a standard JavaScript object.
- */
 function firestoreRestToJs(firestoreField) {
     if (!firestoreField) return null;
 
@@ -217,14 +197,6 @@ function firestoreRestToJs(firestoreField) {
     return null;
 }
 
-
-/**
- * [CRITICAL SECURITY GATE]
- * Checks the user's active membership status via the Squarespace API.
- * Includes a bypass for testing.
- * @param {string} userId - The unique user ID (from localStorage).
- * @returns {Promise<boolean>} True if the user has an active subscription, false otherwise.
- */
 async function checkSquarespaceMembershipStatus(userId) {
     // DEVELOPMENT BYPASS
     if (userId.startsWith('mock-') || userId === 'TEST_USER') {
@@ -258,9 +230,6 @@ async function checkSquarespaceMembershipStatus(userId) {
         }
 
         const data = await response.json();
-
-        // !! CRITICAL CUSTOMIZATION REQUIRED !!
-        // Adjust this line to match the JSON structure (e.g., data.orders[0].status === 'PAID')
         const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
 
         if (!isActive) {
@@ -293,7 +262,6 @@ exports.handler = async (event, context) => {
         };
     }
 
-    // --- API Key and Initialization Checks ---
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
         return {
             statusCode: 500,
@@ -775,10 +743,10 @@ Schema:
 
             const result = await response.json();
             const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            const sanitizedText = (rawText || "").replace(/```json|```/g, "").trim(); // ADD THIS
 
-            try {
-                const parsedContent = JSON.parse(rawText);
-
+        try {
+            const parsedContent = JSON.parse(sanitizedText); // USE THIS
                 // Ensure the required keys are present before returning
                 if (!parsedContent.internalConflict || !parsedContent.externalPrescription) {
                     throw new Error("Parsed JSON missing required Barrier Breaker fields.");
