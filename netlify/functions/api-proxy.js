@@ -11,33 +11,6 @@ const FIRESTORE_BASE_URL =
 const FIRESTORE_QUERY_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
-exports.handler = async (event, context) => {
-  if (event.httpMethod !== "GET") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
-  try {
-    const firebaseConfig = {
-      apiKey: FIRESTORE_KEY,
-      authDomain: `${PROJECT_ID}.firebaseapp.com`,
-      projectId: PROJECT_ID,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
-      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
-      appId: process.env.FIREBASE_APP_ID || ""
-    };
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify(firebaseConfig)
-    };
-  } catch (err) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: err.message })
-    };
-  }
-};
-
 const DATA_OPERATIONS = [
     'SAVE_DREAM',
     'LOAD_DREAMS',
