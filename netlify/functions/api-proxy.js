@@ -272,14 +272,29 @@ async function checkSquarespaceMembershipStatus(userId) {
 
 
 exports.handler = async (event, context) => {
+    // 1. Handle CORS Preflight
     if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+    }
+
+    // 2. NEW: HANDLE CONFIG FETCH (Option 1)
+    // This allows the frontend to get the "address" without it being in the HTML
+    if (event.httpMethod === 'GET' && event.queryStringParameters.action === 'get_config') {
         return {
             statusCode: 200,
             headers: CORS_HEADERS,
-            body: ''
+            body: JSON.stringify({
+                apiKey: FIRESTORE_KEY,
+                authDomain: `${PROJECT_ID}.firebaseapp.com`,
+                projectId: PROJECT_ID,
+                storageBucket: `${PROJECT_ID}.appspot.com`,
+                messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID, 
+                appId: process.env.FIREBASE_APP_ID
+            })
         };
     }
 
+    // 3. Handle standard POST requests (AI and Data operations)
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
@@ -287,7 +302,7 @@ exports.handler = async (event, context) => {
             body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
-
+    
     // --- API Key and Initialization Checks ---
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
         return {
