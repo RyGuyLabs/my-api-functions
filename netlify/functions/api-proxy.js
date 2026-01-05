@@ -328,6 +328,79 @@ if (feature === 'get_config') {
                     break;
 
                 case 'LOAD_DREAMS':
+                    const structuredQuery = {
+                        select: { fields: [{ fieldPath: "*" }] },
+                        from: [{ collectionId: "dreams" }], 
+                        orderBy: [{
+                            field: { fieldPath: "timestamp" },
+                            direction: "DESCENDING"
+                        }]
+                    };
+
+                    firestoreResponse = await retryFetch(FIRESTORE_QUERY_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
+                    });
+
+                    if (firestoreResponse.ok) {
+                        const result = await firestoreResponse.json();
+                        const dreams = (result || [])
+                            .filter(item => item.document) 
+                            .map(item => {
+                                const doc = item.document;
+                                const docId = doc.name.split('/').pop();
+
+                                const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
+
+                                return { id: docId, ...fields };
+                            });
+
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ dreams })
+                        };
+                    }
+                    break;
+
+                case 'DELETE_DREAM':
+                    if (!data || !data.dreamId) {
+                        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
+                    }
+
+                    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
+
+                    firestoreResponse = await retryFetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (firestoreResponse.ok) {
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,
+                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
+                        };
+                    }
+                    break;
+
+                default:
+                    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data action." }) };
+            }
+
+            const errorText = firestoreResponse ? await firestoreResponse.text() : 'Unknown database error';
+            console.error("Firestore operation failed:", firestoreResponse?.status, errorText);
+            return {
+                statusCode: firestoreResponse?.status || 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
+            };
+
+        }
+
+                    break;
+
+                case 'LOAD_DREAMS':
                     // Use a Structured Query on the user's subcollection.
                     const structuredQuery = {
                         // Select all fields
