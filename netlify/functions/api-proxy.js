@@ -262,6 +262,8 @@ exports.handler = async (event, context) => {
         const body = JSON.parse(event.body);
         const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
 
+        const feature = action || body.feature;
+
 if (feature === 'get_config') {
     return {
         statusCode: 200,
