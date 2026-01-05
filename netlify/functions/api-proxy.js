@@ -262,16 +262,20 @@ exports.handler = async (event, context) => {
         const body = JSON.parse(event.body);
         const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
 
-        const feature = action || body.feature;
-
-        if (!feature) {
-             return {
-                 statusCode: 400,
-                 headers: CORS_HEADERS,
-                 body: JSON.stringify({ message: "Missing required 'action' parameter." })
-            };
-        }
-       
+if (feature === 'get_config') {
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+            apiKey: FIRESTORE_KEY,
+            authDomain: `${PROJECT_ID}.firebaseapp.com`,
+            projectId: PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
+            appId: process.env.FIREBASE_APP_ID || ""
+        })
+    };
+}
         if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
 
             if (!userId) {
