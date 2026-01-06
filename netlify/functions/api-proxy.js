@@ -227,12 +227,15 @@ async function checkSquarespaceMembershipStatus(userId) {
 
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: ''
-        };
-    }
+    return {
+        statusCode: 204,
+        headers: {
+            ...CORS_HEADERS,
+            'Access-Control-Max-Age': '86400'
+        },
+        body: ''
+    };
+}
 
     if (event.httpMethod !== 'POST') {
         return {
