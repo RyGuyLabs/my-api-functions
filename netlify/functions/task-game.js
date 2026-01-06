@@ -1,5 +1,7 @@
-const { db } = require('./firebaseClient'); // server-side Firestore
-const { collection, addDoc } = require('firebase-admin/firestore'); // from firebase-admin
+const fetch = require('node-fetch');
+
+const { db } = require('./firebaseClient'); 
+const { collection, addDoc } = require('firebase-admin/firestore'); 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
@@ -9,7 +11,6 @@ const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const FIRESTORE_BASE_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
-// --- Default CORS headers ---
 const defaultHeaders = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
@@ -46,7 +47,6 @@ exports.handler = async (event) => {
 
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-        // --- AUTH: Require Firebase ID Token ---
 const authHeader = event.headers.authorization;
 
 if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -59,7 +59,6 @@ if (!authHeader || !authHeader.startsWith('Bearer ')) {
 
 const idToken = authHeader.replace('Bearer ', '');
 
-// --- VERIFY TOKEN WITH FIREBASE REST API ---
 const verifyResponse = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${process.env.FIREBASE_API_KEY}`,
     {
