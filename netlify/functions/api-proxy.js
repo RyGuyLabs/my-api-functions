@@ -228,15 +228,18 @@ async function checkSquarespaceMembershipStatus(userId) {
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
     return {
-        statusCode: 204,
+        statusCode: 204, // proper empty response for preflight
         headers: {
-            ...CORS_HEADERS,
-            'Access-Control-Max-Age': '86400'
+            'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+            'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
+            'Access-Control-Max-Age': '86400', // cache preflight
+            'Content-Type': 'application/json'
         },
         body: ''
     };
 }
-
+    
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
