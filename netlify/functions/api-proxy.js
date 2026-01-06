@@ -294,18 +294,6 @@ if (feature === 'get_config') {
                 };
             }
 
-            const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
-
-            if (!isSubscriberActive) {
-                return {
-                    statusCode: 403,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({
-                        message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription."
-                    })
-                };
-            }
-
             const userDreamsCollectionPath = `users/${userId}/dreams`;
             let firestoreResponse;
 
