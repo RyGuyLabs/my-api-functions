@@ -228,17 +228,17 @@ async function checkSquarespaceMembershipStatus(userId) {
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') { // fixed capitalization and spelling
         return {
-            statusCode: 200, // must be 200 for preflight
+            statusCode: 204, 
             headers: {
                 'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
                 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
-                'Access-Control-Max-Age': '86400', // cache preflight
-                'Content-Type': 'application/json'
+                'Access-Control-Max-Age': '86400' 
             },
-            body: ''
+            body: '' 
         };
     }
+
     
     if (event.httpMethod !== 'POST') {
         return {
@@ -368,7 +368,6 @@ if (feature === 'get_config') {
                 }
             })
             .filter(Boolean); // remove null entries from malformed documents
-        // --- FIX END ---
 
         return {
             statusCode: 200,
@@ -434,8 +433,7 @@ return {
                 parts: [{ text: imagePrompt }] 
             }
         ],
-        // The old 'config' and 'prompt' fields that caused the 400 error are removed.
-        // We will test with minimal payload first.
+        
     };
 
     const response = await fetch(IMAGEN_API_URL, {
@@ -452,11 +450,9 @@ return {
 
     const result = await response.json();
     
-    // The image data is now nested deeper under candidates/content/parts/inlineData/data
     const base64Data = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
     if (!base64Data) {
-        // If no image is returned, the model might have returned text instead.
         const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (textResponse) {
              console.warn("Gemini Image API returned text instead of image:", textResponse);
