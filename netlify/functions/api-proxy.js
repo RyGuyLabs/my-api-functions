@@ -96,7 +96,6 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
         try {
             const response = await fetch(url, options);
 
-            // Check for retryable errors (Too Many Requests or Server Errors)
             if (response.status === 429 || response.status >= 500) {
                 if (i === maxRetries - 1) {
                     throw new Error(`Fetch failed after ${maxRetries} retries with status ${response.status}.`);
@@ -106,13 +105,12 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue; // retry loop
             }
-            return response; // Success or non-retryable client error (e.g., 400, 401)
+            return response; 
         } catch (error) {
-            // Catch network errors (e.g., DNS failure, timeout)
-            if (i === maxRetries - 1) throw error; // Re-throw after max retries
+            
+            if (i === maxRetries - 1) throw error; 
             const delay = RETRY_DELAY_MS * Math.pow(2, i);
             await new Promise(resolve => setTimeout(resolve, delay));
-            // Do not log retry as an error in the console.
         }
     }
     throw new Error("Fetch failed without a retryable status or network error.");
@@ -180,7 +178,6 @@ function firestoreRestToJs(firestoreField) {
 }
 
 async function checkSquarespaceMembershipStatus(userId) {
-    // DEVELOPMENT BYPASS
     if (userId.startsWith('mock-') || userId === 'TEST_USER') {
         console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
         return true;
@@ -232,7 +229,6 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
     const IMAGEN_MODEL = "gemini-2.5-flash-image";
     const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
-    // The prompt must be sent in a 'contents' array.
     const geminiImagePayload = {
         contents: [
             { 
@@ -273,7 +269,6 @@ exports.handler = async (event, context) => {
         const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
         const feature = action || body.feature;
 
-        // ✅ MUST COME FIRST — NO DEPENDENCIES
         if (feature === 'get_config') {
             return {
                 statusCode: 200,
@@ -430,14 +425,14 @@ exports.handler = async (event, context) => {
                     if (firestoreResponse.status === 404) {
                         return {
                             statusCode: 404,
-                            headers: CORS_HEADERS,  // Ensure CORS headers for dream not found
+                            headers: CORS_HEADERS,  
                             body: JSON.stringify({ message: `Dream ${data.dreamId} not found.` })
                         };
                     }
                     if (firestoreResponse.ok) {
                         return {
                             statusCode: 200,
-                            headers: CORS_HEADERS,  // Ensure CORS headers for success response
+                            headers: CORS_HEADERS,  
                             body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
                         };
                     }
@@ -577,8 +572,8 @@ if (feature === 'image_generation') {
 }
 
 else if (feature === 'prime_directive') {
-    const userGoal = body.userGoal; // Assumes you pass this from the frontend
-    const emotionalFocus = body.emotionalFocus; // Assumes you pass this from the frontend
+    const userGoal = body.userGoal;
+    const emotionalFocus = body.emotionalFocus; 
 
     if (!userGoal || !emotionalFocus) {
         return { 
@@ -609,20 +604,15 @@ const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${
 const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR (Fear to counter): ${emotionalFocus}. Generate the required JSON output.`;
 
 const payload = {
-    // 1. User content
     contents: [{ parts: [{ text: userPrompt }] }],
-    
-    // 2. System Instruction MUST be an object with 'parts' to match the working 'plan' feature
     systemInstruction: { parts: [{ text: PRIME_DIRECTIVE_INSTRUCTION }] },
     
-    // 3. Generation configuration (keep this structure for structured output)
     generationConfig: {
         temperature: 0.2,
         responseMimeType: "application/json" // Crucial for getting JSON output
     }
 };
 
-    // 4. Call Gemini API
     const response = await retryFetch(TEXT_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -638,7 +628,6 @@ const payload = {
     const result = await response.json();
     const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    // 5. Parse and Process Structured Data
     try {
         const parsedContent = JSON.parse(rawText);
         const imagePrompt = parsedContent.image_prompt;
