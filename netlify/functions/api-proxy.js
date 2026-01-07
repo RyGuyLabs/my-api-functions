@@ -245,24 +245,25 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
     };
 
 exports.handler = async (event, context) => {
+    const CORS_HEADERS = {
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
+        'Access-Control-Max-Age': '86400'
+    };
+
     if (event.httpMethod === 'OPTIONS') { // fixed capitalization and spelling
         return {
             statusCode: 204, 
-            headers: {
-                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-                'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
-                'Access-Control-Max-Age': '86400' 
-            },
+            headers: CORS_HEADERS,  // Ensure CORS headers for OPTIONS response
             body: '' 
         };
     }
 
-    
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: CORS_HEADERS,
+            headers: CORS_HEADERS,  // Ensure CORS headers for Method Not Allowed
             body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
@@ -270,7 +271,7 @@ exports.handler = async (event, context) => {
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,
+            headers: CORS_HEADERS,  // Ensure CORS headers for internal error
             body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
         };
     }
@@ -278,7 +279,7 @@ exports.handler = async (event, context) => {
     if (!FIRESTORE_KEY || !PROJECT_ID) {
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,
+            headers: CORS_HEADERS,  // Ensure CORS headers for Firestore error
             body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
         };
     }
@@ -289,26 +290,26 @@ exports.handler = async (event, context) => {
 
         const feature = action || body.feature;
 
-if (feature === 'get_config') {
-    return {
-        statusCode: 200,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-            apiKey: FIRESTORE_KEY,
-            authDomain: `${PROJECT_ID}.firebaseapp.com`,
-            projectId: PROJECT_ID,
-            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
-            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
-            appId: process.env.FIREBASE_APP_ID || ""
-        })
-    };
-}
-        if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
+        if (feature === 'get_config') {
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,  // Ensure CORS headers for get_config response
+                body: JSON.stringify({
+                    apiKey: FIRESTORE_KEY,
+                    authDomain: `${PROJECT_ID}.firebaseapp.com`,
+                    projectId: PROJECT_ID,
+                    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
+                    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
+                    appId: process.env.FIREBASE_APP_ID || ""
+                })
+            };
+        }
 
+        if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
             if (!userId) {
                 return {
                     statusCode: 401,
-                    headers: CORS_HEADERS,
+                    headers: CORS_HEADERS,  // Ensure CORS headers for Unauthorized error
                     body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
                 };
             }
@@ -318,7 +319,13 @@ if (feature === 'get_config') {
 
             switch (feature.toUpperCase()) {
                 case 'SAVE_DREAM':
-                    if (!data) { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing data to save." }) }; }
+                    if (!data) { 
+                        return { 
+                            statusCode: 400, 
+                            headers: CORS_HEADERS,  // Ensure CORS headers for missing data error
+                            body: JSON.stringify({ message: "Missing data to save." }) 
+                        }; 
+                    }
 
                     const dataWithTimestamp = { ...data, timestamp: new Date().toISOString() };
 
@@ -334,100 +341,104 @@ if (feature === 'get_config') {
                         const result = await firestoreResponse.json();
                         return {
                             statusCode: 200,
-                            headers: CORS_HEADERS,
+                            headers: CORS_HEADERS,  // Ensure CORS headers for success response
                             body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name })
                         };
                     }
                     break;
 
                 case 'LOAD_DREAMS':
-    const structuredQuery = {
-        select: { fields: [{ fieldPath: "*" }] },
-        from: [{ collectionId: "dreams" }], 
-        orderBy: [{
-            field: { fieldPath: "timestamp" },
-            direction: "DESCENDING"
-        }]
-    };
+                    const structuredQuery = {
+                        select: { fields: [{ fieldPath: "*" }] },
+                        from: [{ collectionId: "dreams" }], 
+                        orderBy: [{
+                            field: { fieldPath: "timestamp" },
+                            direction: "DESCENDING"
+                        }]
+                    };
 
-    firestoreResponse = await retryFetch(FIRESTORE_QUERY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
-    });
+                    firestoreResponse = await retryFetch(FIRESTORE_QUERY_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
+                    });
 
-    if (firestoreResponse.ok) {
-        const result = await firestoreResponse.json();
+                    if (firestoreResponse.ok) {
+                        const result = await firestoreResponse.json();
 
-        const dreams = (result || [])
-            .filter(item => item.document) 
-            .map(item => {
-                try {
-                    const doc = item.document;
-                    const docId = doc.name.split('/').pop();
+                        const dreams = (result || [])
+                            .filter(item => item.document) 
+                            .map(item => {
+                                try {
+                                    const doc = item.document;
+                                    const docId = doc.name.split('/').pop();
 
-                    const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
+                                    const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
 
-                    return { id: docId, ...fields };
-                } catch (err) {
-                    console.warn("Skipping invalid document in LOAD_DREAMS:", err);
-                    return null;
-                }
-            })
-            .filter(Boolean); // remove null entries from malformed documents
+                                    return { id: docId, ...fields };
+                                } catch (err) {
+                                    console.warn("Skipping invalid document in LOAD_DREAMS:", err);
+                                    return null;
+                                }
+                            })
+                            .filter(Boolean); // remove null entries from malformed documents
 
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,  // Ensure CORS headers for success response
+                            body: JSON.stringify({ dreams })
+                        };
+                    }
+                    break;
+
+                case 'DELETE_DREAM':
+                    if (!data || !data.dreamId) {
+                        return { 
+                            statusCode: 400, 
+                            headers: CORS_HEADERS,  // Ensure CORS headers for missing dreamId error
+                            body: JSON.stringify({ message: "Missing dreamId for deletion." }) 
+                        };
+                    }
+
+                    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
+
+                    firestoreResponse = await retryFetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (firestoreResponse.status === 404) {
+                        return {
+                            statusCode: 404,
+                            headers: CORS_HEADERS,  // Ensure CORS headers for dream not found
+                            body: JSON.stringify({ message: `Dream ${data.dreamId} not found.` })
+                        };
+                    }
+                    if (firestoreResponse.ok) {
+                        return {
+                            statusCode: 200,
+                            headers: CORS_HEADERS,  // Ensure CORS headers for success response
+                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
+                        };
+                    }
+                    break;
+
+                default:
+                    return { 
+                        statusCode: 400, 
+                        headers: CORS_HEADERS,  // Ensure CORS headers for invalid action
+                        body: JSON.stringify({ message: "Invalid data action." }) 
+                    };
+            }
+        }
+    } catch (err) {
+        console.error("Error:", err);
         return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ dreams })
+            statusCode: 500,
+            headers: CORS_HEADERS,  // Ensure CORS headers for internal error
+            body: JSON.stringify({ message: "Internal Server Error", details: err.message })
         };
     }
-    break;
-
-case 'DELETE_DREAM':
-    if (!data || !data.dreamId) {
-        return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Missing dreamId for deletion." }) };
-    }
-
-    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
-
-    firestoreResponse = await retryFetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
-        method: 'DELETE'
-    });
-    if (firestoreResponse.status === 404) {
-        return {
-            statusCode: 404,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: `Dream ${data.dreamId} not found.` })
-        };
-    }
-    if (firestoreResponse.ok) {
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
-        };
-    }
-    break;
-
-default:
-    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ message: "Invalid data action." }) };
-
-}
-
-if (firestoreResponse) {
-    const errorText = await firestoreResponse.text();
-    console.error("Firestore operation failed:", firestoreResponse.status, errorText);
-
-    return {
-        statusCode: firestoreResponse.status || 500,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-            message: "Database operation failed. Check console for details.",
-            details: errorText
-        })
-    };
-}
+};
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
