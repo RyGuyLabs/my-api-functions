@@ -264,26 +264,6 @@ exports.handler = async (event, context) => {
         };
     }
 
-    try {
-        const body = JSON.parse(event.body);
-        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
-        const feature = action || body.feature;
-
-        if (feature === 'get_config') {
-            return {
-                statusCode: 200,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    apiKey: FIRESTORE_KEY,
-                    authDomain: `${PROJECT_ID}.firebaseapp.com`,
-                    projectId: PROJECT_ID,
-                    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
-                    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
-                    appId: process.env.FIREBASE_APP_ID || ""
-                })
-            };
-        }
-
         if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
             return {
                 statusCode: 500,
