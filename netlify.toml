@@ -1,39 +1,24 @@
 [build]
   functions = "netlify/functions"
-  publish = "."  
+  publish = "."
 
-# Global functions settings.
 [functions]
-node_bundler = "esbuild"
-cors.origin = "https://www.ryguylabs.com"
-cors.methods = ["POST", "GET", "OPTIONS"]
-cors.headers = ["Content-Type", "Authorization", "X-Gemini-Model"]
+  node_bundler = "esbuild"
 
-# Configuration for the vocal-coach function.
 [functions.vocal-coach]
-timeout = 60 
-environment = ["FIRST_API_KEY"]
+  timeout = 60
+  environment = ["FIRST_API_KEY"]
 
-# Configuration for the separate Lead Qualifier function.
 [functions.lead-qualifier]
-environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
+  environment = ["FIRST_API_KEY", "RYGUY_SEARCH_API_KEY", "RYGUY_SEARCH_ENGINE_ID"]
 
-# --- Configuration for the Lead Generator function ---
 [functions.lead-generator]
-environment = [
-  "LEAD_QUALIFIER_API_KEY",  
-  "RYGUY_SEARCH_API_KEY",    
-  "B2B_PAIN_CSE_ID",        
-  "CORP_COMP_CSE_ID",
-  "TECH_SIM_CSE_ID",
-  "SOCIAL_PRO_CSE_ID",
-  "DIR_INFO_CSE_ID"          
-]
-
-[[headers]]
-  for = "/.netlify/functions/:splat"
-  [headers.values]
-    Access-Control-Allow-Origin = "https://www.ryguylabs.com"
-    Access-Control-Allow-Methods = "POST, GET, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, X-Gemini-Model, Authorization"
-    Access-Control-Max-Age = "86400"
+  environment = [
+    "LEAD_QUALIFIER_API_KEY",
+    "RYGUY_SEARCH_API_KEY",
+    "B2B_PAIN_CSE_ID",
+    "CORP_COMP_CSE_ID",
+    "TECH_SIM_CSE_ID",
+    "SOCIAL_PRO_CSE_ID",
+    "DIR_INFO_CSE_ID"
+  ]
