@@ -224,6 +224,25 @@ async function checkSquarespaceMembershipStatus(userId) {
     }
 }
 
+const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
+    if (!imagePrompt) {
+        throw new Error('Missing "imagePrompt" for image generation.');
+    }
+
+    const IMAGEN_MODEL = "gemini-2.5-flash-image";
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+    // The prompt must be sent in a 'contents' array.
+    const geminiImagePayload = {
+        contents: [
+            { 
+                // The role is optional for the first prompt, but good practice
+                role: "user", 
+                parts: [{ text: imagePrompt }] 
+            }
+        ],
+        
+    };
 
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') { // fixed capitalization and spelling
@@ -403,26 +422,6 @@ return {
     headers: CORS_HEADERS,
     body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
 };
-
-        const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
-    if (!imagePrompt) {
-        throw new Error('Missing "imagePrompt" for image generation.');
-    }
-
-    const IMAGEN_MODEL = "gemini-2.5-flash-image";
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    // The prompt must be sent in a 'contents' array.
-    const geminiImagePayload = {
-        contents: [
-            { 
-                // The role is optional for the first prompt, but good practice
-                role: "user", 
-                parts: [{ text: imagePrompt }] 
-            }
-        ],
-        
-    };
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
