@@ -246,24 +246,24 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
 
 exports.handler = async (event, context) => {
     const CORS_HEADERS = {
-        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
         'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
         'Access-Control-Max-Age': '86400'
     };
 
-    if (event.httpMethod === 'OPTIONS') { // fixed capitalization and spelling
+    if (event.httpMethod === 'OPTIONS') { 
         return {
-            statusCode: 204, 
-            headers: CORS_HEADERS,  // Ensure CORS headers for OPTIONS response
-            body: '' 
+            statusCode: 204,
+            headers: CORS_HEADERS,
+            body: ''
         };
     }
 
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: CORS_HEADERS,  // Ensure CORS headers for Method Not Allowed
+            headers: CORS_HEADERS,  
             body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
@@ -271,7 +271,7 @@ exports.handler = async (event, context) => {
     if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,  // Ensure CORS headers for internal error
+            headers: CORS_HEADERS,  
             body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
         };
     }
@@ -279,7 +279,7 @@ exports.handler = async (event, context) => {
     if (!FIRESTORE_KEY || !PROJECT_ID) {
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,  // Ensure CORS headers for Firestore error
+            headers: CORS_HEADERS,  
             body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
         };
     }
@@ -287,13 +287,12 @@ exports.handler = async (event, context) => {
     try {
         const body = JSON.parse(event.body);
         const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
-
         const feature = action || body.feature;
 
         if (feature === 'get_config') {
             return {
                 statusCode: 200,
-                headers: CORS_HEADERS,  // Ensure CORS headers for get_config response
+                headers: CORS_HEADERS,  
                 body: JSON.stringify({
                     apiKey: FIRESTORE_KEY,
                     authDomain: `${PROJECT_ID}.firebaseapp.com`,
@@ -309,7 +308,7 @@ exports.handler = async (event, context) => {
             if (!userId) {
                 return {
                     statusCode: 401,
-                    headers: CORS_HEADERS,  // Ensure CORS headers for Unauthorized error
+                    headers: CORS_HEADERS,  
                     body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
                 };
             }
@@ -425,7 +424,7 @@ exports.handler = async (event, context) => {
                 default:
                     return { 
                         statusCode: 400, 
-                        headers: CORS_HEADERS,  // Ensure CORS headers for invalid action
+                        headers: CORS_HEADERS,  
                         body: JSON.stringify({ message: "Invalid data action." }) 
                     };
             }
@@ -434,7 +433,7 @@ exports.handler = async (event, context) => {
         console.error("Error:", err);
         return {
             statusCode: 500,
-            headers: CORS_HEADERS,  // Ensure CORS headers for internal error
+            headers: CORS_HEADERS,
             body: JSON.stringify({ message: "Internal Server Error", details: err.message })
         };
     }
