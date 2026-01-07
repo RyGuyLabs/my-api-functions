@@ -478,6 +478,12 @@ if (feature === 'image_generation') {
     }
 }
 
+    return {
+    statusCode: 400,
+    headers: CORS_HEADERS,
+    body: JSON.stringify({ message: "Unhandled request path." })
+};
+
     else if (feature === 'tts') {
     if (!textToSpeak) {
         return {
