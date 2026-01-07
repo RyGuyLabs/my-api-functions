@@ -241,33 +241,23 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
     };
 
 exports.handler = async (event, context) => {
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 204, headers: CORS_HEADERS, body: '' };
-    }
+    // 1. Preflight and Method Checks
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS, body: '' };
+    if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: "Method Not Allowed" }) };
 
     try {
         const body = JSON.parse(event.body);
         const { action, userId, data, userGoal, textToSpeak, imagePrompt, emotionalFocus } = body;
-        const feature = (action || body.feature || '').toUpperCase();
+        const feature = action || body.feature;
 
-        if (!userId) {
-            return {
-                statusCode: 401,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ message: "Unauthorized: No UserID provided." })
-            };
-        }
+        // 2. Global Safety Checks
+        if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: "Unauthorized: Missing userId." }) };
+        
+        const isActive = await checkSquarespaceMembershipStatus(userId);
+        if (!isActive) return { statusCode: 403, headers: CORS_HEADERS, body: JSON.stringify({ message: "Access Denied: Membership Inactive." }) };
 
-        const isMember = await checkSquarespaceMembershipStatus(userId);
-        if (!isMember) {
-            return {
-                statusCode: 403,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ message: "Access Denied: Active membership required." })
-            };
-        }
-
-                if (feature === 'GET_CONFIG') {
+        // 3. Routing Logic
+        if (feature === 'get_config') {
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -279,26 +269,28 @@ exports.handler = async (event, context) => {
             };
         }
 
-        if (DATA_OPERATIONS.includes(feature)) {
+        // --- FIRESTORE OPERATIONS ---
+        if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
             const userDreamsPath = `users/${userId}/dreams`;
-            
-            if (feature === 'SAVE_DREAM') {
-                const dataWithTimestamp = { ...data, timestamp: new Date().toISOString() };
-                const firestoreFields = jsToFirestoreRest(dataWithTimestamp).mapValue.fields;
 
+            if (feature.toUpperCase() === 'SAVE_DREAM') {
+                if (!data) throw new Error("Missing data to save.");
+                const dataWithTimestamp = { ...data, timestamp: new Date().toISOString() };
+                const fields = jsToFirestoreRest(dataWithTimestamp).mapValue.fields;
                 const response = await retryFetch(`${FIRESTORE_BASE_URL}${userDreamsPath}?key=${FIRESTORE_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fields: firestoreFields })
+                    body: JSON.stringify({ fields })
                 });
-                const resJson = await response.json();
-                return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify(resJson) };
+                const resData = await response.json();
+                return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify(resData) };
             }
 
-            if (feature === 'LOAD_DREAMS') {
+            if (feature.toUpperCase() === 'LOAD_DREAMS') {
                 const structuredQuery = {
                     select: { fields: [{ fieldPath: "*" }] },
-                    from: [{ collectionId: "dreams" }]
+                    from: [{ collectionId: "dreams" }],
+                    orderBy: [{ field: { fieldPath: "timestamp" }, direction: "DESCENDING" }]
                 };
                 const response = await retryFetch(FIRESTORE_QUERY_URL, {
                     method: 'POST',
@@ -309,33 +301,69 @@ exports.handler = async (event, context) => {
                     })
                 });
                 const result = await response.json();
-                return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams: mappedDreams }) };
+                const dreams = (result || []).filter(item => item.document).map(item => {
+                    const doc = item.document;
+                    return { id: doc.name.split('/').pop(), ...firestoreRestToJs({ mapValue: { fields: doc.fields } }) };
+                });
+                return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams }) };
             }
         }
 
-        if (feature === 'TTS') {
-            // ... your TTS logic ...
-            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ audioData, mimeType }) };
+        // --- TTS LOGIC ---
+        if (feature === 'tts') {
+            if (!textToSpeak) throw new Error("Missing text for TTS.");
+            const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+            const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            const ttsPayload = {
+                contents: [{ parts: [{ text: textToSpeak }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Achird" } } }
+                }
+            };
+            const response = await retryFetch(TTS_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ttsPayload)
+            });
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData?.mimeType.startsWith('audio/'));
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ audioData: part.inlineData.data, mimeType: part.inlineData.mimeType })
+            };
         }
 
-        if (feature === 'IMAGE_GENERATION') {
+        // --- IMAGE GENERATION ---
+        if (feature === 'image_generation') {
             const imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
-            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ imageUrl }) };
+            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ imageUrl, altText: `Vision: ${imagePrompt}` }) };
         }
 
-        return {
-            statusCode: 404,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: `Feature ${feature} not recognized.` })
-        };
+        // --- BARRIER BREAKER / TEXT GENERATION ---
+        if (feature === 'BREAK_BARRIER' || TEXT_GENERATION_FEATURES.includes(feature)) {
+            const systemInstruction = feature === 'BREAK_BARRIER' ? BARRIER_BREAKER_INSTRUCTION : SYSTEM_INSTRUCTIONS[feature];
+            const TEXT_MODEL = "gemini-2.5-flash";
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: userGoal }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
+            };
+
+            const response = await retryFetch(TEXT_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const result = await response.json();
+            const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify(JSON.parse(rawText)) };
+        }
+
+        return { statusCode: 404, headers: CORS_HEADERS, body: JSON.stringify({ message: "Feature not found" }) };
 
     } catch (error) {
-        console.error("HANDLER_ERROR:", error);
-        return {
-            statusCode: 500,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Internal Server Error", error: error.message })
-        };
+        console.error("Critical Handler Error:", error);
+        return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ message: error.message }) };
     }
 };
 
