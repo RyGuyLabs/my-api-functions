@@ -241,197 +241,100 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
     };
 
 exports.handler = async (event, context) => {
-    const CORS_HEADERS = {
-        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
-        'Access-Control-Max-Age': '86400'
-    };
-
     if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 204,
-            headers: CORS_HEADERS,
-            body: ''
-        };
+        return { statusCode: 204, headers: CORS_HEADERS, body: '' };
     }
-
-    if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Method Not Allowed" })
-        };
-    }
-
-        if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
-            return {
-                statusCode: 500,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
-            };
-        }
-
-        if (!FIRESTORE_KEY || !PROJECT_ID) {
-            return {
-                statusCode: 500,
-                headers: CORS_HEADERS,
-                body: JSON.stringify({ message: 'Firestore keys are missing.' })
-            };
-        }
-
 
     try {
         const body = JSON.parse(event.body);
-        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
-        const feature = action || body.feature;
+        const { action, userId, data, userGoal, textToSpeak, imagePrompt, emotionalFocus } = body;
+        const feature = (action || body.feature || '').toUpperCase();
 
-        if (feature === 'get_config') {
+        if (!userId) {
+            return {
+                statusCode: 401,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: "Unauthorized: No UserID provided." })
+            };
+        }
+
+        const isMember = await checkSquarespaceMembershipStatus(userId);
+        if (!isMember) {
+            return {
+                statusCode: 403,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: "Access Denied: Active membership required." })
+            };
+        }
+
+                if (feature === 'GET_CONFIG') {
             return {
                 statusCode: 200,
-                headers: CORS_HEADERS,  
+                headers: CORS_HEADERS,
                 body: JSON.stringify({
                     apiKey: FIRESTORE_KEY,
                     authDomain: `${PROJECT_ID}.firebaseapp.com`,
-                    projectId: PROJECT_ID,
-                    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
-                    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
-                    appId: process.env.FIREBASE_APP_ID || ""
+                    projectId: PROJECT_ID
                 })
             };
         }
 
-        if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
-            if (!userId) {
-                return {
-                    statusCode: 401,
-                    headers: CORS_HEADERS,  
-                    body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
-                };
+        if (DATA_OPERATIONS.includes(feature)) {
+            const userDreamsPath = `users/${userId}/dreams`;
+            
+            if (feature === 'SAVE_DREAM') {
+                const dataWithTimestamp = { ...data, timestamp: new Date().toISOString() };
+                const firestoreFields = jsToFirestoreRest(dataWithTimestamp).mapValue.fields;
+
+                const response = await retryFetch(`${FIRESTORE_BASE_URL}${userDreamsPath}?key=${FIRESTORE_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fields: firestoreFields })
+                });
+                const resJson = await response.json();
+                return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify(resJson) };
             }
 
-            const userDreamsCollectionPath = `users/${userId}/dreams`;
-            let firestoreResponse;
-
-            switch (feature.toUpperCase()) {
-                case 'SAVE_DREAM':
-                    if (!data) { 
-                        return { 
-                            statusCode: 400, 
-                            headers: CORS_HEADERS,  // Ensure CORS headers for missing data error
-                            body: JSON.stringify({ message: "Missing data to save." }) 
-                        }; 
-                    }
-
-                    const dataWithTimestamp = { ...data, timestamp: new Date().toISOString() };
-
-                    const firestoreFields = jsToFirestoreRest(dataWithTimestamp).mapValue.fields;
-
-                    firestoreResponse = await retryFetch(`${FIRESTORE_BASE_URL}${userDreamsCollectionPath}?key=${FIRESTORE_KEY}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fields: firestoreFields })
-                    });
-
-                    if (firestoreResponse.ok) {
-                        const result = await firestoreResponse.json();
-                        return {
-                            statusCode: 200,
-                            headers: CORS_HEADERS,  // Ensure CORS headers for success response
-                            body: JSON.stringify({ success: true, message: "Dream saved.", documentName: result.name })
-                        };
-                    }
-                    break;
-
-                case 'LOAD_DREAMS':
-                    const structuredQuery = {
-                        select: { fields: [{ fieldPath: "*" }] },
-                        from: [{ collectionId: "dreams" }], 
-                        orderBy: [{
-                            field: { fieldPath: "timestamp" },
-                            direction: "DESCENDING"
-                        }]
-                    };
-
-                    firestoreResponse = await retryFetch(FIRESTORE_QUERY_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
-                    });
-
-                    if (firestoreResponse.ok) {
-                        const result = await firestoreResponse.json();
-
-                        const dreams = (result || [])
-                            .filter(item => item.document) 
-                            .map(item => {
-                                try {
-                                    const doc = item.document;
-                                    const docId = doc.name.split('/').pop();
-
-                                    const fields = firestoreRestToJs({ mapValue: { fields: doc.fields } });
-
-                                    return { id: docId, ...fields };
-                                } catch (err) {
-                                    console.warn("Skipping invalid document in LOAD_DREAMS:", err);
-                                    return null;
-                                }
-                            })
-                            .filter(Boolean); // remove null entries from malformed documents
-
-                        return {
-                            statusCode: 200,
-                            headers: CORS_HEADERS,  // Ensure CORS headers for success response
-                            body: JSON.stringify({ dreams })
-                        };
-                    }
-                    break;
-
-                case 'DELETE_DREAM':
-                    if (!data || !data.dreamId) {
-                        return { 
-                            statusCode: 400, 
-                            headers: CORS_HEADERS,  // Ensure CORS headers for missing dreamId error
-                            body: JSON.stringify({ message: "Missing dreamId for deletion." }) 
-                        };
-                    }
-
-                    const dreamDocumentPath = `users/${userId}/dreams/${data.dreamId}`;
-
-                    firestoreResponse = await retryFetch(`${FIRESTORE_BASE_URL}${dreamDocumentPath}?key=${FIRESTORE_KEY}`, {
-                        method: 'DELETE'
-                    });
-
-                    if (firestoreResponse.status === 404) {
-                        return {
-                            statusCode: 404,
-                            headers: CORS_HEADERS,  
-                            body: JSON.stringify({ message: `Dream ${data.dreamId} not found.` })
-                        };
-                    }
-                    if (firestoreResponse.ok) {
-                        return {
-                            statusCode: 200,
-                            headers: CORS_HEADERS,  
-                            body: JSON.stringify({ success: true, message: `Dream ${data.dreamId} deleted.` })
-                        };
-                    }
-                    break;
-
-                default:
-                    return { 
-                        statusCode: 400, 
-                        headers: CORS_HEADERS,  
-                        body: JSON.stringify({ message: "Invalid data action." }) 
-                    };
+            if (feature === 'LOAD_DREAMS') {
+                const structuredQuery = {
+                    select: { fields: [{ fieldPath: "*" }] },
+                    from: [{ collectionId: "dreams" }]
+                };
+                const response = await retryFetch(FIRESTORE_QUERY_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, 
+                        structuredQuery 
+                    })
+                });
+                const result = await response.json();
+                return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ dreams: mappedDreams }) };
             }
         }
-    } catch (err) {
-        console.error("Error:", err);
+
+        if (feature === 'TTS') {
+            // ... your TTS logic ...
+            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ audioData, mimeType }) };
+        }
+
+        if (feature === 'IMAGE_GENERATION') {
+            const imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
+            return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ imageUrl }) };
+        }
+
+        return {
+            statusCode: 404,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Feature ${feature} not recognized.` })
+        };
+
+    } catch (error) {
+        console.error("HANDLER_ERROR:", error);
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Internal Server Error", details: err.message })
+            body: JSON.stringify({ message: "Internal Server Error", error: error.message })
         };
     }
 };
