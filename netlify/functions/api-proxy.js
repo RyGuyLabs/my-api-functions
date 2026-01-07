@@ -246,13 +246,13 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
 
 exports.handler = async (event, context) => {
     const CORS_HEADERS = {
-        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
         'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
         'Access-Control-Max-Age': '86400'
     };
 
-    if (event.httpMethod === 'OPTIONS') { 
+    if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 204,
             headers: CORS_HEADERS,
@@ -263,26 +263,48 @@ exports.handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: CORS_HEADERS,  
+            headers: CORS_HEADERS,
             body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
 
-    if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
-        return {
-            statusCode: 500,
-            headers: CORS_HEADERS,  
-            body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
-        };
-    }
+    try {
+        const body = JSON.parse(event.body);
+        const { action, userId, data, userGoal, textToSpeak, imagePrompt } = body;
+        const feature = action || body.feature;
 
-    if (!FIRESTORE_KEY || !PROJECT_ID) {
-        return {
-            statusCode: 500,
-            headers: CORS_HEADERS,  
-            body: JSON.stringify({ message: 'Firestore keys (DATA_API_KEY or FIRESTORE_PROJECT_ID) are missing. Cannot access database.' })
-        };
-    }
+        // ✅ MUST COME FIRST — NO DEPENDENCIES
+        if (feature === 'get_config') {
+            return {
+                statusCode: 200,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({
+                    apiKey: FIRESTORE_KEY,
+                    authDomain: `${PROJECT_ID}.firebaseapp.com`,
+                    projectId: PROJECT_ID,
+                    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
+                    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
+                    appId: process.env.FIREBASE_APP_ID || ""
+                })
+            };
+        }
+
+        if (!GEMINI_API_KEY || GEMINI_API_KEY.trim() === '') {
+            return {
+                statusCode: 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: 'AI API Key (FIRST_API_KEY) is not configured.' })
+            };
+        }
+
+        if (!FIRESTORE_KEY || !PROJECT_ID) {
+            return {
+                statusCode: 500,
+                headers: CORS_HEADERS,
+                body: JSON.stringify({ message: 'Firestore keys are missing.' })
+            };
+        }
+
 
     try {
         const body = JSON.parse(event.body);
