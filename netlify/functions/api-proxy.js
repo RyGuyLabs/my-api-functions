@@ -415,13 +415,19 @@ default:
 
 }
 
-const errorText = firestoreResponse ? await firestoreResponse.text() : 'Unknown database error';
-console.error("Firestore operation failed:", firestoreResponse?.status, errorText);
-return {
-    statusCode: firestoreResponse?.status || 500,
-    headers: CORS_HEADERS,
-    body: JSON.stringify({ message: "Database operation failed. Check console for details.", details: errorText })
-};
+if (firestoreResponse) {
+    const errorText = await firestoreResponse.text();
+    console.error("Firestore operation failed:", firestoreResponse.status, errorText);
+
+    return {
+        statusCode: firestoreResponse.status || 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+            message: "Database operation failed. Check console for details.",
+            details: errorText
+        })
+    };
+}
 
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
