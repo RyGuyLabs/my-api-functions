@@ -240,6 +240,35 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
         
     };
 
+const response = await fetch(IMAGEN_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(geminiImagePayload) // Use the new payload
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Gemini API Error:", response.status, errorBody);
+        throw new Error(`Gemini API failed with status ${response.status}: ${response.statusText}. Error body: ${errorBody}`);
+    }
+
+    const result = await response.json();
+    
+    const base64Data = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+    if (!base64Data) {
+        const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (textResponse) {
+             console.warn("Gemini Image API returned text instead of image:", textResponse);
+             throw new Error(`Gemini Image API did not return an image. Model response: ${textResponse.substring(0, 100)}...`);
+        }
+        console.error("Gemini Image Response Missing Data:", JSON.stringify(result));
+        throw new Error("Gemini Image API response did not contain image data.");
+    }
+
+    return `data:image/png;base64,${base64Data}`;
+};
+
 exports.handler = async (event, context) => {
     const CORS_HEADERS = {
         'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
@@ -454,36 +483,7 @@ exports.handler = async (event, context) => {
             body: JSON.stringify({ message: "Internal Server Error", details: err.message })
         };
     }
-};
 
-    const response = await fetch(IMAGEN_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiImagePayload) // Use the new payload
-    });
-
-    if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("Gemini API Error:", response.status, errorBody);
-        throw new Error(`Gemini API failed with status ${response.status}: ${response.statusText}. Error body: ${errorBody}`);
-    }
-
-    const result = await response.json();
-    
-    const base64Data = result?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-    if (!base64Data) {
-        const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (textResponse) {
-             console.warn("Gemini Image API returned text instead of image:", textResponse);
-             throw new Error(`Gemini Image API did not return an image. Model response: ${textResponse.substring(0, 100)}...`);
-        }
-        console.error("Gemini Image Response Missing Data:", JSON.stringify(result));
-        throw new Error("Gemini Image API response did not contain image data.");
-    }
-
-    return `data:image/png;base64,${base64Data}`;
-};
 if (feature === 'image_generation') {
     try {
         const imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
@@ -505,13 +505,7 @@ if (feature === 'image_generation') {
     }
 }
 
-    return {
-    statusCode: 400,
-    headers: CORS_HEADERS,
-    body: JSON.stringify({ message: "Unhandled request path." })
-};
-
-    else if (feature === 'tts') {
+else if (feature === 'tts') {
     if (!textToSpeak) {
         return {
             statusCode: 400,
@@ -690,8 +684,8 @@ You are the **Ultimate AI Executive Coach**, delivering uncompromising, analytic
 4. EMOTIONAL COUNTER-STRATEGY: A detailed, coaching paragraph (minimum 100 words / 6 sentences). Explain how the user can acknowledge the emotional anchor and mentally reframe it into unstoppable momentum. **Structure the paragraph using Markdown for clarity.**
 5. THREE-STEP ACTION TREK: Provide exactly 3 sequential, concrete, immediate action steps. Each step MUST be a separate, concise Markdown bullet point string.
 
-User's Goal: "\${userGoal}"
-\${emotionalFocus ? \`Emotional Anchor (for added depth): "\${emotionalFocus}"\` : ''}
+User's Goal: "${userGoal}"
+${emotionalFocus ? `Emotional Anchor (for added depth): "${emotionalFocus}"` : ''}
 
 Respond ONLY with a valid JSON object matching the required schema. DO NOT include ANY commentary or text outside the JSON object.
 
@@ -723,7 +717,7 @@ Schema:
             };
 
             const response = await retryFetch(TEXT_API_URL, {
-                method: 'POST',
+                submit_method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
@@ -841,5 +835,3 @@ Schema:
         };
     }
 };
-
-
