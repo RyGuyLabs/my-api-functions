@@ -81,7 +81,7 @@ Return only valid JSON — no markdown, quotes, or commentary.
 const DATA_OPERATIONS = ['SAVE_DREAM', 'LOAD_DREAMS', 'DELETE_DREAM'];
 
 const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*', 
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
     'Content-Type': 'application/json'
@@ -316,7 +316,6 @@ exports.handler = async (event, context) => {
             const parsedContent = JSON.parse(result.candidates[0].content.parts[0].text);
             const imageUrl = await generateImage(parsedContent.image_prompt, GEMINI_API_KEY);
 
-            // Fixed: Returning as a single object the frontend can consume
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -345,7 +344,6 @@ exports.handler = async (event, context) => {
             const result = await response.json();
             const textResult = result.candidates[0].content.parts[0].text;
             
-            // Fixed: Consistently wrapping the analysis results for the frontend
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -379,12 +377,9 @@ exports.handler = async (event, context) => {
             
             const rawText = result.candidates[0].content.parts[0].text;
             
-            // Fixed: Ensure pep_talk and other raw text features return under the expected key
-            // and ensure JSON features are correctly parsed and nested
             let finalBody;
             if (isJsonFeature) {
                 const parsed = JSON.parse(rawText);
-                // For R.E.A.D.Y. specifically, we want to return the object directly or nested by feature
                 finalBody = { [feature]: parsed };
             } else {
                 finalBody = { [feature]: rawText };
