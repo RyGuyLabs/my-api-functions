@@ -13,7 +13,6 @@ const FIRESTORE_BASE_URL =
 const FIRESTORE_QUERY_URL =
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
-// List of features that perform data operations (GATED BY MEMBERSHIP)
 const DATA_OPERATIONS = [
     'SAVE_DREAM',
     'LOAD_DREAMS',
@@ -116,8 +115,6 @@ exports.handler = async (event, context) => {
         const body = JSON.parse(event.body);
         const action = body.action || body.feature;
 
-        // --- SPECIAL ACTION: GET CONFIG ---
-        // This resolves the "projectId not provided" error in the frontend logs
         if (action === 'GET_FIREBASE_CONFIG') {
             return {
                 statusCode: 200,
@@ -139,7 +136,6 @@ exports.handler = async (event, context) => {
 
         const { userId, data, userGoal, textToSpeak, imagePrompt, emotionalFocus } = body;
 
-        // --- DATA OPERATIONS ---
         if (DATA_OPERATIONS.includes(action?.toUpperCase())) {
             if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: "Unauthorized" }) };
             const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
@@ -183,7 +179,6 @@ exports.handler = async (event, context) => {
             return { statusCode: firestoreResponse?.status || 500, headers: CORS_HEADERS, body: JSON.stringify({ message: "DB Error" }) };
         }
 
-        // --- AI OPERATIONS ---
         if (action === 'tts') {
             const URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${GEMINI_API_KEY}`;
             const res = await retryFetch(URL, {
