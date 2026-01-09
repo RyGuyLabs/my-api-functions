@@ -1,19 +1,25 @@
+// Use globalThis.fetch to avoid name mangling issues like 'fetch2 is not a function'
+// in bundled environments like Netlify.
 const nativeFetch = globalThis.fetch;
 
+// Environment Variables
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
+// API Endpoints
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 const FIRESTORE_QUERY_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
+// List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
 
+// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
   "plan": `
 You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
@@ -75,7 +81,7 @@ Return only valid JSON — no markdown, quotes, or commentary.
 const DATA_OPERATIONS = ['SAVE_DREAM', 'LOAD_DREAMS', 'DELETE_DREAM'];
 
 const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Origin': '*', 
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Gemini-Model',
     'Content-Type': 'application/json'
@@ -83,6 +89,8 @@ const CORS_HEADERS = {
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+
+// --- Helper Functions ---
 
 async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
@@ -168,6 +176,9 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
 
     return `data:image/png;base64,${base64Data}`;
 };
+
+// --- Main Handler ---
+
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS, body: '' };
     if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: "Method Not Allowed" }) };
@@ -190,6 +201,8 @@ exports.handler = async (event, context) => {
                 })
             };
         }
+
+        // --- Data Operations ---
         if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
             if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: "Unauthorized" }) };
             
@@ -303,10 +316,15 @@ exports.handler = async (event, context) => {
             const parsedContent = JSON.parse(result.candidates[0].content.parts[0].text);
             const imageUrl = await generateImage(parsedContent.image_prompt, GEMINI_API_KEY);
 
+            // Fixed: Returning as a single object the frontend can consume
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ ...parsedContent, imageUrl })
+                body: JSON.stringify({ 
+                    command_text: parsedContent.command_text,
+                    image_prompt: parsedContent.image_prompt,
+                    imageUrl 
+                })
             };
         }
 
@@ -325,10 +343,16 @@ exports.handler = async (event, context) => {
             });
 
             const result = await response.json();
+            const textResult = result.candidates[0].content.parts[0].text;
+            
+            // Fixed: Consistently wrapping the analysis results for the frontend
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: result.candidates[0].content.parts[0].text
+                body: JSON.stringify({
+                    feature,
+                    analysis: JSON.parse(textResult)
+                })
             };
         }
 
@@ -349,11 +373,27 @@ exports.handler = async (event, context) => {
             });
 
             const result = await response.json();
+            if (!result.candidates || !result.candidates[0]) {
+                throw new Error("AI failed to generate a response candidate.");
+            }
+            
             const rawText = result.candidates[0].content.parts[0].text;
+            
+            // Fixed: Ensure pep_talk and other raw text features return under the expected key
+            // and ensure JSON features are correctly parsed and nested
+            let finalBody;
+            if (isJsonFeature) {
+                const parsed = JSON.parse(rawText);
+                // For R.E.A.D.Y. specifically, we want to return the object directly or nested by feature
+                finalBody = { [feature]: parsed };
+            } else {
+                finalBody = { [feature]: rawText };
+            }
+
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({ [feature]: isJsonFeature ? JSON.parse(rawText) : rawText })
+                body: JSON.stringify(finalBody)
             };
         }
 
@@ -364,7 +404,10 @@ exports.handler = async (event, context) => {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: `Internal server error: ${error.message}` })
+            body: JSON.stringify({ 
+                message: `Internal server error: ${error.message}`,
+                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+            })
         };
     }
 };
