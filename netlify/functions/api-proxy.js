@@ -1,19 +1,25 @@
+// Use globalThis.fetch to avoid name mangling issues like 'fetch2 is not a function'
+// in bundled environments like Netlify.
 const nativeFetch = globalThis.fetch;
 
+// Environment Variables
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
+// API Endpoints
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 const FIRESTORE_QUERY_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
+// List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
 
+// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
   "plan": `
 You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
@@ -84,6 +90,8 @@ const CORS_HEADERS = {
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
+// --- Helper Functions ---
+
 async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -138,36 +146,35 @@ function firestoreRestToJs(field) {
 const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
     if (!imagePrompt) throw new Error('Missing "imagePrompt" for image generation.');
     
-    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${GEMINI_API_KEY}`;
+    // Using the current preview model for image generation
+    const IMAGEN_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GEMINI_API_KEY}`;
     
-    const geminiImagePayload = {
-        contents: [{
-            parts: [{ text: imagePrompt }]
-        }],
-        generationConfig: {
-            responseModalities: ['TEXT', 'IMAGE']
-        }
+    const imagePayload = {
+        instances: [{ prompt: imagePrompt }],
+        parameters: { sampleCount: 1 }
     };
 
     const response = await nativeFetch(IMAGEN_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiImagePayload)
+        body: JSON.stringify(imagePayload)
     });
 
     if (!response.ok) {
         const errorBody = await response.text();
-        console.error("Gemini API Error:", response.status, errorBody);
-        throw new Error(`Gemini API failed with status ${response.status}`);
+        console.error("Image Gen API Error:", response.status, errorBody);
+        throw new Error(`Image API failed with status ${response.status}`);
     }
 
     const result = await response.json();
-    const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+    const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
 
-    if (!base64Data) throw new Error("Gemini Image API response did not contain image data.");
+    if (!base64Data) throw new Error("Image API response did not contain image data.");
 
     return `data:image/png;base64,${base64Data}`;
 };
+
+// --- Main Handler ---
 
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS, body: '' };
@@ -192,6 +199,7 @@ exports.handler = async (event, context) => {
             };
         }
 
+        // --- Data Operations ---
         if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
             if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: "Unauthorized" }) };
             
@@ -286,7 +294,7 @@ exports.handler = async (event, context) => {
         }
 
         else if (feature === 'prime_directive') {
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
             const userPrompt = `GOAL: ${userGoal}. EMOTIONAL ANCHOR: ${emotionalFocus}.`;
 
             const payload = {
@@ -305,7 +313,6 @@ exports.handler = async (event, context) => {
             const parsedContent = JSON.parse(result.candidates[0].content.parts[0].text);
             const imageUrl = await generateImage(parsedContent.image_prompt, GEMINI_API_KEY);
 
-            // REVERTED: Returning the flat structure as expected by your frontend
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -318,7 +325,7 @@ exports.handler = async (event, context) => {
         }
 
         else if (feature === 'break_barrier' || feature === 'dream_energy_analysis') {
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
             const payload = {
                 contents: [{ parts: [{ text: `Analyze goal: ${userGoal}` }] }],
                 systemInstruction: { parts: [{ text: "Return JSON with: internalConflict, externalPrescription, summaryInsight, emotionalCounterStrategy, threeStepActionTrek." }] },
@@ -334,16 +341,15 @@ exports.handler = async (event, context) => {
             const result = await response.json();
             const textResult = result.candidates[0].content.parts[0].text;
             
-            // REVERTED: Directly returning the analysis object so it parses as root fields
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: textResult // This is already the raw JSON string from AI
+                body: textResult 
             };
         }
 
         else if (TEXT_GENERATION_FEATURES.includes(feature)) {
-            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
             const isJsonFeature = ["plan", "smart_goal_structuring"].includes(feature);
             
             const payload = {
@@ -365,9 +371,6 @@ exports.handler = async (event, context) => {
             
             const rawText = result.candidates[0].content.parts[0].text;
             
-            // REVERTED: Logic to return the AI output in the exact format the frontend expects.
-            // If it's a JSON feature like smart_goal_structuring, we return the parsed object directly.
-            // If it's raw text like pep_talk, we return it under a key named after the feature.
             let finalBody;
             if (isJsonFeature) {
                 finalBody = JSON.parse(rawText);
