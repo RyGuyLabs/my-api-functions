@@ -42,6 +42,7 @@ const RETRY_DELAY_MS = 1000;
 async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
         try {
+            // Using global fetch to avoid potential naming conflicts with node-fetch imports
             const response = await fetch(url, options);
             if (response.status === 429 || response.status >= 500) {
                 if (i === maxRetries - 1) throw new Error(`Fetch failed after ${maxRetries} retries.`);
