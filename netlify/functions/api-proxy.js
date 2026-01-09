@@ -16,7 +16,7 @@ const FIRESTORE_QUERY_URL = `https://firestore.googleapis.com/v1/projects/${PROJ
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
-    "smart_goal_structuring"
+    "smart_goal_structuring", "dream_energy_analysis"
 ];
 
 // Map feature types to system instructions
@@ -49,6 +49,18 @@ Do NOT include markdown, lists, or other formatting — return ONLY JSON.
   "mindset_reset": "You are a pragmatic mindset coach named RyGuy. Your tone is direct and actionable. Provide a brief, practical mindset reset in one paragraph. Focus on shifting perspective from a problem to a solution. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
 
   "objection_handler": "You are a professional sales trainer named RyGuy. Your tone is confident and strategic. Respond to a sales objection in a single paragraph that first acknowledges the objection and then provides a concise, effective strategy to address it. Avoid lists, symbols, quotes, or code formatting. Deliver as raw text.",
+
+  "dream_energy_analysis": `
+You are a high-performance psychologist named RyGuy. Perform a "Dream Energy Analysis" on the user's goal. 
+Break down the psychological energy required to achieve this dream.
+
+Return ONLY a valid JSON object with these keys:
+- "internalConflict": Describe the mental tug-of-war the user is likely feeling.
+- "externalPrescription": What the world tells them to do vs what they actually need.
+- "summaryInsight": A profound realization about their current path.
+- "emotionalCounterStrategy": How to use their emotions as fuel rather than friction.
+- "threeStepActionTrek": A short list of three high-impact moves.
+`,
 
   "smart_goal_structuring": `
 You are a holistic goal-setting specialist named RyGuy. Help the user transform their dream into a clear, inspiring roadmap using the powerful R.E.A.D.Y. framework—a belief-to-achievement system built on commitment, action, and continuous optimization.
@@ -326,9 +338,13 @@ exports.handler = async (event, context) => {
 
         else if (feature === 'break_barrier' || feature === 'dream_energy_analysis') {
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+            
+            // Check if we use the defined system instruction or a generic fallback
+            const systemText = SYSTEM_INSTRUCTIONS[feature] || "Return JSON with: internalConflict, externalPrescription, summaryInsight, emotionalCounterStrategy, threeStepActionTrek.";
+            
             const payload = {
                 contents: [{ parts: [{ text: `Analyze goal: ${userGoal}` }] }],
-                systemInstruction: { parts: [{ text: "Return JSON with: internalConflict, externalPrescription, summaryInsight, emotionalCounterStrategy, threeStepActionTrek." }] },
+                systemInstruction: { parts: [{ text: systemText }] },
                 generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
             };
 
@@ -350,7 +366,7 @@ exports.handler = async (event, context) => {
 
         else if (TEXT_GENERATION_FEATURES.includes(feature)) {
             const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
-            const isJsonFeature = ["plan", "smart_goal_structuring"].includes(feature);
+            const isJsonFeature = ["plan", "smart_goal_structuring", "dream_energy_analysis"].includes(feature);
             
             const payload = {
                 contents: [{ parts: [{ text: userGoal }] }],
