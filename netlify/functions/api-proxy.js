@@ -1,5 +1,6 @@
-// Removed require('node-fetch') as fetch is global in modern Node.js environments (18+)
-// If running on older Node versions, use: const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+// Use globalThis.fetch to avoid name mangling issues like 'fetch2 is not a function'
+// in bundled environments like Netlify.
+const nativeFetch = globalThis.fetch;
 
 // Environment Variables
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
@@ -43,8 +44,8 @@ const RETRY_DELAY_MS = 1000;
 async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
         try {
-            // Use the global fetch provided by the environment
-            const response = await fetch(url, options);
+            // Explicitly use nativeFetch mapped to globalThis.fetch
+            const response = await nativeFetch(url, options);
             if (response.status === 429 || response.status >= 500) {
                 if (i === maxRetries - 1) throw new Error(`Fetch failed after ${maxRetries} retries with status ${response.status}`);
                 const delay = RETRY_DELAY_MS * Math.pow(2, i);
@@ -106,7 +107,7 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
         }
     };
 
-    const response = await fetch(IMAGEN_API_URL, {
+    const response = await nativeFetch(IMAGEN_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(geminiImagePayload)
