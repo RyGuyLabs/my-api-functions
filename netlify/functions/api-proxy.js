@@ -1,25 +1,19 @@
-// Use globalThis.fetch to avoid name mangling issues like 'fetch2 is not a function'
-// in bundled environments like Netlify.
 const nativeFetch = globalThis.fetch;
 
-// Environment Variables
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 const GEMINI_API_KEY = process.env.FIRST_API_KEY;
 
-// API Endpoints
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 const FIRESTORE_QUERY_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${FIRESTORE_KEY}`;
 
-// List of features that perform text generation
 const TEXT_GENERATION_FEATURES = [
     "plan", "pep_talk", "obstacle_analysis",
     "positive_spin", "mindset_reset", "objection_handler",
     "smart_goal_structuring"
 ];
 
-// Map feature types to system instructions
 const SYSTEM_INSTRUCTIONS = {
   "plan": `
 You are a world-class life coach named RyGuy. Your tone is supportive, encouraging, and highly actionable.
@@ -89,8 +83,6 @@ const CORS_HEADERS = {
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
-
-// --- Helper Functions ---
 
 async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
     for (let i = 0; i < maxRetries; i++) {
@@ -177,8 +169,6 @@ const generateImage = async (imagePrompt, GEMINI_API_KEY) => {
     return `data:image/png;base64,${base64Data}`;
 };
 
-// --- Main Handler ---
-
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS, body: '' };
     if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ message: "Method Not Allowed" }) };
@@ -202,7 +192,6 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // --- Data Operations ---
         if (DATA_OPERATIONS.includes(feature.toUpperCase())) {
             if (!userId) return { statusCode: 401, headers: CORS_HEADERS, body: JSON.stringify({ message: "Unauthorized" }) };
             
@@ -316,6 +305,7 @@ exports.handler = async (event, context) => {
             const parsedContent = JSON.parse(result.candidates[0].content.parts[0].text);
             const imageUrl = await generateImage(parsedContent.image_prompt, GEMINI_API_KEY);
 
+            // REVERTED: Returning the flat structure as expected by your frontend
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
@@ -344,13 +334,11 @@ exports.handler = async (event, context) => {
             const result = await response.json();
             const textResult = result.candidates[0].content.parts[0].text;
             
+            // REVERTED: Directly returning the analysis object so it parses as root fields
             return {
                 statusCode: 200,
                 headers: CORS_HEADERS,
-                body: JSON.stringify({
-                    feature,
-                    analysis: JSON.parse(textResult)
-                })
+                body: textResult // This is already the raw JSON string from AI
             };
         }
 
@@ -377,10 +365,12 @@ exports.handler = async (event, context) => {
             
             const rawText = result.candidates[0].content.parts[0].text;
             
+            // REVERTED: Logic to return the AI output in the exact format the frontend expects.
+            // If it's a JSON feature like smart_goal_structuring, we return the parsed object directly.
+            // If it's raw text like pep_talk, we return it under a key named after the feature.
             let finalBody;
             if (isJsonFeature) {
-                const parsed = JSON.parse(rawText);
-                finalBody = { [feature]: parsed };
+                finalBody = JSON.parse(rawText);
             } else {
                 finalBody = { [feature]: rawText };
             }
