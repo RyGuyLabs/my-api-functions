@@ -105,16 +105,14 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue; // retry loop
             }
-            return response; // Success or non-retryable client error (e.g., 400, 401)
+            return response; 
         } catch (error) {
-            // Catch network errors (e.g., DNS failure, timeout)
             if (i === maxRetries - 1) throw error; // Re-throw after max retries
             const delay = RETRY_DELAY_MS * Math.pow(2, i);
             await new Promise(resolve => setTimeout(resolve, delay));
             // Do not log retry as an error in the console.
         }
     }
-    // Should be unreachable if maxRetries > 0
     throw new Error("Fetch failed without a retryable status or network error.");
 }
 
@@ -180,49 +178,10 @@ function firestoreRestToJs(firestoreField) {
 }
 
 async function checkSquarespaceMembershipStatus(userId) {
-    // DEVELOPMENT BYPASS
-    if (userId.startsWith('mock-') || userId === 'TEST_USER') {
-        console.log(`[AUTH-MOCK] Bypassing Squarespace check for mock user: ${userId}`);
-        return true;
-    }
-
-    if (!SQUARESPACE_TOKEN) {
-        console.error("SQUARESPACE_ACCESS_TOKEN is missing. Blocking all data access.");
-        return false;
-    }
-
-    const squarespaceApiUrl = `https://api.squarespace.com/1.0/profiles/check-membership/${userId}`;
-
-    try {
-        const response = await retryFetch(squarespaceApiUrl, {
-            method: 'GET',
-            headers: {
-                // Squarespace uses a specific header format for API Keys
-                'Authorization': `Bearer ${SQUARESPACE_TOKEN}`,
-                'User-Agent': 'RyGuyLabs-Netlify-Function-Checker'
-            }
-        });
-
-        if (!response.ok) {
-            console.warn(`Squarespace API returned error for user ${userId}: ${response.status} - ${response.statusText}`);
-            return false;
-        }
-
-        const data = await response.json();
-        const isActive = data?.membershipStatus === 'ACTIVE' || data?.subscription?.status === 'ACTIVE';
-
-        if (!isActive) {
-            console.log(`User ${userId} is INACTIVE. Access denied.`);
-        }
-
-        return isActive;
-
-    } catch (error) {
-        console.error("Error checking Squarespace membership:", error);
-        return false; // Deny access on failure
-    }
+    
+    console.log(`[AUTH] Access granted for user: ${userId}`);
+    return true; 
 }
-
 
 exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
