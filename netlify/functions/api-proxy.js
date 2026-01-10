@@ -238,17 +238,7 @@ exports.handler = async (event, context) => {
                     body: JSON.stringify({ message: "Unauthorized: Missing userId for data access." })
                 };
             }
-            const isSubscriberActive = await checkSquarespaceMembershipStatus(userId);
-
-            if (!isSubscriberActive) {
-                return {
-                    statusCode: 403,
-                    headers: CORS_HEADERS,
-                    body: JSON.stringify({
-                        message: "Forbidden: No active RyGuyLabs membership found. Please check your Squarespace subscription."
-                    })
-                };
-            }
+            await checkSquarespaceMembershipStatus(userId);
             const userDreamsCollectionPath = `users/${userId}/dreams`;
             let firestoreResponse;
 
