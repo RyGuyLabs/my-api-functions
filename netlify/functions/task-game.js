@@ -41,7 +41,8 @@ exports.handler = async (event) => {
 
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-const authHeader = event.headers.authorization;
+const authHeader =
+  event.headers.authorization || event.headers.Authorization;
 
 if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
