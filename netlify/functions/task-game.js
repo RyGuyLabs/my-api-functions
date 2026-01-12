@@ -1,5 +1,5 @@
 const { db } = require('./firebaseClient'); 
-const { collection, addDoc } = require('firebase-admin/firestore'); 
+const { collection, addDoc } = require('firebase-admin/firestore');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
