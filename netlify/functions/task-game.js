@@ -142,8 +142,11 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
             };
         });
 
-        const tasksCollection = collection(db, `users/${userId}/tasks`);
-        await addDoc(tasksCollection, { tasks: sanitizedTasks });
+        await db
+  .collection('users')
+  .doc(userId)
+  .collection('tasks')
+  .add({ tasks: sanitizedTasks });
 
         return {
             statusCode: 200,
