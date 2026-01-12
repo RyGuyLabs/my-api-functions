@@ -1,3 +1,4 @@
+const fetch = global.fetch || require('node-fetch');
 const { db } = require('./firebaseClient'); 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
