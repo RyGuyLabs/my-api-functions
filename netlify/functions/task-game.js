@@ -155,7 +155,7 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
         };
 
     } catch (error) {
-        console.error('LLM Function Error:', error);
+        console.error('Task Game Function Error:', error);
         return {
             statusCode: 500,
             headers: defaultHeaders,
