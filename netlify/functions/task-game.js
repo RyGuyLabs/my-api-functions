@@ -5,9 +5,6 @@ const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 
-const FIRESTORE_BASE_URL =
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
-
 const defaultHeaders = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
