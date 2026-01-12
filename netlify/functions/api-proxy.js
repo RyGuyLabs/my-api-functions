@@ -654,7 +654,109 @@ Schema:
                 };
             }
         }
-        
+
+else if (feature === 'enhance_goal_text') {
+    const section = body.section;
+    const userGoal = body.userGoal || '';
+
+    if (!section || !userGoal) {
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                message: 'Missing section or userGoal for R.E.A.D.Y. enhancement.'
+            })
+        };
+    }
+
+    const READY_ENHANCER_INSTRUCTION = `
+You are an elite executive performance coach named RyGuy.
+
+Your task:
+Generate psychologically grounded, non-generic micro-guidance that feels personalized and emotionally intelligent.
+
+IMPORTANT CONTEXT:
+- The user goal is the REAL goal.
+- The section title (e.g., "Reflect", "Execute") is ONLY a framework label — do NOT treat it as the goal itself.
+
+OUTPUT RULES:
+- Do NOT reference framework labels like "Reflect", "Execute", or "R.E.A.D.Y." in the output.
+- Every sentence must feel specific to the user's goal.
+- Avoid clichés, generic advice, or filler language.
+
+Return ONLY valid JSON using this schema:
+
+{
+  "reflection": [
+    "Question 1 tailored to the user's real goal",
+    "Question 2 that surfaces a meaningful internal blocker or decision"
+  ],
+  "whyItMatters": "A concise, emotionally grounded explanation of why this step matters for THIS goal.",
+  "proInsight": "A strategic insight framed like expert coaching advice.",
+  "tryThisNow": [
+    "One concrete, immediate action step",
+    "One reinforcing follow-up action"
+  ]
+}
+`;
+
+    const TEXT_MODEL = "gemini-2.5-flash";
+    const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
+    const userPrompt = `
+USER GOAL:
+"${userGoal}"
+
+CURRENT STEP DESCRIPTION:
+"${section.description}"
+
+Generate the enhancement JSON now.
+`;
+
+    const payload = {
+        contents: [{ parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: READY_ENHANCER_INSTRUCTION }] },
+        generationConfig: {
+            temperature: 0.6,
+            responseMimeType: "application/json"
+        }
+    };
+
+    const response = await retryFetch(TEXT_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("R.E.A.D.Y. Enhancement API Error:", response.status, errorBody);
+        throw new Error("R.E.A.D.Y. enhancement generation failed.");
+    }
+
+    const result = await response.json();
+    const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    try {
+        const parsed = JSON.parse(rawText);
+
+        return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: JSON.stringify(parsed)
+        };
+    } catch (e) {
+        console.error("Failed to parse R.E.A.D.Y. enhancement JSON:", rawText);
+        return {
+            statusCode: 500,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+                message: "Invalid AI JSON for R.E.A.D.Y. enhancement."
+            })
+        };
+    }
+}
+                
         else if (TEXT_GENERATION_FEATURES.includes(feature)) {
             if (!userGoal) {
                 return {
