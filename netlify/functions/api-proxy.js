@@ -221,6 +221,30 @@ exports.handler = async (event, context) => {
 
         const feature = action || body.feature;
 
+        // === READY Enhancer Route ===
+if (feature === "enhance_goal_text") {
+    const { goal, context } = body;
+
+    if (!goal || !context) {
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Missing goal or context." })
+        };
+    }
+
+    const enhancement = await generateReadyEnhancement({
+        userGoal: goal,
+        section: { description: context }
+    });
+
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify(enhancement)
+    };
+}
+
         if (!feature) {
              return {
                  statusCode: 400,
