@@ -14,6 +14,7 @@ const defaultHeaders = {
 };
 
 exports.handler = async (event) => {
+console.log('GEMINI KEY PRESENT:', Boolean(process.env.SUM_GAME_KEY));
     try {
         if (event.httpMethod.toUpperCase() === 'OPTIONS') {
             return {
