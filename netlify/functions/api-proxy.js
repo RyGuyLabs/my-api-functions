@@ -728,13 +728,24 @@ Return ONLY valid JSON using this schema:
     const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
     const userPrompt = `
-USER GOAL:
+USER GOAL (REAL — DO NOT REFRAME):
 "${userGoal}"
 
-CURRENT STEP DESCRIPTION:
+STEP CONTEXT (NOT THE GOAL ITSELF):
 "${section.description}"
 
-Generate the enhancement JSON now.
+YOU MUST GENERATE FOUR DISTINCT OUTPUT TYPES WITH DIFFERENT PURPOSES:
+
+• reflection → inward-facing questions that surface belief, resistance, or clarity
+• whyItMatters → emotional consequence if this step is ignored or honored
+• proInsight → strategic coaching insight an expert would give
+• tryThisNow → concrete, immediate actions (no mindset advice)
+
+Each field must serve its role.
+Do NOT reuse phrasing across fields.
+Do NOT echo the same idea twice.
+
+Return the enhancement JSON now.
 `;
 
     const payload = {
