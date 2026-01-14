@@ -221,7 +221,7 @@ exports.handler = async (event, context) => {
 
         const feature = action || body.feature;
 
-if (feature === "enhance_goal_text") {
+else if (feature === "enhance_goal_text") {
 const { goal, context, outputFocus } = body;
 
     if (!goal || !context) {
