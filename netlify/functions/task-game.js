@@ -3,7 +3,7 @@ const { collection, addDoc } = require('firebase-admin/firestore');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
-const LLM_MODEL = 'gemini-1.5-flash';
+const LLM_MODEL = 'gemini-pro';
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 
 const FIRESTORE_BASE_URL =
