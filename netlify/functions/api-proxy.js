@@ -233,10 +233,10 @@ if (feature === "enhance_goal_text") {
         };
     }
 
-    const enhancement = await generateReadyEnhancement({
-        userGoal: goal,
-        section: { description: context }
-    });
+    const enhancement = await generateAction({
+    userGoal: goal,
+    section: { description: context }
+});
 
     return {
         statusCode: 200,
