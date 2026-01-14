@@ -1,5 +1,3 @@
-const fetch = require('node-fetch');
-
 const { db } = require('./firebaseClient'); 
 const { collection, addDoc } = require('firebase-admin/firestore'); 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
