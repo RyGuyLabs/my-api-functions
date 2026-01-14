@@ -3,7 +3,7 @@ const { db } = require('./firebaseClient');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
-const LLM_MODEL = 'gemini-1.5-flash';
+const LLM_MODEL = 'gemini-2.0-flash-001'; 
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 
 const defaultHeaders = {
@@ -14,7 +14,6 @@ const defaultHeaders = {
 };
 
 exports.handler = async (event) => {
-console.log('GEMINI KEY PRESENT:', Boolean(process.env.SUM_GAME_KEY));
     try {
         if (event.httpMethod.toUpperCase() === 'OPTIONS') {
             return {
@@ -41,10 +40,7 @@ console.log('GEMINI KEY PRESENT:', Boolean(process.env.SUM_GAME_KEY));
             return { statusCode: 405, headers: defaultHeaders, body: 'Method Not Allowed' };
         }
 
-        const genAI = new GoogleGenerativeAI({
-    apiKey: GEMINI_API_KEY,
-    projectId: PROJECT_ID
-});
+        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const authHeader =
   event.headers.authorization || event.headers.Authorization;
