@@ -40,7 +40,10 @@ exports.handler = async (event) => {
             return { statusCode: 405, headers: defaultHeaders, body: 'Method Not Allowed' };
         }
 
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI({
+    apiKey: GEMINI_API_KEY,
+    projectId: PROJECT_ID
+});
 
 const authHeader =
   event.headers.authorization || event.headers.Authorization;
