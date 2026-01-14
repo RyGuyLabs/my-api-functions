@@ -3,7 +3,7 @@ const { db } = require('./firebaseClient');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
-const LLM_MODEL = 'gemini-2.0-flash-001'; 
+const LLM_MODEL = 'gemini-1.5-flash';
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
 
 const defaultHeaders = {
