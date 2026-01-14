@@ -1,10 +1,15 @@
-const fetch = global.fetch || require('node-fetch');
+const fetch = require('node-fetch');
+
 const { db } = require('./firebaseClient'); 
+const { collection, addDoc } = require('firebase-admin/firestore'); 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 const LLM_MODEL = 'gemini-2.0-flash-001'; 
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
+
+const FIRESTORE_BASE_URL =
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 const defaultHeaders = {
     'Content-Type': 'application/json',
@@ -42,8 +47,7 @@ exports.handler = async (event) => {
 
         const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-const authHeader =
-  event.headers.authorization || event.headers.Authorization;
+const authHeader = event.headers.authorization;
 
 if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
@@ -140,11 +144,8 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
             };
         });
 
-        await db
-  .collection('users')
-  .doc(userId)
-  .collection('tasks')
-  .add({ tasks: sanitizedTasks });
+        const tasksCollection = collection(db, `users/${userId}/tasks`);
+        await addDoc(tasksCollection, { tasks: sanitizedTasks });
 
         return {
             statusCode: 200,
@@ -153,7 +154,7 @@ CRITICAL: THE AGENT IS IN A BOSS FIGHT.
         };
 
     } catch (error) {
-        console.error('Task Game Function Error:', error);
+        console.error('LLM Function Error:', error);
         return {
             statusCode: 500,
             headers: defaultHeaders,
