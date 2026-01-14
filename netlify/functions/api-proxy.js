@@ -221,9 +221,8 @@ exports.handler = async (event, context) => {
 
         const feature = action || body.feature;
 
-        // === READY Enhancer Route ===
 if (feature === "enhance_goal_text") {
-    const { goal, context } = body;
+const { goal, context, outputFocus } = body;
 
     if (!goal || !context) {
         return {
