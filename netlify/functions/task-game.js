@@ -1,16 +1,13 @@
 const admin = require('firebase-admin');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// ---- ENV ----
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
 const MODEL_NAME = 'models/gemini-1.5-pro';
 
-// ---- INIT FIREBASE ADMIN (SAFE SINGLETON) ----
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-// ---- HEADERS ----
 const headers = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
@@ -20,7 +17,6 @@ const headers = {
 
 exports.handler = async (event) => {
   try {
-    // ---- CORS ----
     if (event.httpMethod === 'OPTIONS') {
       return { statusCode: 204, headers, body: '' };
     }
@@ -29,20 +25,18 @@ exports.handler = async (event) => {
       return { statusCode: 405, headers, body: 'Method Not Allowed' };
     }
 
-    // ---- AUTH ----
     const authHeader = event.headers.authorization || '';
-    if (!authHeader.startsWith('Bearer ')) {
-      return {
-        statusCode: 401,
-        headers,
-        body: JSON.stringify({ error: 'Missing Authorization token' })
-      };
+    let decodedUser = null;
+
+    if (authHeader.startsWith('Bearer ')) {
+      const idToken = authHeader.replace('Bearer ', '');
+      try {
+        decodedUser = await admin.auth().verifyIdToken(idToken);
+      } catch (e) {
+        decodedUser = null;
+      }
     }
 
-    const idToken = authHeader.replace('Bearer ', '');
-    await admin.auth().verifyIdToken(idToken); // throws if invalid
-
-    // ---- INPUT ----
     const { userInput, isBossFight } = JSON.parse(event.body || '{}');
 
     if (!userInput || typeof userInput !== 'string') {
@@ -53,7 +47,6 @@ exports.handler = async (event) => {
       };
     }
 
-    // ---- PROMPT ----
     let systemPrompt = `
 You are a Strategic RPG Quest Designer.
 
@@ -76,14 +69,12 @@ BOSS FIGHT MODE:
 
     const prompt = `${systemPrompt}\nUSER INPUT:\n${userInput}`;
 
-    // ---- AI ----
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
     const result = await model.generateContent(prompt);
     const raw = result.response.text();
 
-    // ---- PARSE ----
     let tasks;
     try {
       tasks = JSON.parse(raw);
@@ -93,7 +84,6 @@ BOSS FIGHT MODE:
       tasks = JSON.parse(match[0]);
     }
 
-    // ---- SANITIZE ----
     const MAX_VALUE = 5000;
     const clean = tasks.map(t => {
       if (t.type === 'strategy') return t;
@@ -104,7 +94,6 @@ BOSS FIGHT MODE:
       };
     });
 
-    // ---- RETURN ----
     return {
       statusCode: 200,
       headers,
