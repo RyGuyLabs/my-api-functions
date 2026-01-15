@@ -95,7 +95,6 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
         try {
             const response = await fetch(url, options);
 
-            // Check for retryable errors (Too Many Requests or Server Errors)
             if (response.status === 429 || response.status >= 500) {
                 if (i === maxRetries - 1) {
                     throw new Error(`Fetch failed after ${maxRetries} retries with status ${response.status}.`);
@@ -103,14 +102,13 @@ async function retryFetch(url, options, maxRetries = MAX_RETRIES) {
 
                 const delay = RETRY_DELAY_MS * Math.pow(2, i);
                 await new Promise(resolve => setTimeout(resolve, delay));
-                continue; // retry loop
+                continue; 
             }
             return response; 
         } catch (error) {
-            if (i === maxRetries - 1) throw error; // Re-throw after max retries
+            if (i === maxRetries - 1) throw error; 
             const delay = RETRY_DELAY_MS * Math.pow(2, i);
             await new Promise(resolve => setTimeout(resolve, delay));
-            // Do not log retry as an error in the console.
         }
     }
     throw new Error("Fetch failed without a retryable status or network error.");
@@ -302,7 +300,6 @@ const { goal, context, outputFocus } = body;
                     firestoreResponse = await retryFetch(FIRESTORE_QUERY_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        // Parent is the user document, which limits the query to the user's data
                         body: JSON.stringify({ parent: `projects/${PROJECT_ID}/databases/(default)/documents/users/${userId}`, structuredQuery: structuredQuery })
                     });
 
@@ -488,8 +485,8 @@ if (feature === 'image_generation') {
 }
 
 else if (feature === 'prime_directive') {
-    const userGoal = body.userGoal; // Assumes you pass this from the frontend
-    const emotionalFocus = body.emotionalFocus; // Assumes you pass this from the frontend
+    const userGoal = body.userGoal; 
+    const emotionalFocus = body.emotionalFocus; 
 
     if (!userGoal || !emotionalFocus) {
         return { 
@@ -527,7 +524,7 @@ const payload = {
     
     generationConfig: {
         temperature: 0.2,
-        responseMimeType: "application/json" // Crucial for getting JSON output
+        responseMimeType: "application/json" 
     }
 };
 
@@ -568,7 +565,7 @@ const payload = {
             body: JSON.stringify({
                 imagePrompt: imagePrompt,
                 commandText: commandText,
-                imageUrl: imageUrl // <--- CRITICAL FIX: Include the final image URL
+                imageUrl: imageUrl 
             })
         };
     } catch (e) {
@@ -657,8 +654,6 @@ Schema:
 
             try {
                 const parsedContent = JSON.parse(rawText);
-
-                // Ensure the required keys are present before returning
                 if (!parsedContent.internalConflict || !parsedContent.externalPrescription) {
                     throw new Error("Parsed JSON missing required Barrier Breaker fields.");
                 }
@@ -666,7 +661,7 @@ Schema:
                 return {
                     statusCode: 200,
                     headers: CORS_HEADERS,
-                    body: JSON.stringify(parsedContent) // Return the full object
+                    body: JSON.stringify(parsedContent)
                 };
             } catch (e) {
                 console.error("Failed to parse Barrier Breaker JSON output:", rawText);
@@ -737,7 +732,6 @@ Schema:
                     responseKey = feature === "plan" ? 'plan' : 'smartGoal';
                 } catch (jsonError) {
                     console.warn(`[RyGuyLabs] Feature ${feature} returned non-JSON. Sending raw text as fallback.`);
-                    // Fallback: use rawText as the content if parsing fails
                     parsedContent = rawText;
                 }
             }
@@ -749,7 +743,6 @@ Schema:
                 })
             };
         }
-
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
