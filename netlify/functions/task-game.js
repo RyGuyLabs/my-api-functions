@@ -3,7 +3,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // ---- ENV ----
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
-const MODEL_NAME = 'gemini-1.5-pro';
+const MODEL_NAME = 'models/gemini-1.5-pro';
 
 // ---- INIT FIREBASE ADMIN (SAFE SINGLETON) ----
 if (!admin.apps.length) {
