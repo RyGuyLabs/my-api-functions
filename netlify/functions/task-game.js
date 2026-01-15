@@ -11,7 +11,7 @@ if (!admin.apps.length) {
 const headers = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
@@ -25,18 +25,13 @@ exports.handler = async (event) => {
       return { statusCode: 405, headers, body: 'Method Not Allowed' };
     }
 
-    const authHeader = event.headers.authorization || '';
-    let decodedUser = null;
+    // ---- IDENTITY (SQUARESPACE-SOURCE, NON-BLOCKING) ----
+    const userId =
+      event.headers['x-user-id'] ||
+      event.headers['X-User-Id'] ||
+      null;
 
-    if (authHeader.startsWith('Bearer ')) {
-      const idToken = authHeader.replace('Bearer ', '');
-      try {
-        decodedUser = await admin.auth().verifyIdToken(idToken);
-      } catch (e) {
-        decodedUser = null;
-      }
-    }
-
+    // ---- INPUT ----
     const { userInput, isBossFight } = JSON.parse(event.body || '{}');
 
     if (!userInput || typeof userInput !== 'string') {
@@ -47,6 +42,7 @@ exports.handler = async (event) => {
       };
     }
 
+    // ---- PROMPT ----
     let systemPrompt = `
 You are a Strategic RPG Quest Designer.
 
@@ -69,12 +65,14 @@ BOSS FIGHT MODE:
 
     const prompt = `${systemPrompt}\nUSER INPUT:\n${userInput}`;
 
+    // ---- AI ----
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
     const result = await model.generateContent(prompt);
     const raw = result.response.text();
 
+    // ---- PARSE ----
     let tasks;
     try {
       tasks = JSON.parse(raw);
@@ -84,6 +82,7 @@ BOSS FIGHT MODE:
       tasks = JSON.parse(match[0]);
     }
 
+    // ---- SANITIZE ----
     const MAX_VALUE = 5000;
     const clean = tasks.map(t => {
       if (t.type === 'strategy') return t;
@@ -93,6 +92,19 @@ BOSS FIGHT MODE:
         estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_VALUE)
       };
     });
+
+    // ---- OPTIONAL STORAGE (SAFE, USER-SCOPED) ----
+    if (userId) {
+      const db = admin.firestore();
+      await db
+        .collection('users')
+        .doc(String(userId))
+        .collection('sessions')
+        .add({
+          tasks: clean,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    }
 
     return {
       statusCode: 200,
