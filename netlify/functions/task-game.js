@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { collection, addDoc } = require('firebase-admin/firestore');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
@@ -10,8 +11,8 @@ if (!admin.apps.length) {
 
 const headers = {
   'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Id',
+  'Access-Control-Allow-Origin': '*', // Replace * with your Squarespace domain if needed
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
@@ -25,14 +26,26 @@ exports.handler = async (event) => {
       return { statusCode: 405, headers, body: 'Method Not Allowed' };
     }
 
-    // ---- IDENTITY (SQUARESPACE-SOURCE, NON-BLOCKING) ----
-    const userId =
-      event.headers['x-user-id'] ||
-      event.headers['X-User-Id'] ||
-      null;
+    const memberId = event.headers['x-member-id'];
+    if (!memberId) {
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: 'Missing Squarespace member ID' })
+      };
+    }
 
-    // ---- INPUT ----
-    const { userInput, isBossFight } = JSON.parse(event.body || '{}');
+    const { userInput, action, isBossFight } = JSON.parse(event.body || '{}');
+
+    if (action === 'CLEAR_ALL') {
+      const tasksCollection = collection(admin.firestore(), `users/${memberId}/tasks`);
+      // Optional: implement deletion logic here if you want to allow clearing
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ message: "Task list cleared successfully" })
+      };
+    }
 
     if (!userInput || typeof userInput !== 'string') {
       return {
@@ -42,7 +55,6 @@ exports.handler = async (event) => {
       };
     }
 
-    // ---- PROMPT ----
     let systemPrompt = `
 You are a Strategic RPG Quest Designer.
 
@@ -63,64 +75,52 @@ BOSS FIGHT MODE:
 `;
     }
 
-    const prompt = `${systemPrompt}\nUSER INPUT:\n${userInput}`;
+    const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
 
-    // ---- AI ----
+    // ---- AI GENERATION ----
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-    const result = await model.generateContent(prompt);
-    const raw = result.response.text();
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
-    // ---- PARSE ----
-    let tasks;
+    const rawResponse = result.response.text();
+
+    let parsedTasks;
     try {
-      tasks = JSON.parse(raw);
-    } catch {
-      const match = raw.match(/\[[\s\S]*\]/);
-      if (!match) throw new Error('Invalid AI JSON');
-      tasks = JSON.parse(match[0]);
+      parsedTasks = JSON.parse(rawResponse);
+    } catch (e) {
+      const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error("AI response did not contain a valid task list.");
+      parsedTasks = JSON.parse(jsonMatch[0]);
     }
 
-    // ---- SANITIZE ----
-    const MAX_VALUE = 5000;
-    const clean = tasks.map(t => {
+    const MAX_TASK_VALUE = 5000;
+    const sanitizedTasks = parsedTasks.map(t => {
       if (t.type === 'strategy') return t;
       return {
-        type: 'task',
-        taskName: String(t.taskName || '').slice(0, 120),
-        estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_VALUE)
+        ...t,
+        estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_TASK_VALUE)
       };
     });
 
-    // ---- OPTIONAL STORAGE (SAFE, USER-SCOPED) ----
-    if (userId) {
-      const db = admin.firestore();
-      await db
-        .collection('users')
-        .doc(String(userId))
-        .collection('sessions')
-        .add({
-          tasks: clean,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-    }
+    const tasksCollection = collection(admin.firestore(), `users/${memberId}/tasks`);
+    await addDoc(tasksCollection, { tasks: sanitizedTasks, createdAt: admin.firestore.FieldValue.serverTimestamp() });
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify(clean)
+      body: JSON.stringify(sanitizedTasks)
     };
 
-  } catch (err) {
-    console.error('LLM ERROR:', err);
+  } catch (error) {
+    console.error('LLM Function Error:', error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        error: 'LLM failure',
-        details: err.message
-      })
+      body: JSON.stringify({ error: 'Failed to process request via LLM.', details: error.message })
     };
   }
 };
