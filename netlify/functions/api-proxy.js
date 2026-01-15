@@ -368,7 +368,6 @@ const { goal, context, outputFocus } = body;
     const geminiImagePayload = {
         contents: [
             { 
-                // The role is optional for the first prompt, but good practice
                 role: "user", 
                 parts: [{ text: imagePrompt }] 
             }
@@ -378,7 +377,7 @@ const { goal, context, outputFocus } = body;
     const response = await fetch(IMAGEN_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiImagePayload) // Use the new payload
+        body: JSON.stringify(geminiImagePayload) 
     });
 
     if (!response.ok) {
@@ -555,7 +554,6 @@ const payload = {
                 imageUrl = await generateImage(imagePrompt, GEMINI_API_KEY);
             } catch (e) {
                 console.warn("Prime Directive Image Generation Failed (Continuing with text):", e.message);
-                // The main handler will still return the text, just without an image.
             }
         }
 
@@ -579,7 +577,7 @@ const payload = {
 }
         else if (feature === 'BREAK_BARRIER' || feature === 'dream_energy_analysis') {
             const userGoal = body.userGoal;
-            const emotionalFocus = body.emotionalFocus || ''; // Optional
+            const emotionalFocus = body.emotionalFocus || ''; 
 
             if (!userGoal) {
                 return {
