@@ -81,12 +81,12 @@ Return only valid JSON — no markdown, quotes, or commentary.
 };
 
 const CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
     'Content-Type': 'application/json'
 };
-
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
