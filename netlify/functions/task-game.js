@@ -1,162 +1,125 @@
-const { db } = require('./firebaseClient'); 
-const { collection, addDoc } = require('firebase-admin/firestore'); 
+const admin = require('firebase-admin');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
+// ---- ENV ----
 const GEMINI_API_KEY = process.env.SUM_GAME_KEY;
-const LLM_MODEL = 'models/gemini-1.5-pro';
-const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
+const MODEL_NAME = 'gemini-1.5-pro';
 
-const FIRESTORE_BASE_URL =
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
+// ---- INIT FIREBASE ADMIN (SAFE SINGLETON) ----
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
-const defaultHeaders = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+// ---- HEADERS ----
+const headers = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
 exports.handler = async (event) => {
+  try {
+    // ---- CORS ----
+    if (event.httpMethod === 'OPTIONS') {
+      return { statusCode: 204, headers, body: '' };
+    }
+
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, headers, body: 'Method Not Allowed' };
+    }
+
+    // ---- AUTH ----
+    const authHeader = event.headers.authorization || '';
+    if (!authHeader.startsWith('Bearer ')) {
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: 'Missing Authorization token' })
+      };
+    }
+
+    const idToken = authHeader.replace('Bearer ', '');
+    await admin.auth().verifyIdToken(idToken); // throws if invalid
+
+    // ---- INPUT ----
+    const { userInput, isBossFight } = JSON.parse(event.body || '{}');
+
+    if (!userInput || typeof userInput !== 'string') {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'Invalid userInput' })
+      };
+    }
+
+    // ---- PROMPT ----
+    let systemPrompt = `
+You are a Strategic RPG Quest Designer.
+
+RULES:
+- Return ONLY a JSON array
+- Each task object:
+  { "type": "task", "taskName": string, "estimatedValue": number }
+- Add ONE final object:
+  { "type": "strategy", "bossTask": string, "advice": string }
+`;
+
+    if (isBossFight) {
+      systemPrompt += `
+BOSS FIGHT MODE:
+- Collapse input into ONE high-impact task
+- estimatedValue: 3000–5000
+- Advice must be intense and tactical
+`;
+    }
+
+    const prompt = `${systemPrompt}\nUSER INPUT:\n${userInput}`;
+
+    // ---- AI ----
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text();
+
+    // ---- PARSE ----
+    let tasks;
     try {
-        if (event.httpMethod.toUpperCase() === 'OPTIONS') {
-            return {
-                statusCode: 204,
-                headers: defaultHeaders,
-                body: ''
-            };
-        }
-
-        if (event.httpMethod.toUpperCase() === 'GET') {
-            const config = {
-                apiKey: process.env.FIREBASE_API_KEY || null,
-                projectId: PROJECT_ID || null,
-                appId: process.env.FIREBASE_APP_ID || null
-            };
-            return {
-                statusCode: (config.apiKey && config.projectId) ? 200 : 500,
-                headers: defaultHeaders,
-                body: JSON.stringify(config)
-            };
-        }
-
-        if (event.httpMethod !== 'POST') {
-            return { statusCode: 405, headers: defaultHeaders, body: 'Method Not Allowed' };
-        }
-
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        
-const authHeader = event.headers.authorization;
-
-if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return {
-        statusCode: 401,
-        headers: defaultHeaders,
-        body: JSON.stringify({ error: 'Missing or invalid Authorization header' })
-    };
-}
-
-const idToken = authHeader.replace('Bearer ', '');
-
-const verifyResponse = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${process.env.FIREBASE_API_KEY}`,
-    {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken })
+      tasks = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error('Invalid AI JSON');
+      tasks = JSON.parse(match[0]);
     }
-);
 
-const verifyData = await verifyResponse.json();
+    // ---- SANITIZE ----
+    const MAX_VALUE = 5000;
+    const clean = tasks.map(t => {
+      if (t.type === 'strategy') return t;
+      return {
+        type: 'task',
+        taskName: String(t.taskName || '').slice(0, 120),
+        estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_VALUE)
+      };
+    });
 
-if (!verifyData.users || !verifyData.users[0]?.localId) {
+    // ---- RETURN ----
     return {
-        statusCode: 401,
-        headers: defaultHeaders,
-        body: JSON.stringify({ error: 'Invalid Firebase authentication token' })
+      statusCode: 200,
+      headers,
+      body: JSON.stringify(clean)
     };
-}
 
-const userId = verifyData.users[0].localId;
-
-        const { userInput, action, isBossFight } = JSON.parse(event.body);
-
-        if (action === 'CLEAR_ALL') {
-            return {
-                statusCode: 200,
-                headers: defaultHeaders,
-                body: JSON.stringify({ message: "Task list cleared successfully" })
-            };
-        }
-
-        if (!userInput) {
-            return {
-                statusCode: 400,
-                headers: defaultHeaders,
-                body: JSON.stringify({ error: 'Missing userInput.' })
-            };
-        }
-
-        let systemPrompt = `CRITICAL INSTRUCTION: You are a Strategic RPG Quest Designer.
-1. Extract tasks into a JSON array of objects with: "taskName", "estimatedValue", and "type": "task".
-2. Identify the most difficult or high-impact task.
-3. Add ONE final object to the array: 
-{"type": "strategy", "bossTask": "Name of hardest task", "advice": "Short RPG-style tactical advice"}.
-
-STRICT: Return ONLY the JSON array.`;
-
-        if (isBossFight) {
-            systemPrompt += `
-CRITICAL: THE AGENT IS IN A BOSS FIGHT. 
-- Consolidate input into ONE major "Strategic Boss Task".
-- Set "estimatedValue" between 3000 and 5000.
-- Make the advice extremely high-stakes and intense.`;
-        }
-
-        const model = genAI.getGenerativeModel({ model: LLM_MODEL });
-        const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
-
-        const result = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        const response = await result.response;
-        const rawResponse = response.text();
-
-        let parsedTasks;
-        try {
-            parsedTasks = JSON.parse(rawResponse);
-        } catch (e) {
-            const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-            if (!jsonMatch) throw new Error("AI response did not contain a valid task list.");
-            parsedTasks = JSON.parse(jsonMatch[0]);
-        }
-
-        const MAX_TASK_VALUE = 5000;
-
-        const sanitizedTasks = parsedTasks.map(t => {
-            if (t.type === 'strategy') return t;
-            return {
-                ...t,
-                estimatedValue: Math.min(Number(t.estimatedValue) || 0, MAX_TASK_VALUE)
-            };
-        });
-
-        const tasksCollection = collection(db, `users/${userId}/tasks`);
-        await addDoc(tasksCollection, { tasks: sanitizedTasks });
-
-        return {
-            statusCode: 200,
-            headers: defaultHeaders,
-            body: JSON.stringify(sanitizedTasks)
-        };
-
-    } catch (error) {
-        console.error('LLM Function Error:', error);
-        return {
-            statusCode: 500,
-            headers: defaultHeaders,
-            body: JSON.stringify({ error: 'Failed to process request via LLM.', details: error.message })
-        };
-    }
+  } catch (err) {
+    console.error('LLM ERROR:', err);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({
+        error: 'LLM failure',
+        details: err.message
+      })
+    };
+  }
 };
