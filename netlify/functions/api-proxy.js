@@ -232,7 +232,7 @@ const { goal, context, outputFocus } = body;
         };
     }
 
-    const enhancement = await generateAction({
+    const enhancement = await generateReadyEnhancement({
     userGoal: goal,
     section: { description: context }
 });
