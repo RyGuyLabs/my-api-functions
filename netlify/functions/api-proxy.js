@@ -185,11 +185,15 @@ exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers: CORS_HEADERS,
+            headers: {
+                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                'Access-Control-Allow-Credentials': 'true'
+            },
             body: ''
         };
     }
-
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
