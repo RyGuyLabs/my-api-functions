@@ -182,22 +182,27 @@ async function checkSquarespaceMembershipStatus(userId) {
 }
 
 exports.handler = async (event, context) => {
+    const origin = event.headers.origin || '*';
+
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Credentials': 'true'
+    };
+
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers: {
-                'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Access-Control-Allow-Credentials': 'true'
-            },
+            headers: corsHeaders,
             body: ''
         };
     }
+
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
-            headers: CORS_HEADERS,
+            headers: corsHeaders,
             body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
