@@ -1,4 +1,4 @@
-const fetch = require('node-fetch').default || require('node-fetch');
+const fetch = global.fetch;
 const SQUARESPACE_TOKEN = process.env.SQUARESPACE_ACCESS_TOKEN;
 const FIRESTORE_KEY = process.env.DATA_API_KEY;
 const PROJECT_ID = process.env.FIRESTORE_PROJECT_ID;
