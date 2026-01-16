@@ -187,8 +187,9 @@ exports.handler = async (event, context) => {
     const corsHeaders = {
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Allow-Credentials': 'true'
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true',
+        'Content-Type': 'application/json'
     };
 
     if (event.httpMethod === 'OPTIONS') {
@@ -199,6 +200,13 @@ exports.handler = async (event, context) => {
         };
     }
 
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            headers: corsHeaders,
+            body: JSON.stringify({ message: "Method Not Allowed" })
+        };
+    }
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
