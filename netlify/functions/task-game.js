@@ -22,6 +22,18 @@ exports.handler = async (event) => {
       return { statusCode: 204, headers, body: '' };
     }
 
+    if (event.httpMethod === 'GET') {
+  return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+      apiKey: process.env.FIREBASE_API_KEY || null,
+      projectId: process.env.FIREBASE_PROJECT_ID || null,
+      appId: process.env.FIREBASE_APP_ID || null
+    })
+  };
+}
+    
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, headers, body: 'Method Not Allowed' };
     }
