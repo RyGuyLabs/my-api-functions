@@ -1,0 +1,77 @@
+const fetch = require('node-fetch');
+
+exports.handler = async (event, context) => {
+  // Only allow POST requests
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Method Not Allowed" };
+  }
+
+  try {
+    const { hobbies, skills, talents, country } = JSON.parse(event.body);
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    const systemPrompt = `You are a professional Career Architect and Matchmaker.
+    Your goal is to extract deep value from personal characteristics and align them with a high-performance career path.`;
+
+    const userPrompt = `Analyze these characteristics:
+    - Hobbies/Interests: ${hobbies}
+    - Acquired Skills: ${skills}
+    - Natural Talents: ${talents}
+    - Location: ${country}
+
+    Provide a Career Alignment Blueprint in valid JSON format:
+    {
+        "careerTitle": "Exact professional title",
+        "alignmentScore": 95,
+        "earningPotential": "Range in local currency (e.g. £45k - £70k)",
+        "attainmentPlan": ["Actionable step 1", "Actionable step 2", "Actionable step 3"],
+        "reasoning": "A deep analysis of why their specific hobbies and talents make them a perfect match for this career.",
+        "searchKeywords": ["Keyword 1", "Keyword 2"]
+    }`;
+
+    // Exponential backoff retry logic
+    let response;
+    let retries = 5;
+    let delay = 1000;
+
+    for (let i = 0; i < retries; i++) {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.7
+          }
+        })
+      });
+
+      if (response.ok) break;
+      if (i < retries - 1) {
+        await new Promise(res => setTimeout(res, delay));
+        delay *= 2;
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const careerData = JSON.parse(result.candidates[0].content.parts[0].text);
+
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(careerData)
+    };
+
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Failed to align career path. Please check your inputs." })
+    };
+  }
+};
