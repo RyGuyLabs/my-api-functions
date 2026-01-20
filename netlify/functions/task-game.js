@@ -11,9 +11,9 @@ if (!admin.apps.length) {
 
 const headers = {
   'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*', // Replace * with your Squarespace domain if needed
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' // <-- FIXED LINE
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-member-id',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
 };
 
 exports.handler = async (event) => {
@@ -33,12 +33,15 @@ exports.handler = async (event) => {
         })
       };
     }
-    
+
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, headers, body: 'Method Not Allowed' };
     }
 
-    const memberId = event.headers['x-member-id'];
+    const memberId =
+      event.headers['x-member-id'] ||
+      event.headers['X-Member-Id'];
+
     if (!memberId) {
       return {
         statusCode: 401,
@@ -50,8 +53,6 @@ exports.handler = async (event) => {
     const { userInput, action, isBossFight } = JSON.parse(event.body || '{}');
 
     if (action === 'CLEAR_ALL') {
-      const tasksCollection = collection(admin.firestore(), `users/${memberId}/tasks`);
-      // Optional: implement deletion logic here if you want to allow clearing
       return {
         statusCode: 200,
         headers,
@@ -89,7 +90,6 @@ BOSS FIGHT MODE:
 
     const combinedPrompt = `${systemPrompt}\n\nUser Input: ${userInput}`;
 
-    // ---- AI GENERATION ----
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
@@ -103,9 +103,9 @@ BOSS FIGHT MODE:
     let parsedTasks;
     try {
       parsedTasks = JSON.parse(rawResponse);
-    } catch (e) {
+    } catch {
       const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error("AI response did not contain a valid task list.");
+      if (!jsonMatch) throw new Error('Invalid AI response');
       parsedTasks = JSON.parse(jsonMatch[0]);
     }
 
@@ -118,8 +118,15 @@ BOSS FIGHT MODE:
       };
     });
 
-    const tasksCollection = collection(admin.firestore(), `users/${memberId}/tasks`);
-    await addDoc(tasksCollection, { tasks: sanitizedTasks, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    const tasksCollection = collection(
+      admin.firestore(),
+      `users/${memberId}/tasks`
+    );
+
+    await addDoc(tasksCollection, {
+      tasks: sanitizedTasks,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
 
     return {
       statusCode: 200,
@@ -132,7 +139,10 @@ BOSS FIGHT MODE:
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'Failed to process request via LLM.', details: error.message })
+      body: JSON.stringify({
+        error: 'Failed to process request via LLM.',
+        details: error.message
+      })
     };
   }
 };
