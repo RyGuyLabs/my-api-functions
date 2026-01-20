@@ -13,12 +13,17 @@ exports.handler = async (event, context) => {
   }
 
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return {
+  statusCode: 405,
+  headers: { "Access-Control-Allow-Origin": "*" },
+  body: "Method Not Allowed"
+};
   }
 
   try {
-    const { message, history, persona, careerPath } = JSON.parse(event.body);
+    const { message, history, persona, careerPath } = event.body ? JSON.parse(event.body) : {};
     const apiKey = process.env.FIRST_API_KEY;
+    if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
     const systemPrompt = `You are the "Shadow Execution Simulator."
     The user is training to overcome social anxiety and weak communication to enter the career path: ${careerPath}.
@@ -49,6 +54,7 @@ exports.handler = async (event, context) => {
     });
 
     const result = await response.json();
+    if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
     const data = JSON.parse(result.candidates[0].content.parts[0].text);
 
     return {
@@ -58,6 +64,13 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+    return {
+      statusCode: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify({ error: error.message })
+    };
   }
 };
