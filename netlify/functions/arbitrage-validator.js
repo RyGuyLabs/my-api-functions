@@ -19,20 +19,21 @@ function normalizeResponse(raw) {
   };
 }
 
-// Validates AI JSON strictly
+// Strict AI JSON validation
 function validateJSON(raw) {
   const safe = normalizeResponse(raw);
-  // Ensure every matrix entry has required keys
+
   safe.matrix = safe.matrix.map(m => ({
     task: String(m.task || "Unknown Task"),
     value: String(m.value || "$0.00")
   }));
-  // Ensure comparisons are well-formed
+
   safe.comparisons = safe.comparisons.map(c => ({
     market: String(c.market || "Unknown Market"),
     roi: String(c.roi || "N/A"),
     delta: String(c.delta || "0%")
   }));
+
   return safe;
 }
 
@@ -55,7 +56,6 @@ exports.handler = async (event) => {
     const { asset } = JSON.parse(event.body);
     if (!asset) throw new Error("Missing asset");
 
-    // Tier-based monetization gating
     const tier = event.headers["x-user-tier"] || "free";
 
     const apiKey = process.env.FIRST_API_KEY;
@@ -90,7 +90,6 @@ Analyze this market:
     const result = await model.generateContent(prompt);
     const rawText = result.response.text().trim();
 
-    // Attempt to extract JSON if wrapped in extra text
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     const extracted = jsonMatch ? jsonMatch[0] : rawText;
 
@@ -103,7 +102,6 @@ Analyze this market:
 
     let safe = validateJSON(parsed);
 
-    // Tier-based gating
     if (tier === "free") {
       safe.comparisons = safe.comparisons.slice(0, 1);
     }
