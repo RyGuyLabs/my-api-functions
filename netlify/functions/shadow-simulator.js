@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+// Netlify provides global fetch; node-fetch not required
 
 exports.handler = async (event, context) => {
   if (event.httpMethod === "OPTIONS") {
