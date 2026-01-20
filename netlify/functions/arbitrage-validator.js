@@ -7,14 +7,20 @@ const headers = {
   "Content-Type": "application/json"
 };
 
+function normalizeResponse(raw) {
+  return {
+    verdict: String(raw.verdict || "INSUFFICIENT SIGNAL"),
+    roi: String(raw.roi || "N/A"),
+    matrix: Array.isArray(raw.matrix) ? raw.matrix : [],
+    logistics: Array.isArray(raw.logistics) ? raw.logistics : [],
+    risks: Array.isArray(raw.risks) ? raw.risks : [],
+    steps: Array.isArray(raw.steps) ? raw.steps : []
+  };
+}
+
 exports.handler = async (event) => {
-  // Handle CORS preflight
   if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers,
-      body: ""
-    };
+    return { statusCode: 200, headers, body: "" };
   }
 
   if (event.httpMethod !== "POST") {
@@ -26,83 +32,71 @@ exports.handler = async (event) => {
   }
 
   try {
-    if (!event.body) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: "Missing request body" })
-      };
-    }
+    if (!event.body) throw new Error("Missing body");
 
-    const parsed = JSON.parse(event.body);
-    const careerPath = parsed.asset;
-
-    if (!careerPath) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: "Missing asset field" })
-      };
-    }
+    const { asset } = JSON.parse(event.body);
+    if (!asset) throw new Error("Missing asset");
 
     const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) {
-      throw new Error("Missing FIRST_API_KEY environment variable");
-    }
+    if (!apiKey) throw new Error("Missing API key");
 
     const genAI = new GoogleGenerativeAI(apiKey);
-
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-preview-09-2025",
-      tools: [{ google_search: {} }]
+      model: "gemini-2.5-flash-preview-09-2025"
     });
 
     const prompt = `
-PERFORM MARKET SCRAPE FOR: "${careerPath}"
+You are a market arbitrage engine.
 
-OBJECTIVE: Identify high-ROI arbitrage opportunities.
-1. Find current freelance/contract rates (Upwork, TopTal, Niche boards).
-2. Find underserved niche consulting gaps.
-3. Identify "High-Ticket" specific tasks that pay a disproportionate hourly rate.
+Respond with **VALID JSON ONLY**.
+No markdown.
+No commentary.
+No backticks.
 
-OUTPUT REQUIREMENTS:
-- Ignore career satisfaction. Focus 100% on ROI.
-- Create a "Money-to-Task" matrix showing exactly how much specific tasks in this field pay right now.
-
-RETURN JSON ONLY:
+Schema:
 {
-  "verdict": "e.g., HIGH EXPLOITATION POTENTIAL",
-  "roi": "e.g., $250/hr average",
-  "matrix": [
-    {"task": "Specific Task Name", "value": "$ amount"}
-  ],
-  "logistics": ["Market Gap 1"],
-  "risks": ["Slippage risk"],
-  "steps": ["Step 1", "Step 2"]
+  "verdict": "string",
+  "roi": "string",
+  "matrix": [{"task":"string","value":"string"}],
+  "logistics": ["string"],
+  "risks": ["string"],
+  "steps": ["string"]
 }
+
+Analyze this market:
+"${asset}"
 `;
 
     const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const text = result.response.text().trim();
 
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON found in model response");
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("Model returned invalid JSON");
     }
+
+    const safe = normalizeResponse(parsed);
 
     return {
       statusCode: 200,
       headers,
-      body: jsonMatch[0]
+      body: JSON.stringify(safe)
     };
 
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: "Neural link timeout during market scrape."
+        verdict: "ANALYSIS FAILED",
+        roi: "N/A",
+        matrix: [],
+        logistics: [],
+        risks: ["Model instability or malformed output"],
+        steps: ["Retry request", "Refine market input"]
       })
     };
   }
