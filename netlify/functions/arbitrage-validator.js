@@ -19,6 +19,23 @@ function normalizeResponse(raw) {
   };
 }
 
+// Validates AI JSON strictly
+function validateJSON(raw) {
+  const safe = normalizeResponse(raw);
+  // Ensure every matrix entry has required keys
+  safe.matrix = safe.matrix.map(m => ({
+    task: String(m.task || "Unknown Task"),
+    value: String(m.value || "$0.00")
+  }));
+  // Ensure comparisons are well-formed
+  safe.comparisons = safe.comparisons.map(c => ({
+    market: String(c.market || "Unknown Market"),
+    roi: String(c.roi || "N/A"),
+    delta: String(c.delta || "0%")
+  }));
+  return safe;
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers, body: "" };
@@ -38,6 +55,7 @@ exports.handler = async (event) => {
     const { asset } = JSON.parse(event.body);
     if (!asset) throw new Error("Missing asset");
 
+    // Tier-based monetization gating
     const tier = event.headers["x-user-tier"] || "free";
 
     const apiKey = process.env.FIRST_API_KEY;
@@ -52,9 +70,7 @@ exports.handler = async (event) => {
 You are a market arbitrage engine.
 
 Respond with VALID JSON ONLY.
-No markdown.
-No commentary.
-No backticks.
+No markdown, no commentary, no backticks.
 
 Schema:
 {
@@ -72,17 +88,22 @@ Analyze this market:
 `;
 
     const result = await model.generateContent(prompt);
-    const text = result.response.text().trim().replace(/^[^{]*|[^}]*$/g, "");
+    const rawText = result.response.text().trim();
+
+    // Attempt to extract JSON if wrapped in extra text
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    const extracted = jsonMatch ? jsonMatch[0] : rawText;
 
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(extracted);
     } catch {
       throw new Error("Model returned invalid JSON");
     }
 
-    const safe = normalizeResponse(parsed);
+    let safe = validateJSON(parsed);
 
+    // Tier-based gating
     if (tier === "free") {
       safe.comparisons = safe.comparisons.slice(0, 1);
     }
