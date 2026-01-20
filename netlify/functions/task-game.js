@@ -13,7 +13,7 @@ const headers = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*', // Replace * with your Squarespace domain if needed
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' // <-- FIXED LINE
 };
 
 exports.handler = async (event) => {
@@ -23,16 +23,16 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === 'GET') {
-  return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({
-      apiKey: process.env.FIREBASE_API_KEY || null,
-      projectId: process.env.FIREBASE_PROJECT_ID || null,
-      appId: process.env.FIREBASE_APP_ID || null
-    })
-  };
-}
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          apiKey: process.env.FIREBASE_API_KEY || null,
+          projectId: process.env.FIREBASE_PROJECT_ID || null,
+          appId: process.env.FIREBASE_APP_ID || null
+        })
+      };
+    }
     
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, headers, body: 'Method Not Allowed' };
