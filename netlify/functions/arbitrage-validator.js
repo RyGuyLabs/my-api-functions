@@ -5,7 +5,7 @@ exports.handler = async (event) => {
 
     try {
         const { asset, data } = JSON.parse(event.body);
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+        const genAI = new GoogleGenerativeAI(process.env.FIRST_API_KEY || "");
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
 
         const systemPrompt = `
