@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, x-user-tier",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
 };
@@ -14,7 +14,8 @@ function normalizeResponse(raw) {
     matrix: Array.isArray(raw.matrix) ? raw.matrix : [],
     logistics: Array.isArray(raw.logistics) ? raw.logistics : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],
-    steps: Array.isArray(raw.steps) ? raw.steps : []
+    steps: Array.isArray(raw.steps) ? raw.steps : [],
+    comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : []
   };
 }
 
@@ -37,6 +38,8 @@ exports.handler = async (event) => {
     const { asset } = JSON.parse(event.body);
     if (!asset) throw new Error("Missing asset");
 
+    const tier = event.headers["x-user-tier"] || "free";
+
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing API key");
 
@@ -48,7 +51,7 @@ exports.handler = async (event) => {
     const prompt = `
 You are a market arbitrage engine.
 
-Respond with **VALID JSON ONLY**.
+Respond with VALID JSON ONLY.
 No markdown.
 No commentary.
 No backticks.
@@ -60,7 +63,8 @@ Schema:
   "matrix": [{"task":"string","value":"string"}],
   "logistics": ["string"],
   "risks": ["string"],
-  "steps": ["string"]
+  "steps": ["string"],
+  "comparisons": [{"market":"string","roi":"string","delta":"string"}]
 }
 
 Analyze this market:
@@ -68,7 +72,7 @@ Analyze this market:
 `;
 
     const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
+    const text = result.response.text().trim().replace(/^[^{]*|[^}]*$/g, "");
 
     let parsed;
     try {
@@ -78,6 +82,10 @@ Analyze this market:
     }
 
     const safe = normalizeResponse(parsed);
+
+    if (tier === "free") {
+      safe.comparisons = safe.comparisons.slice(0, 1);
+    }
 
     return {
       statusCode: 200,
@@ -96,7 +104,8 @@ Analyze this market:
         matrix: [],
         logistics: [],
         risks: ["Model instability or malformed output"],
-        steps: ["Retry request", "Refine market input"]
+        steps: ["Retry request", "Refine market input"],
+        comparisons: []
       })
     };
   }
