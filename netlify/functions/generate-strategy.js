@@ -17,10 +17,7 @@ exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
+      headers: { "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify({ error: "Method Not Allowed" })
     };
   }
@@ -32,7 +29,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Invalid JSON input" })
+      body: JSON.stringify({ error: "Invalid JSON" })
     };
   }
 
@@ -48,16 +45,13 @@ exports.handler = async (event) => {
   }
 
   const prompt = `
-You are a Social Intelligence & Negotiation Analyst.
+Return ONLY valid JSON.
 
 TARGET:
 ${target}
 
 INTENT:
 ${context}
-
-Return ONLY valid JSON.
-Do not include markdown, commentary, or explanations.
 
 FORMAT:
 {
@@ -77,19 +71,12 @@ FORMAT:
         role: "user",
         parts: [{ text: prompt }]
       }
-    ],
-    generationConfig: {
-      temperature: 0.4,
-      responseMimeType: "application/json"
-    }
+    ]
   };
 
-  /* -------------------------------------------------
-     5. GEMINI EXECUTION
-  -------------------------------------------------- */
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,26 +84,18 @@ FORMAT:
       }
     );
 
-    const rawResponse = await response.text();
+    const raw = await response.text();
 
     if (!response.ok) {
-      throw new Error(`Gemini API Error ${response.status}: ${rawResponse}`);
+      throw new Error(`Gemini error ${response.status}: ${raw}`);
     }
 
-    const parsed = JSON.parse(rawResponse);
-    const textOutput =
-      parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!textOutput) {
-      throw new Error("Empty AI response");
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) {
+      throw new Error("No JSON found in Gemini response");
     }
 
-    const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("AI did not return valid JSON");
-    }
-
-    const finalOutput = JSON.parse(jsonMatch[0]);
+    const result = JSON.parse(match[0]);
 
     return {
       statusCode: 200,
@@ -124,21 +103,18 @@ FORMAT:
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
       },
-      body: JSON.stringify(finalOutput)
+      body: JSON.stringify(result)
     };
 
   } catch (err) {
-    console.error("Function Error:", err);
+    console.error("BACKEND FAILURE:", err.message);
 
     return {
       statusCode: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
+      headers: { "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify({
-        error: "Intelligence Engine Failure",
-        message: err.message
+        error: "Backend execution failed",
+        details: err.message
       })
     };
   }
