@@ -2,9 +2,6 @@ const fetch = require("node-fetch");
 
 exports.handler = async (event) => {
 
-  /* -------------------------------------------------
-     1. CORS PREFLIGHT (REQUIRED FOR SQUARESPACE)
-  -------------------------------------------------- */
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -17,9 +14,6 @@ exports.handler = async (event) => {
     };
   }
 
-  /* -------------------------------------------------
-     2. METHOD GUARD
-  -------------------------------------------------- */
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -31,9 +25,6 @@ exports.handler = async (event) => {
     };
   }
 
-  /* -------------------------------------------------
-     3. INPUT PARSING
-  -------------------------------------------------- */
   let body;
   try {
     body = JSON.parse(event.body);
@@ -56,9 +47,6 @@ exports.handler = async (event) => {
     };
   }
 
-  /* -------------------------------------------------
-     4. PROMPT (JSON-ONLY GUARANTEE)
-  -------------------------------------------------- */
   const prompt = `
 You are a Social Intelligence & Negotiation Analyst.
 
@@ -123,9 +111,6 @@ FORMAT:
       throw new Error("Empty AI response");
     }
 
-    /* -------------------------------------------------
-       6. SAFE JSON EXTRACTION
-    -------------------------------------------------- */
     const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("AI did not return valid JSON");
