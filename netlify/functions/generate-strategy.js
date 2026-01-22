@@ -2,6 +2,7 @@ const fetch = require("node-fetch");
 
 exports.handler = async (event) => {
 
+  // ---------- CORS ----------
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -22,6 +23,7 @@ exports.handler = async (event) => {
     };
   }
 
+  // ---------- INPUT ----------
   let body;
   try {
     body = JSON.parse(event.body);
@@ -29,7 +31,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Invalid JSON" })
+      body: JSON.stringify({ error: "Invalid JSON input" })
     };
   }
 
@@ -44,6 +46,7 @@ exports.handler = async (event) => {
     };
   }
 
+  // ---------- PROMPT ----------
   const prompt = `
 Return ONLY valid JSON.
 
@@ -74,6 +77,7 @@ FORMAT:
     ]
   };
 
+  // ---------- GEMINI ----------
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
@@ -84,18 +88,39 @@ FORMAT:
       }
     );
 
-    const raw = await response.text();
+    const rawText = await response.text();
 
     if (!response.ok) {
-      throw new Error(`Gemini error ${response.status}: ${raw}`);
+      throw new Error(`Gemini HTTP ${response.status}: ${rawText}`);
     }
 
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) {
-      throw new Error("No JSON found in Gemini response");
+    const parsed = JSON.parse(rawText);
+
+    const candidate = parsed?.candidates?.[0];
+    if (!candidate) {
+      throw new Error("No candidates returned by Gemini");
     }
 
-    const result = JSON.parse(match[0]);
+    // 🔐 SAFELY EXTRACT *ALL* TEXT PARTS
+    const parts = candidate.content?.parts || [];
+    const combinedText = parts
+      .map(p => p.text)
+      .filter(Boolean)
+      .join("\n");
+
+    if (!combinedText) {
+      throw new Error(
+        `Gemini returned no text. Finish reason: ${candidate.finishReason}`
+      );
+    }
+
+    // 🔍 JSON EXTRACTION
+    const jsonMatch = combinedText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("No JSON object found in Gemini output");
+    }
+
+    const finalOutput = JSON.parse(jsonMatch[0]);
 
     return {
       statusCode: 200,
@@ -103,17 +128,17 @@ FORMAT:
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
       },
-      body: JSON.stringify(result)
+      body: JSON.stringify(finalOutput)
     };
 
   } catch (err) {
-    console.error("BACKEND FAILURE:", err.message);
+    console.error("BACKEND ERROR:", err);
 
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify({
-        error: "Backend execution failed",
+        error: "Gemini execution failed",
         details: err.message
       })
     };
