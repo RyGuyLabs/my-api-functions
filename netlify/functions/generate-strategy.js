@@ -2,6 +2,9 @@ const fetch = require("node-fetch");
 
 exports.handler = async (event) => {
 
+  /* -------------------------------------------------
+     1. CORS PREFLIGHT (REQUIRED FOR SQUARESPACE)
+  -------------------------------------------------- */
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -14,6 +17,9 @@ exports.handler = async (event) => {
     };
   }
 
+  /* -------------------------------------------------
+     2. METHOD GUARD
+  -------------------------------------------------- */
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
@@ -25,6 +31,9 @@ exports.handler = async (event) => {
     };
   }
 
+  /* -------------------------------------------------
+     3. INPUT PARSING
+  -------------------------------------------------- */
   let body;
   try {
     body = JSON.parse(event.body);
@@ -36,7 +45,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const { target, context: searchLogic } = body;
+  const { target, context } = body;
   const apiKey = process.env.FIRST_API_KEY;
 
   if (!apiKey) {
@@ -47,48 +56,82 @@ exports.handler = async (event) => {
     };
   }
 
-  const systemPrompt = `
-You are a Social Intelligence & Negotiation Agent.
+  /* -------------------------------------------------
+     4. PROMPT (JSON-ONLY GUARANTEE)
+  -------------------------------------------------- */
+  const prompt = `
+You are a Social Intelligence & Negotiation Analyst.
 
-TARGET: ${target}
-LOGIC: ${searchLogic}
+TARGET:
+${target}
 
-Return ONLY valid JSON:
+INTENT:
+${context}
+
+Return ONLY valid JSON.
+Do not include markdown, commentary, or explanations.
+
+FORMAT:
 {
   "pain_point": "string",
   "cta": "string",
-  "rules": [{"title":"string","description":"string"}]
+  "rules": [
+    { "title": "string", "description": "string" },
+    { "title": "string", "description": "string" },
+    { "title": "string", "description": "string" }
+  ]
 }
 `;
 
-  const apiPayload = {
-    contents: [{
-      role: "user",
-      parts: [{ text: systemPrompt }]
-    }],
-    tools: [{ google_search: {} }],
-    generationConfig: { responseMimeType: "application/json" }
+  const payload = {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: prompt }]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.4,
+      responseMimeType: "application/json"
+    }
   };
 
+  /* -------------------------------------------------
+     5. GEMINI EXECUTION
+  -------------------------------------------------- */
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(apiPayload)
+        body: JSON.stringify(payload)
       }
     );
 
-    const result = await response.json();
-    const raw = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawResponse = await response.text();
 
-    if (!raw) throw new Error("Empty AI response");
+    if (!response.ok) {
+      throw new Error(`Gemini API Error ${response.status}: ${rawResponse}`);
+    }
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("Malformed AI JSON");
+    const parsed = JSON.parse(rawResponse);
+    const textOutput =
+      parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    if (!textOutput) {
+      throw new Error("Empty AI response");
+    }
+
+    /* -------------------------------------------------
+       6. SAFE JSON EXTRACTION
+    -------------------------------------------------- */
+    const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("AI did not return valid JSON");
+    }
+
+    const finalOutput = JSON.parse(jsonMatch[0]);
 
     return {
       statusCode: 200,
@@ -96,16 +139,20 @@ Return ONLY valid JSON:
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
       },
-      body: JSON.stringify(parsed)
+      body: JSON.stringify(finalOutput)
     };
 
   } catch (err) {
-    console.error(err);
+    console.error("Function Error:", err);
+
     return {
       statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify({
-        error: "Intelligence Engine Error",
+        error: "Intelligence Engine Failure",
         message: err.message
       })
     };
