@@ -1,10 +1,5 @@
-import fetch from "node-fetch";
-
 export async function handler(event) {
   try {
-    // ----------------------------
-    // CORS preflight
-    // ----------------------------
     if (event.httpMethod === "OPTIONS") {
       return {
         statusCode: 200,
@@ -12,129 +7,89 @@ export async function handler(event) {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Headers": "Content-Type",
           "Access-Control-Allow-Methods": "POST, OPTIONS"
-        }
+        },
+        body: ""
       };
     }
 
-    if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
-
-    // ----------------------------
-    // Parse request body
-    // ----------------------------
-    const body = JSON.parse(event.body || "{}");
-    const { target, context } = body;
-
-    console.log("Incoming Query:", { target, context, time: new Date().toISOString() });
-
-    if (!target || !context) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Missing target or context" }) };
+    if (event.httpMethod !== "POST") {
+      return {
+        statusCode: 405,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: "Method Not Allowed"
+      };
     }
 
-    // ----------------------------
-    // Environment Variable
-    // ----------------------------
+    const { target, context } = JSON.parse(event.body || "{}");
+
     const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) throw new Error("Missing FIRST_API_KEY");
+    if (!apiKey) {
+      throw new Error("FIRST_API_KEY missing");
+    }
 
-    // ----------------------------
-    // Stable working model
-    // ----------------------------
-    const MODEL_NAME = "text-bison-001";
-
-    // ----------------------------
-    // Build prompt
-    // ----------------------------
     const prompt = `
-You are a sales intelligence engine.
+You are a B2B intelligence engine.
 
-Return ONLY valid JSON. No markdown. No commentary.
-
-Target audience:
-"${target}"
-
-Context:
-"${context}"
-
-Return this exact structure:
+Return ONLY valid JSON with this exact structure:
 
 {
-  "coreProblem": string,
-  "emotionalTrigger": string,
-  "keyInsight": string,
-  "recommendedAngle": string,
-  "exampleMessaging": string
+  "pain_point": "string",
+  "cta": "string",
+  "rules": [
+    { "title": "string", "description": "string" }
+  ]
 }
+
+Analyze this target:
+Target: ${target}
+Context: ${context}
 `;
 
-    // ----------------------------
-    // Make Gemini API call
-    // ----------------------------
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 512 }
+          contents: [
+            {
+              parts: [{ text: prompt }]
+            }
+          ]
         })
       }
     );
 
     const raw = await response.json();
-    console.log("Raw Gemini Response:", raw);
 
-    // ----------------------------
-    // Validate response
-    // ----------------------------
-    if (!raw.candidates || !raw.candidates[0]?.content?.parts?.[0]?.text) {
-      // Fallback object to avoid blank frontend
-      return {
-        statusCode: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({
-          success: false,
-          data: {
-            coreProblem: "No response from AI",
-            emotionalTrigger: "",
-            keyInsight: "",
-            recommendedAngle: "",
-            exampleMessaging: ""
-          }
-        })
-      };
+    const text =
+      raw?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      throw new Error("Gemini returned no text");
     }
 
-    let text = raw.candidates[0].content.parts[0].text;
-    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(text);
 
-    let parsed;
-    try { parsed = JSON.parse(text); } 
-    catch {
-      parsed = {
-        coreProblem: "AI returned invalid JSON",
-        emotionalTrigger: "",
-        keyInsight: "",
-        recommendedAngle: "",
-        exampleMessaging: ""
-      };
-    }
-
-    // ----------------------------
-    // Return success
-    // ----------------------------
     return {
       statusCode: 200,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ success: true, data: parsed })
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify(parsed)
     };
 
   } catch (err) {
-    console.error("Backend Error:", err);
     return {
       statusCode: 500,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Execution failed", message: err.message })
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify({
+        error: err.message
+      })
     };
   }
 }
