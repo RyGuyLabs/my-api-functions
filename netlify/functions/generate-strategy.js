@@ -16,9 +16,7 @@ export async function handler(event) {
       };
     }
 
-    if (event.httpMethod !== "POST") {
-      return { statusCode: 405, body: "Method Not Allowed" };
-    }
+    if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
     // ----------------------------
     // Parse request body
@@ -29,10 +27,7 @@ export async function handler(event) {
     console.log("Incoming Query:", { target, context, time: new Date().toISOString() });
 
     if (!target || !context) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "Missing target or context" })
-      };
+      return { statusCode: 400, body: JSON.stringify({ error: "Missing target or context" }) };
     }
 
     // ----------------------------
@@ -42,9 +37,9 @@ export async function handler(event) {
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
     // ----------------------------
-    // Choose a supported Gemini model
+    // Stable working model
     // ----------------------------
-    const MODEL_NAME = "gemini-1.5-turbo";
+    const MODEL_NAME = "text-bison-001";
 
     // ----------------------------
     // Build prompt
@@ -93,19 +88,36 @@ Return this exact structure:
     // Validate response
     // ----------------------------
     if (!raw.candidates || !raw.candidates[0]?.content?.parts?.[0]?.text) {
-      throw new Error("Gemini returned no candidates");
+      // Fallback object to avoid blank frontend
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({
+          success: false,
+          data: {
+            coreProblem: "No response from AI",
+            emotionalTrigger: "",
+            keyInsight: "",
+            recommendedAngle: "",
+            exampleMessaging: ""
+          }
+        })
+      };
     }
 
     let text = raw.candidates[0].content.parts[0].text;
-
-    // Remove any markdown or code fences
     text = text.replace(/```json/g, "").replace(/```/g, "").trim();
 
     let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error("Invalid Gemini response: Not valid JSON");
+    try { parsed = JSON.parse(text); } 
+    catch {
+      parsed = {
+        coreProblem: "AI returned invalid JSON",
+        emotionalTrigger: "",
+        keyInsight: "",
+        recommendedAngle: "",
+        exampleMessaging: ""
+      };
     }
 
     // ----------------------------
@@ -119,7 +131,6 @@ Return this exact structure:
 
   } catch (err) {
     console.error("Backend Error:", err);
-
     return {
       statusCode: 500,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
