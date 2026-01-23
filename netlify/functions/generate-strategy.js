@@ -20,14 +20,30 @@ export async function handler(event) {
       };
     }
 
+    const { target, context } = JSON.parse(event.body || "{}");
+
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) {
-      return {
-        statusCode: 500,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "FIRST_API_KEY missing" })
-      };
+      throw new Error("FIRST_API_KEY missing");
     }
+
+    const prompt = `
+You are a B2B intelligence engine.
+
+Return ONLY valid JSON with this exact structure:
+
+{
+  "pain_point": "string",
+  "cta": "string",
+  "rules": [
+    { "title": "string", "description": "string" }
+  ]
+}
+
+Analyze this target:
+Target: ${target}
+Context: ${context}
+`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -37,16 +53,23 @@ export async function handler(event) {
         body: JSON.stringify({
           contents: [
             {
-              parts: [
-                { text: "Return a JSON object with a single key called test and value ok." }
-              ]
+              parts: [{ text: prompt }]
             }
           ]
         })
       }
     );
 
-    const data = await response.json();
+    const raw = await response.json();
+
+    const text =
+      raw?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      throw new Error("Gemini returned no text");
+    }
+
+    const parsed = JSON.parse(text);
 
     return {
       statusCode: 200,
@@ -54,7 +77,7 @@ export async function handler(event) {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(parsed)
     };
 
   } catch (err) {
@@ -65,8 +88,7 @@ export async function handler(event) {
         "Access-Control-Allow-Origin": "*"
       },
       body: JSON.stringify({
-        error: err.message,
-        stack: err.stack
+        error: err.message
       })
     };
   }
