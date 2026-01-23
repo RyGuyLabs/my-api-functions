@@ -42,9 +42,9 @@ export async function handler(event) {
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
     // ----------------------------
-    // Choose model
+    // Choose a supported Gemini model
     // ----------------------------
-    const MODEL_NAME = "gemini-1.0"; // fallback stable model
+    const MODEL_NAME = "gemini-1.5-turbo";
 
     // ----------------------------
     // Build prompt
