@@ -1,9 +1,9 @@
 const fetch = require("node-fetch");
 
 exports.handler = async (event) => {
-  /* ---------------------------------
-     CORS (Squarespace requires this)
-  ---------------------------------- */
+  /* ===============================
+     CORS
+  =============================== */
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -24,31 +24,29 @@ exports.handler = async (event) => {
     };
   }
 
-  /* ---------------------------------
-     Environment Validation
-  ---------------------------------- */
+  /* ===============================
+     ENV
+  =============================== */
   const apiKey = process.env.FIRST_API_KEY;
-
   if (!apiKey) {
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({
-        error: "API key FIRST_API_KEY not found in environment"
-      })
+      body: JSON.stringify({ error: "FIRST_API_KEY missing" })
     };
   }
 
-  /* ---------------------------------
-     Parse Request
-  ---------------------------------- */
-  let target, context;
+  /* ===============================
+     INPUT
+  =============================== */
+  let target = "";
+  let context = "";
 
   try {
     const body = JSON.parse(event.body);
-    target = body.target;
-    context = body.context;
-  } catch (e) {
+    target = body.target || "";
+    context = body.context || "";
+  } catch {
     return {
       statusCode: 400,
       headers: { "Access-Control-Allow-Origin": "*" },
@@ -56,20 +54,19 @@ exports.handler = async (event) => {
     };
   }
 
-  /* ---------------------------------
-     Prompt (NO tools, NO mime forcing)
-  ---------------------------------- */
+  /* ===============================
+     PROMPT (STRICT)
+  =============================== */
   const prompt = `
-You are a strategic negotiation analyst.
+Return ONLY valid JSON.
 
-Target audience:
+Target:
 ${target}
 
-Analysis focus:
+Logic:
 ${context}
 
-Return a VALID JSON object with EXACTLY this structure:
-
+Required JSON shape:
 {
   "pain_point": "string",
   "cta": "string",
@@ -78,17 +75,15 @@ Return a VALID JSON object with EXACTLY this structure:
   ]
 }
 
-Rules:
-- No markdown
-- No commentary
-- No extra text
-- JSON ONLY
+No markdown.
+No explanations.
+JSON only.
 `;
 
   try {
-    /* ---------------------------------
-       Gemini API Call
-    ---------------------------------- */
+    /* ===============================
+       GEMINI CALL
+    =============================== */
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
@@ -101,34 +96,72 @@ Rules:
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API Error ${response.status}: ${errorText}`);
+      const text = await response.text();
+      throw new Error(`Gemini ${response.status}: ${text}`);
     }
 
     const raw = await response.json();
-    const aiText =
+    const rawText =
       raw?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-    /* ---------------------------------
-       Safe JSON Parsing
-    ---------------------------------- */
-    let parsed;
+    /* ===============================
+       NORMALIZATION LAYER
+    =============================== */
+    let parsed = {};
     try {
-      parsed = JSON.parse(aiText);
+      parsed = JSON.parse(rawText);
     } catch {
       parsed = {};
     }
 
-    /* ---------------------------------
-       Enforced Response Contract
-    ---------------------------------- */
+    // Handle common Gemini variants
+    const painPoint =
+      parsed.pain_point ||
+      parsed.painPoint ||
+      parsed.problem ||
+      parsed.issue ||
+      "";
+
+    const cta =
+      parsed.cta ||
+      parsed.cta_text ||
+      parsed.call_to_action ||
+      "";
+
+    let rules = [];
+    if (Array.isArray(parsed.rules)) {
+      rules = parsed.rules;
+    } else if (Array.isArray(parsed.guardrails)) {
+      rules = parsed.guardrails;
+    } else if (Array.isArray(parsed.negotiation_rules)) {
+      rules = parsed.negotiation_rules;
+    }
+
+    /* ===============================
+       FINAL GUARANTEED RESPONSE
+    =============================== */
     const safeResponse = {
-      pain_point:
-        parsed.pain_point || "No clear pain point identified.",
+      pain_point: painPoint || "No critical pain point could be identified.",
       cta:
-        parsed.cta ||
-        "Would it be a bad idea to explore whether this is worth addressing?",
-      rules: Array.isArray(parsed.rules) ? parsed.rules : []
+        cta ||
+        "Would it be unreasonable to explore whether this problem is worth fixing?",
+      rules: rules.length
+        ? rules.map(r => ({
+            title: r.title || "Guideline",
+            description: r.description || ""
+          }))
+        : [
+            {
+              title: "Default Rule",
+              description:
+                "Pause, ask calibrated questions, and avoid premature persuasion."
+            }
+          ],
+
+      // DEBUG — REMOVE LATER
+      _debug: {
+        raw_model_text: rawText
+      }
     };
 
     return {
