@@ -28,10 +28,10 @@ export async function handler(event) {
     }
 
     const prompt = `
-You are a B2B intelligence engine.
+Return ONLY valid JSON.
+Do NOT include markdown, code fences, or commentary.
 
-Return ONLY valid JSON with this exact structure:
-
+Schema:
 {
   "pain_point": "string",
   "cta": "string",
@@ -40,7 +40,6 @@ Return ONLY valid JSON with this exact structure:
   ]
 }
 
-Analyze this target:
 Target: ${target}
 Context: ${context}
 `;
@@ -51,25 +50,31 @@ Context: ${context}
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }]
-            }
-          ]
+          contents: [{ parts: [{ text: prompt }] }]
         })
       }
     );
 
     const raw = await response.json();
 
-    const text =
-      raw?.candidates?.[0]?.content?.parts?.[0]?.text;
+    let text = raw?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!text) {
       throw new Error("Gemini returned no text");
     }
 
-    const parsed = JSON.parse(text);
+    // 🔧 STRIP MARKDOWN CODE FENCES (THE FIX)
+    text = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      throw new Error("Invalid JSON returned by model");
+    }
 
     return {
       statusCode: 200,
@@ -87,9 +92,7 @@ Context: ${context}
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
       },
-      body: JSON.stringify({
-        error: err.message
-      })
+      body: JSON.stringify({ error: err.message })
     };
   }
 }
