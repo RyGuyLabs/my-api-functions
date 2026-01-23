@@ -1,12 +1,7 @@
-// File: generate-strategy.js
-
 import fetch from "node-fetch";
 
 export async function handler(event) {
   try {
-    // ----------------------------
-    // CORS
-    // ----------------------------
     if (event.httpMethod === "OPTIONS") {
       return {
         statusCode: 200,
@@ -25,9 +20,6 @@ export async function handler(event) {
       };
     }
 
-    // ----------------------------
-    // Parse request
-    // ----------------------------
     const body = JSON.parse(event.body || "{}");
     const { target, context } = body;
 
@@ -44,9 +36,6 @@ export async function handler(event) {
       };
     }
 
-    // ----------------------------
-    // Gemini API call
-    // ----------------------------
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
@@ -94,9 +83,6 @@ Return this exact structure:
     let text = raw.candidates[0].content?.parts?.[0]?.text;
     if (!text) throw new Error("Gemini returned no text parts");
 
-    // ----------------------------
-    // Clean text
-    // ----------------------------
     text = text.replace(/```json/g, "").replace(/```/g, "").trim();
 
     let parsed;
@@ -106,10 +92,7 @@ Return this exact structure:
       throw new Error("Failed to parse Gemini JSON output: " + text);
     }
 
-    // ----------------------------
-    // Success
-    // ----------------------------
-    return {
+        return {
       statusCode: 200,
       headers: {
         "Content-Type": "application/json",
