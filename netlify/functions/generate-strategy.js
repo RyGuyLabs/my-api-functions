@@ -1,121 +1,137 @@
-const fetch = require('node-fetch');
-
 exports.handler = async (event) => {
-  // --- 1. Handle CORS Preflight (Squarespace friendly)
+  // ---------- CORS ----------
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
       },
-      body: "",
+      body: ""
     };
   }
 
-  // --- 2. Allow only POST
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Method Not Allowed" }),
+      body: JSON.stringify({ error: "Method Not Allowed" })
     };
   }
 
-  // --- 3. Check API Key
+  // ---------- Parse Input ----------
+  let input;
+  try {
+    input = JSON.parse(event.body);
+  } catch {
+    return {
+      statusCode: 400,
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: "Invalid JSON body" })
+    };
+  }
+
+  const { target, context } = input;
+
+  console.log("Incoming Query:", {
+    target,
+    context,
+    time: new Date().toISOString()
+  });
+
+  if (!target || !context) {
+    return {
+      statusCode: 400,
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: "Missing target or context" })
+    };
+  }
+
+  // ---------- API Key ----------
   const apiKey = process.env.FIRST_API_KEY;
   if (!apiKey) {
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "API Key 'FIRST_API_KEY' not found in environment." }),
+      body: JSON.stringify({ error: "API key not configured" })
     };
   }
 
-  try {
-    // --- 4. Parse user input
-    const { target, context } = JSON.parse(event.body);
+  // ---------- Prompt ----------
+  const prompt = `
+You are a high-level Social Intelligence & Negotiation Agent.
 
-    console.log("Incoming Query:", { target, context, time: new Date().toISOString() });
-
-    // --- 5. Build system prompt
-    const systemPrompt = `
-You are a Strategic Negotiation & Social Intelligence Agent.
-Target: ${target}
-Logic: ${context}
+TARGET: ${target}
+INTENT: ${context}
 
 TASK:
-1. Identify ONE real-time urgent pain point for this target (last 6 months social/news posts).
-2. Generate a "No-Oriented" CTA (e.g., "Would it be a bad idea to...").
-3. Provide 3 high-status negotiation rules.
+1. Identify ONE urgent, real-world pain point this group is experiencing.
+2. Create a "No-Oriented" CTA (Chris Voss style).
+3. Provide EXACTLY 3 negotiation guardrails.
 
-OUTPUT FORMAT: ONLY return valid JSON exactly like this:
+STRICT OUTPUT:
+Return ONLY valid JSON.
+Do NOT use markdown.
+Do NOT wrap in backticks.
+
+FORMAT:
 {
   "pain_point": "string",
   "cta": "string",
-  "rules": [{"title": "string", "description": "string"}]
+  "rules": [
+    { "title": "string", "description": "string" },
+    { "title": "string", "description": "string" },
+    { "title": "string", "description": "string" }
+  ]
 }
 `;
 
-    // --- 6. Prepare API request
-    const apiPayload = {
-      contents: [{ parts: [{ text: systemPrompt }] }],
-      tools: [], // Removed google_search for now due to API limitations
-      generationConfig: { responseMimeType: "application/json" }
-    };
-
-    // --- 7. Fetch with retry + timeout
-    const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
-      for (let i = 0; i < retries; i++) {
-        try {
-          const controller = new AbortController();
-          const id = setTimeout(() => controller.abort(), 8000); // 8s timeout
-          const res = await fetch(url, { ...options, signal: controller.signal });
-          clearTimeout(id);
-
-          if (!res.ok) {
-            const text = await res.text();
-            if (i === retries - 1) throw new Error(`Gemini API Error: ${res.status} - ${text}`);
-            await new Promise(r => setTimeout(r, delay));
-            delay *= 2;
-            continue;
-          }
-          return await res.json();
-        } catch (err) {
-          if (i === retries - 1) throw err;
-          await new Promise(r => setTimeout(r, delay));
-          delay *= 2;
-        }
+  // ---------- Gemini Request ----------
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }]
+        })
       }
-    };
+    );
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-    const result = await fetchWithRetry(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(apiPayload),
-    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText);
+    }
 
-    // --- 8. Extract and validate AI response
-    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) throw new Error("Empty AI response");
+    const raw = await response.json();
+    let text = raw?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) throw new Error("Empty model response");
+
+    // ---------- Hard JSON Cleanup ----------
+    text = text.replace(/```json|```/g, "").trim();
 
     let parsed;
     try {
-      parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
-    } catch (err) {
-      throw new Error("Invalid JSON from AI: " + err.message);
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("Model returned invalid JSON");
     }
 
-    // --- 9. Validate fields and provide defaults
-    parsed.pain_point = parsed.pain_point || "No pain point identified.";
-    parsed.cta = parsed.cta || "No CTA generated.";
-    parsed.rules = Array.isArray(parsed.rules) && parsed.rules.length ? parsed.rules : [
-      { title: "Default Rule", description: "No negotiation rules generated." }
-    ];
+    // ---------- Safe Defaults ----------
+    parsed.pain_point ||= "No pain point identified.";
+    parsed.cta ||= "No CTA generated.";
+    parsed.rules = Array.isArray(parsed.rules) ? parsed.rules.slice(0, 3) : [];
 
-    // --- 10. Return response
+    while (parsed.rules.length < 3) {
+      parsed.rules.push({
+        title: "Negotiation Rule",
+        description: "Maintain calm and control during engagement."
+      });
+    }
+
     return {
       statusCode: 200,
       headers: {
@@ -127,10 +143,14 @@ OUTPUT FORMAT: ONLY return valid JSON exactly like this:
 
   } catch (error) {
     console.error("Backend Error:", error.message);
+
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Execution failed", message: error.message })
+      body: JSON.stringify({
+        error: "Execution failed",
+        message: error.message
+      })
     };
   }
 };
