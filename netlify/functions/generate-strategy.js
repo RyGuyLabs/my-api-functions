@@ -1,7 +1,5 @@
-const fetch = require('node-fetch');
-
 exports.handler = async (event) => {
-  // Handle CORS preflight
+  // 1. Handle CORS Preflight
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -23,7 +21,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "API Key missing" })
+      body: JSON.stringify({ error: "API Key not found in environment." }),
     };
   }
 
@@ -48,56 +46,47 @@ exports.handler = async (event) => {
       }
     `;
 
+    // 2. Call Gemini API using native fetch
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: systemPrompt }] }],
           tools: [{ "google_search": {} }],
-          generationConfig: { responseMimeType: "application/json" }
-        })
+          generationConfig: { responseMimeType: "application/json" },
+        }),
       }
     );
 
-    const rawText = await response.text();
     if (!response.ok) {
-      throw new Error(`Gemini API Error: ${response.status} - ${rawText}`);
+      const text = await response.text();
+      throw new Error(`Gemini API Error ${response.status}: ${text}`);
     }
 
-    const parsed = JSON.parse(rawText);
-    const candidate = parsed?.candidates?.[0];
-    if (!candidate) throw new Error("No candidates returned from Gemini");
+    const data = await response.json();
 
-    const combinedText = (candidate.content?.parts || [])
-      .map(p => p.text)
-      .filter(Boolean)
-      .join("\n");
+    const aiContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    if (!combinedText) throw new Error("No text returned from Gemini candidate");
-
-    // Extract JSON object from the AI text
-    const jsonMatch = combinedText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON object found in Gemini output");
-
-    const finalOutput = JSON.parse(jsonMatch[0]);
+    if (!aiContent) {
+      throw new Error("Gemini returned empty content");
+    }
 
     return {
       statusCode: 200,
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*" 
+        "Access-Control-Allow-Origin": "*",
       },
-      body: JSON.stringify(finalOutput)
+      body: aiContent,
     };
-
-  } catch (error) {
-    console.error("Worker Error:", error);
+  } catch (err) {
+    console.error("Worker Error:", err);
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Execution failed", message: error.message })
+      body: JSON.stringify({ error: "Execution failed", message: err.message }),
     };
   }
 };
