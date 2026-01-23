@@ -1,5 +1,8 @@
 export async function handler(event) {
   try {
+    // ----------------------------
+    // CORS
+    // ----------------------------
     if (event.httpMethod === "OPTIONS") {
       return {
         statusCode: 200,
@@ -15,6 +18,9 @@ export async function handler(event) {
       return { statusCode: 405, body: "Method Not Allowed" };
     }
 
+    // ----------------------------
+    // Parse request
+    // ----------------------------
     const body = JSON.parse(event.body || "{}");
     const { target, context } = body;
 
@@ -31,9 +37,15 @@ export async function handler(event) {
       };
     }
 
+    // ----------------------------
+    // API Key
+    // ----------------------------
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
 
+    // ----------------------------
+    // Prompt
+    // ----------------------------
     const prompt = `
 You are a sales intelligence engine.
 
@@ -57,6 +69,9 @@ Return EXACTLY:
 }
 `;
 
+    // ----------------------------
+    // Gemini API Call (STABLE)
+    // ----------------------------
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`,
       {
@@ -85,6 +100,9 @@ Return EXACTLY:
       throw new Error("Gemini returned no text parts");
     }
 
+    // ----------------------------
+    // Combine ALL text parts safely
+    // ----------------------------
     let text = parts
       .map(p => p.text || "")
       .join("")
@@ -100,6 +118,9 @@ Return EXACTLY:
       throw new Error("Gemini returned invalid JSON");
     }
 
+    // ----------------------------
+    // Success
+    // ----------------------------
     return {
       statusCode: 200,
       headers: {
