@@ -1,38 +1,38 @@
-// netlify/functions/record-acceptance.js
+exports.handler = async (event) => {
 
-const fs = require('fs');
-const path = require('path');
+  const SECRET = process.env.RG_TERMS_SECRET;
 
-exports.handler = async function(event, context) {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+  if (event.headers["x-rg-secret"] !== SECRET) {
+    return { statusCode: 403, body: "Forbidden" };
+  }
+
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405 };
   }
 
   try {
+
     const data = JSON.parse(event.body);
 
-    // Path to store log
-    const logPath = path.join(__dirname, '../../acceptance-log.json');
-
-    // Read existing log or start new
-    let log = [];
-    if (fs.existsSync(logPath)) {
-      log = JSON.parse(fs.readFileSync(logPath, 'utf8'));
-    }
-
-    // Add new record
-    log.push({
-      timestamp: data.timestamp,
+    console.log("TERMS ACCEPTED:", {
+      timestamp: data.acceptedAt,
       userAgent: data.userAgent,
-      page: data.page
+      page: data.page,
+      ip: event.headers["client-ip"] || "unknown"
     });
 
-    // Save back
-    fs.writeFileSync(logPath, JSON.stringify(log, null, 2));
+    return {
+      statusCode: 200,
+      body: "Logged"
+    };
 
-    return { statusCode: 200, body: 'Recorded' };
-  } catch (err) {
-    console.error(err);
-    return { statusCode: 500, body: 'Error recording acceptance' };
+  } catch(err) {
+
+    return {
+      statusCode: 500,
+      body: "Server Error"
+    };
+
   }
+
 };
