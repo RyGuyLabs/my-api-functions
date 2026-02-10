@@ -2,9 +2,9 @@ exports.handler = async (event) => {
 
   const SECRET = process.env.RG_TERMS_SECRET;
 
-  if (event.headers["x-rg-secret"] !== SECRET) {
+  if (event.headers["x-rg-secret"] !== process.env.RG_TERMS_SECRET) {
     return { statusCode: 403, body: "Forbidden" };
-  }
+}
 
   if (event.httpMethod !== "POST") {
     return { statusCode: 405 };
