@@ -1,38 +1,32 @@
 exports.handler = async (event) => {
 
-  const SECRET = process.env.RG_TERMS_SECRET;
+  // SIMPLE IN-MEMORY STORE (Replace with DB later if you want)
+  global.acceptLogs = global.acceptLogs || [];
 
-  if (event.headers["x-rg-secret"] !== process.env.RG_TERMS_SECRET) {
-    return { statusCode: 403, body: "Forbidden" };
-}
-
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405 };
+  // CHECK MODE
+  if (event.queryStringParameters?.check) {
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accepted: false }) 
+    };
   }
 
-  try {
+  // RECORD MODE
+  if (event.httpMethod === "POST") {
 
-    const data = JSON.parse(event.body);
+    const data = JSON.parse(event.body || "{}");
 
-    console.log("TERMS ACCEPTED:", {
-      timestamp: data.acceptedAt,
-      userAgent: data.userAgent,
-      page: data.page,
-      ip: event.headers["client-ip"] || "unknown"
+    global.acceptLogs.push({
+      ip: event.headers["client-ip"] || event.headers["x-forwarded-for"],
+      ...data
     });
 
     return {
       statusCode: 200,
-      body: "Logged"
+      body: JSON.stringify({ success: true })
     };
-
-  } catch(err) {
-
-    return {
-      statusCode: 500,
-      body: "Server Error"
-    };
-
   }
 
+  return { statusCode: 405 };
 };
