@@ -1,17 +1,17 @@
 const fs = require("fs");
-const path = "/tmp/acceptLogs.json"; // Netlify allows writing to /tmp
+const path = "/tmp/acceptLogs.json"; // Netlify allows writing here
 
 exports.handler = async (event) => {
   let logs = [];
 
-  // Load existing logs
+  // Load previous logs
   try {
     logs = JSON.parse(fs.readFileSync(path, "utf8") || "[]");
   } catch {}
 
   // CHECK MODE
   if (event.queryStringParameters?.check) {
-    const accepted = logs.length > 0; // at least one acceptance recorded
+    const accepted = logs.length > 0; // any acceptance recorded
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
@@ -28,7 +28,7 @@ exports.handler = async (event) => {
       ...data,
     });
 
-    // Save logs
+    // Save updated logs
     try {
       fs.writeFileSync(path, JSON.stringify(logs));
     } catch {}
