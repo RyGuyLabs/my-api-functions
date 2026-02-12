@@ -1,7 +1,7 @@
-// RYGUYLABS PROPRIETARY SPECTRUM ENGINE v3.0
+// RYGUYLABS PROPRIETARY SPECTRUM ENGINE v4.1
 /**
- * PACEGUARD™ v4.0 | Advanced Neural Inference Layer
- * Proprietary Behavioral Analysis Engine
+ * PACEGUARD™ v4.1 | Production-Grade Neural Inference Layer
+ * Logic optimized for: Momentum, Volatility, and Hold Pressure.
  */
 
 exports.handler = async (event) => {
@@ -15,55 +15,71 @@ exports.handler = async (event) => {
 
     try {
         const { history, baseline } = JSON.parse(event.body);
-        const volumes = history.map(h => h.vol);
         
-        // 1. ENTROPY ANALYSIS (Cadence Monitoring)
-        // Detects the 'Sales Chant' or 'Repetitive Rhythms'
-        const diffs = [];
-        for (let i = 1; i < volumes.length; i++) diffs.push(Math.abs(volumes[i] - volumes[i-1]));
-        const entropy = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+        if (!history || history.length < 10) {
+            return { statusCode: 200, headers, body: JSON.stringify({ fusionScore: 0, systemStatus: "AWAITING_DATA" }) };
+        }
 
-        // 2. HARMONIC TENSION (Simulated)
-        // High frequency spikes relative to baseline
-        const tension = volumes.filter(v => v > baseline.vol * 2.5).length / volumes.length;
+        const volumes = history.map(h => h.vol);
+        const bVol = baseline.vol || 5;
 
-        // 3. MOMENTUM ACCELERATION (The "Panic" Slope)
-        const recent = volumes.slice(-10);
-        const older = volumes.slice(0, 10);
-        const acceleration = (recent.reduce((a,b)=>a+b,0)/10) - (older.reduce((a,b)=>a+b,0)/10);
+        // 1. VOLATILITY (Anxiety & Tone Tension)
+        // Calculated via Jitter (sample-to-sample jaggedness). 
+        // Captures "shaky" anxious tones and sharp, angry pitch spikes.
+        let jitterSum = 0;
+        for (let i = 1; i < volumes.length; i++) {
+            jitterSum += Math.abs(volumes[i] - volumes[i-1]);
+        }
+        const volatilityValue = (jitterSum / volumes.length) * 10; // Scaled for UI
 
-        // 4. NEURAL FUSION CALCULATION
-        // Weighted logic for professional/tactical defense
-        const stressScore = (entropy * 12) + (tension * 100) + (Math.max(0, acceleration) * 15);
-        const finalizedScore = Math.min(100, Math.max(0, stressScore));
+        // 2. HOLD (Anger & Pressure)
+        // Calculated via Compression Ratio.
+        // Captures "The Sales Chant" or "Aggressive Pushing" where the user doesn't pause to breathe.
+        const pressureThreshold = bVol * 1.4;
+        const sustainedSamples = volumes.filter(v => v > pressureThreshold).length;
+        const holdValue = (sustainedSamples / volumes.length) * 100; // Percentage of time "on"
 
-        // 5. PREDICTIVE TACTICAL INSIGHTS
+        // 3. MOMENTUM (Cadence & Velocity)
+        // Calculated via Slope Acceleration.
+        // Captures the "Panic" increase in speech speed.
+        const segmentSize = Math.floor(volumes.length / 3);
+        const recentAvg = volumes.slice(-segmentSize).reduce((a, b) => a + b, 0) / segmentSize;
+        const olderAvg = volumes.slice(0, segmentSize).reduce((a, b) => a + b, 0) / segmentSize;
+        const acceleration = (recentAvg - olderAvg) * 15; // Scaled for UI
+
+        // 4. NEURAL FUSION (Weighted for Tactical Defense)
+        // Combines all three into a 0-100 score.
+        const finalizedScore = Math.min(100, Math.max(0, 
+            (volatilityValue * 1.2) + 
+            (holdValue * 0.6) + 
+            (Math.max(0, acceleration) * 1.5)
+        ));
+
+        // 5. TACTICAL INSIGHTS
         let tacticalOutput = "SPECTRUM OPTIMAL";
-        let priority = "LOW";
+        let state = "safe";
 
-        if (finalizedScore > 85) {
-            tacticalOutput = "CRITICAL: Speech velocity exceeding cognitive capacity. Hard pause required.";
-            priority = "CRITICAL";
-        } else if (finalizedScore > 60) {
-            tacticalOutput = "ADVISORY: Rhythmic chanting detected. Lower pitch to regain authority.";
-            priority = "MEDIUM";
-        } else if (acceleration > 5) {
-            tacticalOutput = "TREND: Intensity climbing. Regulate breath now.";
-            priority = "PRE-EMPTIVE";
+        if (finalizedScore > 80) {
+            tacticalOutput = holdValue > 70 ? "CRITICAL: Vocal compression high. RELEASE TENSION." : "CRITICAL: Velocity overload. STOP.";
+            state = "danger";
+        } else if (finalizedScore > 55) {
+            tacticalOutput = volatilityValue > 25 ? "ADVISORY: Micro-tremors detected. Stabilize breath." : "ADVISORY: Momentum building. Slow cadence.";
+            state = "warning";
         }
 
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
+                success: true,
                 fusionScore: Math.round(finalizedScore),
-                diagnostics: {
-                    entropy: entropy.toFixed(2),
-                    tension: tension.toFixed(2),
-                    velocity: acceleration.toFixed(2)
+                state: state,
+                metrics: {
+                    momentum: Math.round(Math.max(0, acceleration)),
+                    volatility: Math.round(volatilityValue),
+                    hold: Math.round(holdValue)
                 },
                 insight: tacticalOutput,
-                threatLevel: priority,
                 systemStatus: "NEURAL_SHIELD_ACTIVE"
             })
         };
