@@ -15,7 +15,7 @@ exports.handler = async (event) => {
 
     try {
         const { history, baseline } = JSON.parse(event.body);
-        
+       
         if (!history || history.length < 10) {
             return { statusCode: 200, headers, body: JSON.stringify({ fusionScore: 0, systemStatus: "AWAITING_DATA" }) };
         }
@@ -24,34 +24,30 @@ exports.handler = async (event) => {
         const bVol = baseline.vol || 5;
 
         // 1. VOLATILITY (Anxiety & Tone Tension)
-        // Calculated via Jitter (sample-to-sample jaggedness). 
-        // Captures "shaky" anxious tones and sharp, angry pitch spikes.
+        // Calculated via Jitter (sample-to-sample jaggedness).
         let jitterSum = 0;
         for (let i = 1; i < volumes.length; i++) {
             jitterSum += Math.abs(volumes[i] - volumes[i-1]);
         }
-        const volatilityValue = (jitterSum / volumes.length) * 10; // Scaled for UI
+        const volatilityValue = (jitterSum / volumes.length) * 10; 
 
         // 2. HOLD (Anger & Pressure)
         // Calculated via Compression Ratio.
-        // Captures "The Sales Chant" or "Aggressive Pushing" where the user doesn't pause to breathe.
         const pressureThreshold = bVol * 1.4;
         const sustainedSamples = volumes.filter(v => v > pressureThreshold).length;
-        const holdValue = (sustainedSamples / volumes.length) * 100; // Percentage of time "on"
+        const holdValue = (sustainedSamples / volumes.length) * 100; 
 
         // 3. MOMENTUM (Cadence & Velocity)
         // Calculated via Slope Acceleration.
-        // Captures the "Panic" increase in speech speed.
         const segmentSize = Math.floor(volumes.length / 3);
         const recentAvg = volumes.slice(-segmentSize).reduce((a, b) => a + b, 0) / segmentSize;
         const olderAvg = volumes.slice(0, segmentSize).reduce((a, b) => a + b, 0) / segmentSize;
-        const acceleration = (recentAvg - olderAvg) * 15; // Scaled for UI
+        const acceleration = (recentAvg - olderAvg) * 15; 
 
         // 4. NEURAL FUSION (Weighted for Tactical Defense)
-        // Combines all three into a 0-100 score.
-        const finalizedScore = Math.min(100, Math.max(0, 
-            (volatilityValue * 1.2) + 
-            (holdValue * 0.6) + 
+        const finalizedScore = Math.min(100, Math.max(0,
+            (volatilityValue * 1.2) +
+            (holdValue * 0.6) +
             (Math.max(0, acceleration) * 1.5)
         ));
 
