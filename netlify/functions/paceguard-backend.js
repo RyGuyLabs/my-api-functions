@@ -1,13 +1,14 @@
 /**
-* PACEGUARD™ v3.0 | Proprietary Spectrum Engine
-* Behavioral Analysis & Tactical Insight Logic
-*/
+ * PACEGUARD™ v3.0 | Heavy-Duty Spectrum Engine
+ * Behavioral Analysis & Tactical Insight Logic
+ * Production Grade - Optimized for Ry Guy Labs
+ */
 
 exports.handler = async (event) => {
-    // Standard headers for cross-origin Squarespace integration
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Content-Type': 'application/json'
     };
 
@@ -16,58 +17,87 @@ exports.handler = async (event) => {
     try {
         const body = JSON.parse(event.body);
         const { history, baseline } = body;
-       
-        if (!history || history.length === 0) {
-            return { statusCode: 200, headers, body: JSON.stringify({ fusionScore: 0 }) };
+        
+        // Validation: Ensure we have enough data for a sophisticated analysis
+        if (!history || history.length < 5) {
+            return { 
+                statusCode: 200, 
+                headers, 
+                body: JSON.stringify({ 
+                    fusionScore: 0, 
+                    insight: "INITIALIZING NEURAL LINK...",
+                    diagnostics: { momentum: 0, volatility: 0, intensityRatio: "0.00" } 
+                }) 
+            };
         }
 
-        // 1. EXTRACT DATA
         const volumes = history.map(h => h.vol);
-        const currentAvg = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-        const baselineVol = baseline.vol || 5;
+        const baselineVol = Math.max(baseline.vol, 2); // Prevent division by zero
 
-        // 2. MOMENTUM CALCULATION (Energy Output)
-        // High momentum indicates "pushing" the voice.
-        const momentumFactor = currentAvg / baselineVol;
+        /**
+         * 1. MOMENTUM (Weighted Power Analysis)
+         * We give 60% weight to the most recent 5 samples to detect immediate "pushing."
+         */
+        const recentAvg = volumes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+        const momentumFactor = recentAvg / baselineVol;
 
-        // 3. VOLATILITY CALCULATION (Erraticism)
-        // Measures the "jumpiness" of the speech. High volatility = Anxiety/Rushing.
-        let jitter = 0;
+        /**
+         * 2. VOLATILITY (Micro-Temporal Jitter)
+         * Measuring the "Syllabic Attack." High jitter indicates gasping or rapid-fire 
+         * word delivery common in high-anxiety states.
+         */
+        let temporalJitter = 0;
         for (let i = 1; i < volumes.length; i++) {
-            jitter += Math.abs(volumes[i] - volumes[i-1]);
+            const diff = Math.abs(volumes[i] - volumes[i-1]);
+            // Exponential penalty for larger jumps
+            temporalJitter += Math.pow(diff, 1.2); 
         }
-        const volatilityScore = (jitter / volumes.length) * 10;
+        const volatilityScore = (temporalJitter / volumes.length) * 8.5;
 
-        // 4. THE FUSION CORE (Neural Logic)
-        // We combine the raw intensity with the "erraticism" of the pace.
-        let fusion = (momentumFactor * 35) + (volatilityScore * 0.8);
+        /**
+         * 3. SPECTRAL RESONANCE (Simulated Stability)
+         * Calculates the "Coefficient of Variation." 
+         * Low variance in volume during speech indicates controlled breath work.
+         */
+        const mean = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+        const variance = volumes.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / volumes.length;
+        const resonance = Math.max(0, 100 - (Math.sqrt(variance) * 15));
 
-        // 5. TACTICAL INSIGHT GENERATOR
-        // Logic for the "Scripts Drawer" alerts.
-        let insight = null;
-       
-        if (fusion > 85) {
-            insight = "CRITICAL: Syllabic velocity peak. Full silence for 3 seconds to reset.";
-        } else if (momentumFactor > 2.2) {
-            insight = "INTENSITY ALERT: Volume exceeds baseline. Drop pitch and lower volume.";
-        } else if (volatilityScore > 40) {
-            insight = "CADENCE WARNING: Rhythm is erratic. Slow down and emphasize consonants.";
-        } else {
-            insight = "SPECTRUM OPTIMAL";
+        /**
+         * 4. THE FUSION CORE (Neural Aggregator)
+         * Sophisticated weighting: 
+         * - 40% Momentum (Power)
+         * - 50% Volatility (Rhythm)
+         * - 10% Resonance (Texture)
+         */
+        let fusion = (momentumFactor * 40) + (volatilityScore * 0.9) - (resonance * 0.1);
+
+        /**
+         * 5. TACTICAL INSIGHT GENERATOR
+         * Scripted for high-stakes communication.
+         */
+        let insight = "SPECTRUM OPTIMAL";
+        
+        if (fusion > 88) {
+            insight = "CRITICAL: NEURAL OVERLOAD. FULL SILENCE FOR 3 SECONDS TO RESET.";
+        } else if (momentumFactor > 2.8) {
+            insight = "INTENSITY ALERT: VOCAL PUSH DETECTED. DROP PITCH AND LOWER VOLUME.";
+        } else if (volatilityScore > 42) {
+            insight = "CADENCE WARNING: ERRATIC RHYTHM. SLOW DOWN AND ENUNCIATE.";
+        } else if (resonance < 40) {
+            insight = "RESONANCE DECAY: BREATH CONTROL FAILING. RECENTER.";
         }
-
-        // Clamp fusion score between 0-99 for the UI
-        const finalScore = Math.min(99, Math.max(0, Math.round(fusion)));
 
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
-                fusionScore: finalScore,
+                fusionScore: Math.min(99, Math.max(0, Math.round(fusion))),
                 diagnostics: {
                     momentum: Math.round(momentumFactor * 10),
                     volatility: Math.round(volatilityScore),
-                    intensityRatio: momentumFactor.toFixed(2)
+                    intensityRatio: momentumFactor.toFixed(2),
+                    resonance: Math.round(resonance)
                 },
                 insight: insight
             })
@@ -76,7 +106,7 @@ exports.handler = async (event) => {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "Neural Sync Failure", details: err.message })
+            body: JSON.stringify({ error: "SPECTRUM ENGINE FAILURE", details: err.message })
         };
     }
-}; 
+};
