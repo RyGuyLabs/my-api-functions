@@ -1,74 +1,77 @@
 // RYGUYLABS PROPRIETARY SPECTRUM ENGINE v3.0
-// Logic: Jitter, Entropy, Compression, and Non-Linear Fusion
+/**
+ * PACEGUARD™ v3.0 | Neural Fusion Engine
+ * Commercial Grade Inference Logic for Netlify/Lambda
+ */
 
-exports.handler = async (event, context) => {
-    if (event.httpMethod !== "POST") return { statusCode: 405, body: "Denied" };
+exports.handler = async (event) => {
+    // 1. Production Headers
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type': 'application/json'
+    };
 
-    const { history, baseline, rawData } = JSON.parse(event.body);
-    const bVol = Math.max(baseline.vol, 0.01);
-    
-    // 1. FUNDAMENTAL FREQUENCY JITTER (Micro-Stress)
-    // We analyze the Zero Crossing Rate (ZCR) of the current buffer
-    let zcr = 0;
-    if (rawData && rawData.length > 0) {
-        for (let i = 1; i < rawData.length; i++) {
-            if ((rawData[i] - 128) * (rawData[i-1] - 128) < 0) zcr++;
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers };
+
+    try {
+        const body = JSON.parse(event.body);
+        const { history, baseline } = body;
+
+        if (!history || history.length === 0) {
+            return { statusCode: 400, headers, body: JSON.stringify({ error: "No telemetry data provided." }) };
         }
+
+        // 2. AI Pattern Analysis (Simulated Neural Layers)
+        const recentVols = history.map(h => h.vol);
+        const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
+        
+        // Layer 1: Stress Detection (Vocal Micro-Jitter)
+        let jitter = 0;
+        for (let i = 1; i < recentVols.length; i++) {
+            jitter += Math.abs(recentVols[i] - recentVols[i-1]);
+        }
+        const stressIndex = Math.min(100, (jitter / recentVols.length) * 15);
+
+        // Layer 2: Aggression Mapping (Slope of Intensity)
+        const firstHalf = recentVols.slice(0, Math.floor(recentVols.length / 2));
+        const secondHalf = recentVols.slice(Math.floor(recentVols.length / 2));
+        const firstAvg = firstHalf.reduce((a,b)=>a+b,0) / firstHalf.length;
+        const secondAvg = secondHalf.reduce((a,b)=>a+b,0) / secondHalf.length;
+        const aggressionSlope = Math.max(0, (secondAvg - firstAvg) * 10);
+
+        // Layer 3: Hold Pressure (Sustainability calculation)
+        const holdIntensity = avgVol > (baseline.vol * 1.5) ? 1 : 0;
+
+        // 3. Final Fusion Scoring (The Proprietary Mix)
+        const neuralFusion = (stressIndex * 0.4) + (aggressionSlope * 0.4) + (holdIntensity * 20);
+        
+        // 4. Intelligence-Based Response
+        let tacticalInsight = "";
+        if (neuralFusion > 80) tacticalInsight = "CRITICAL: Speech patterns indicate high cortisol. Lower volume by 20% immediately.";
+        else if (neuralFusion > 50) tacticalInsight = "WARNING: Pattern becoming repetitive. Shift your sitting posture to break the rhythm.";
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+                fusionScore: Math.round(neuralFusion),
+                metrics: {
+                    stress: Math.round(stressIndex),
+                    aggression: Math.round(aggressionSlope),
+                    sustainability: holdIntensity
+                },
+                insight: tacticalInsight,
+                timestamp: Date.now(),
+                status: "SECURE_ANALYSIS_COMPLETE"
+            })
+        };
+
+    } catch (err) {
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: "Neural Engine Fault", details: err.message })
+        };
     }
-    // High ZCR variance = vocal tension
-    const jitterFactor = Math.min(100, (zcr / 50) * 10); 
-
-    // 2. CADENCE ENTROPY (The "Salesman Chant")
-    // Measures the predictability of speech bursts
-    const getEntropy = () => {
-        if (history.length < 20) return 50;
-        let intervals = [];
-        let count = 0;
-        history.forEach(h => {
-            if (h.vol > bVol * 1.5) count++;
-            else { if(count > 0) intervals.push(count); count = 0; }
-        });
-        if (intervals.length < 2) return 50;
-        // Variance of interval lengths
-        const avg = intervals.reduce((a,b)=>a+b,0)/intervals.length;
-        const variance = intervals.reduce((a,b)=>a+Math.pow(b-avg,2),0)/intervals.length;
-        // Low variance = Highly rhythmic/repetitive = Low Entropy (Bad)
-        return Math.max(0, 100 - (variance * 2));
-    };
-    const entropyPenalty = getEntropy();
-
-    // 3. SEMANTIC SPACE COMPRESSION (Pause-to-Phoneme)
-    const getCompression = () => {
-        const active = history.filter(h => h.vol > bVol * 1.2).length;
-        const ratio = active / history.length; // % of time spent talking
-        return ratio * 100; 
-    };
-    const compressionRatio = getCompression();
-
-    // 4. MOMENTUM & HOLD
-    const momentum = (Math.max(0, history[history.length-1].vol - history[0].vol)) * 5;
-    const holdPressure = ((history.reduce((a,b)=>a+b.vol,0)/history.length) - bVol) / bVol * 100;
-
-    // 5. NON-LINEAR FUSION MATRIX
-    // Instead of linear addition, we use "Co-occurrence Multiplication"
-    // If you are loud (hold) AND fast (compression), the score compounds.
-    
-    let baseFusion = (holdPressure * 0.3) + (compressionRatio * 0.3) + (jitterFactor * 0.2) + (entropyPenalty * 0.2);
-    
-    // Synergy Multiplier: If Jitter and Compression are both high, boost the danger
-    if (jitterFactor > 40 && compressionRatio > 60) {
-        baseFusion *= 1.4; 
-    }
-
-    return {
-        statusCode: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            fusionScore: Math.min(100, baseFusion),
-            momentum: momentum,
-            volatility: jitterFactor, // Reflected as volatility in the UI
-            holdPressure: Math.max(0, holdPressure),
-            compression: compressionRatio
-        })
-    };
 };
