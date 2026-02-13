@@ -5,8 +5,8 @@ const allowedOrigins = ["https://your-production-domain.com", "https://localhost
 ];
 const origin = event.headers.origin
 const corsOrigin = allowedOrgins.includes(origin) ? 
-Origin : allowedOrigins[0];
-// 2. PRODUCTION-GRADE HEADERS
+Origin : "*";
+// PRODUCTION-GRADE HEADERS
     const headers = {
         "Access-Control-Allow-Origin": corsOrigin,
         "Access-Control-Allow-Headers": "Content-Type, X-Requested-With, Authorization",
@@ -15,45 +15,47 @@ Origin : allowedOrigins[0];
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "X-XSS-Protection": "1; mode=block",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+        "Referrer-Policy": "strict-origin-when-cross-origin"
     };
-    // 3. HANDLING PREFLIGHT (OPTIONS)
+
+    // HANDLING PREFLIGHT
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 204, headers };
     }
 
-    // 4. METHOD RESTRICTION
+    // METHOD RESTRICTION
     if (event.httpMethod !== "POST") {
         return {
             statusCode: 405,
             headers,
-            body: JSON.stringify({ error: "Method Not Allowed", status: "rejected" })
+            body: JSON.stringify({ error: "Method Not Allowed" })
         };
     }
 
     try {
-        // 5. INPUT VALIDATION & SANITIZATION
+        if (!event.body) throw new Error("Missing request body");
+        
         const body = JSON.parse(event.body);
+        
+        // INPUT VALIDATION & SANITIZATION
         const v1 = Math.min(Math.max(parseInt(body.v1) || 50, 0), 100);
         const v2 = Math.min(Math.max(parseInt(body.v2) || 50, 0), 100);
         const v3 = Math.min(Math.max(parseInt(body.v3) || 50, 0), 100);
         const tone = ['direct', 'neutral', 'soft'].includes(body.tone) ? body.tone : 'direct';
 
-        // 6. PROPRIETARY CALIBRATION LOGIC
+        // PROPRIETARY CALIBRATION LOGIC
         const score = Math.round((v1 * 0.4) + (v2 * 0.3) + (v3 * 0.3));
         const diff = Math.max(v1, v2, v3) - Math.min(v1, v2, v3);
         const confidence = diff < 20 ? 'HIGH' : (diff < 40 ? 'MEDIUM' : 'LOW');
-       
+        
         const zoneKey = score < 40 ? 'low' : (score < 75 ? 'mid' : 'high');
 
-        // Behavioral classification
         let behavior = "Balanced Pressure";
         if (v1 >= v2 && v1 >= v3) behavior = "Pressure is Outcome-Driven";
         else if (v2 >= v1 && v2 >= v3) behavior = "Pressure is Time-Driven";
         else behavior = "Pressure is Control-Driven";
 
-        // 7. SECURE SCRIPT DATABASE
+        // SECURE SCRIPT DATABASE
         const SCRIPT_DATABASE = {
             low: {
                 direct: ["“This seems to be working well. Should we look at the timeline next?”", "“Since there's no rush, let's dive deeper into the technical scope.”"],
@@ -72,7 +74,6 @@ Origin : allowedOrigins[0];
             }
         };
 
-        // 8. RESPONSE PACKAGING
         const result = {
             score,
             behavior,
@@ -80,11 +81,11 @@ Origin : allowedOrigins[0];
             zoneKey,
             scripts: SCRIPT_DATABASE[zoneKey][tone],
             insights: {
-                meaning: zoneKey === 'low' ? "Trust is accelerating. Your pace allows the other party to lean in without fear of being 'sold'." :
-                         zoneKey === 'mid' ? "Frictional load detected. You are likely providing answers before they've asked the questions." :
+                meaning: zoneKey === 'low' ? "Trust is accelerating. Your pace allows the other party to lean in without fear of being 'sold'." : 
+                         zoneKey === 'mid' ? "Frictional load detected. You are likely providing answers before they've asked the questions." : 
                          "Reactance triggered. The other party likely feels cornered; any logic you provide will be viewed as a threat.",
-                risk: zoneKey === 'low' ? "Minimal. Maintain current cadence and focus on deepening discovery." :
-                      zoneKey === 'mid' ? "High Risk of 'Think it Over'. You must reground the conversation in their autonomy." :
+                risk: zoneKey === 'low' ? "Minimal. Maintain current cadence and focus on deepening discovery." : 
+                      zoneKey === 'mid' ? "High Risk of 'Think it Over'. You must reground the conversation in their autonomy." : 
                       "Total Trust Decay. The conversation will likely end with a false 'Yes' or ghosting."
             },
             timestamp: new Date().toISOString()
@@ -97,11 +98,10 @@ Origin : allowedOrigins[0];
         };
 
     } catch (error) {
-        console.error("[CRITICAL] Calibration Failure:", error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "Institutional Logic Engine Error", status: "failure" })
+            body: JSON.stringify({ error: "Institutional Logic Engine Error", detail: error.message })
         };
     }
-}; 
+};
