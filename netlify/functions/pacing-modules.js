@@ -3,57 +3,72 @@
  * PROTECTED BACKEND LOGIC FOR THE PACE INDEX™
  */
 
-exports.handler = async (event) => {
+exports.handler = async (event, context) => {
+    // 1. Handle Preflight OPTIONS (Required for CORS/Netlify)
+    if (event.httpMethod === "OPTIONS") {
+        return {
+            statusCode: 200,
+            headers: {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+            },
+            body: "OK",
+        };
+    }
+
     if (event.httpMethod !== "POST") {
         return { statusCode: 405, body: "Method Not Allowed" };
     }
 
     try {
-        const { time, outcome, questions, exit, phase, medium } = JSON.parse(event.body);
+        const body = JSON.parse(event.body);
+        const { time, outcome, questions, exit, phase, medium } = body;
 
-        // THE SECRET SAUCE: PROPRIETARY WEIGHTING ALGORITHM
-        // We calculate pressure based on raw inputs vs. psychological safety (Exit Permission)
+        // PROPRIETARY WEIGHTING
         const exitPressure = 100 - exit;
-        const weights = {
-            time: 0.3,
-            outcome: 0.3,
-            questions: 0.2,
-            exit: 0.2
-        };
+        const weights = { time: 0.3, outcome: 0.3, questions: 0.2, exit: 0.2 };
 
         let rawScore = (
             (time * weights.time) + 
             (outcome * weights.outcome) + 
             (questions * weights.questions) + 
             (exitPressure * weights.exit)
-        ) * phase * medium;
+        ) * (phase || 1) * (medium || 1);
 
         const score = Math.min(100, Math.round(rawScore));
 
-        // PROTOCOL LOOKUP TABLE
-        let label, color, recommendation;
+        // RECOMMENDATION ENGINE
+        let result = {
+            score: score,
+            label: "CALIBRATED",
+            color: "#00ff88",
+            recommendation: "OPTIMAL: Behavioral alignment is high. The counter-party feels in control and safe."
+        };
 
         if (score > 75) {
-            label = "OVERHEATED";
-            color = "#ff3300"; // Danger
-            recommendation = "CRITICAL: Reactance triggered. The counter-party likely feels cornered. Halt all closing attempts. Pivot to high-autonomy scripts immediately: 'It's completely fine if this isn't a fit right now.'";
+            result.label = "OVERHEATED";
+            result.color = "#ff3300";
+            result.recommendation = "CRITICAL: Reactance triggered. Pivot to high-autonomy scripts: 'It's completely fine if this isn't a fit.'";
         } else if (score > 45) {
-            label = "COMPRESSED";
-            color = "#ffcc00"; // Warning
-            recommendation = "CAUTION: Psychological friction rising. Slow the verbal cadence. Use labeling and silence to lower the perceived cost of the interaction.";
-        } else {
-            label = "CALIBRATED";
-            color = "#00ff88"; // Safe
-            recommendation = "OPTIMAL: Behavioral alignment is high. The counter-party feels in control and safe. Proceed at current pace.";
+            result.label = "COMPRESSED";
+            result.color = "#ffcc00";
+            result.recommendation = "CAUTION: Psychological friction rising. Slow the verbal cadence. Use labeling and silence.";
         }
 
         return {
             statusCode: 200,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ score, label, color, recommendation })
+            headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            body: JSON.stringify(result)
         };
 
     } catch (error) {
-        return { statusCode: 500, body: JSON.stringify({ error: "Internal processing error." }) };
+        return { 
+            statusCode: 500, 
+            body: JSON.stringify({ error: "Processing error", details: error.message }) 
+        };
     }
 };
