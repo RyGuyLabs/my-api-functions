@@ -1,123 +1,158 @@
-exports.handler = async function (event, context) {
+exports.handler = async (event) => {
+  try {
 
-    const allowedOrigins = [
-        "https://ryguyapi.netlify.app",
-        "https://ryguylabs.com",
-        "https://www.ryguylabs.com",
-        "http://localhost:8888"
-    ];
-
-    const origin = event.headers?.origin || "";
-    const corsOrigin = allowedOrigins.includes(origin) ? origin : "*";
-
-    const headers = {
-        "Access-Control-Allow-Origin": corsOrigin,
-        "Access-Control-Allow-Headers": "Content-Type, X-Requested-With, Authorization",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Content-Type": "application/json"
-    };
-
+    // CORS PRE-FLIGHT SUPPORT
     if (event.httpMethod === "OPTIONS") {
-        return { statusCode: 200, headers };
+      return {
+        statusCode: 200,
+        headers: corsHeaders(),
+        body: ""
+      };
     }
 
     if (event.httpMethod !== "POST") {
-        return {
-            statusCode: 405,
-            headers,
-            body: JSON.stringify({ error: "Method Not Allowed" })
-        };
+      return response(405, { error: "Method Not Allowed" });
     }
 
-    try {
+    const body = JSON.parse(event.body || "{}");
 
-        if (!event.body) throw new Error("Missing request body");
+    const v1 = Number(body.v1 || 0);
+    const v2 = Number(body.v2 || 0);
+    const v3 = Number(body.v3 || 0);
+    const tone = body.tone || "direct";
 
-        const body = JSON.parse(event.body);
+    // --- CORE CALC ---
+    const rawScore = Math.round(
+      (v1 * 0.4) +
+      (v2 * 0.35) +
+      ((100 - v3) * 0.25)
+    );
 
-        const v1 = Math.min(Math.max(parseInt(body.v1) || 50, 0), 100);
-        const v2 = Math.min(Math.max(parseInt(body.v2) || 50, 0), 100);
-        const v3 = Math.min(Math.max(parseInt(body.v3) || 50, 0), 100);
-        const tone = ["direct", "neutral", "soft"].includes(body.tone) ? body.tone : "direct";
+    const score = clamp(rawScore, 0, 100);
 
-        const score = Math.round((v1 * 0.4) + (v2 * 0.3) + (v3 * 0.3));
+    let zoneKey = "low";
+    if (score >= 70) zoneKey = "high";
+    else if (score >= 40) zoneKey = "mid";
 
-        const diff = Math.max(v1, v2, v3) - Math.min(v1, v2, v3);
-        const confidence = diff < 20 ? "HIGH" : diff < 40 ? "MEDIUM" : "LOW";
+    const behaviorMap = {
+      low: "Low Conversational Pressure",
+      mid: "Controlled Pressure",
+      high: "High Pressure Escalation"
+    };
 
-        const zoneKey = score < 40 ? "low" : score < 75 ? "mid" : "high";
+    const insights = generateInsights(zoneKey, tone);
+    const scripts = generateScripts(zoneKey, tone);
 
-        let behavior = "Balanced Pressure";
-        if (v1 >= v2 && v1 >= v3) behavior = "Pressure is Outcome-Driven";
-        else if (v2 >= v1 && v2 >= v3) behavior = "Pressure is Time-Driven";
-        else behavior = "Pressure is Control-Driven";
+    return response(200, {
+      score,
+      zoneKey,
+      behavior: behaviorMap[zoneKey],
+      insights,
+      scripts
+    });
 
-        const SCRIPT_DATABASE = {
-            low: {
-                direct: [
-                    "This seems to be working well. Should we look at the timeline next?",
-                    "Since there's no rush, let's dive deeper into the technical scope."
-                ],
-                neutral: [
-                    "It sounds like we're aligned. How would you like to proceed?",
-                    "I'm comfortable with this pace. Is there anything else to cover?"
-                ],
-                soft: [
-                    "I'm really enjoying this exploration. Does it feel useful to you?",
-                    "I'd love to hear more about your vision when you're ready."
-                ]
-            },
-            mid: {
-                direct: [
-                    "Before we go any further — just to be clear — we don’t need to decide anything today.",
-                    "Let me slow this down for a second — what part of this feels most relevant?"
-                ],
-                neutral: [
-                    "I want to make sure you have the space you need to evaluate this.",
-                    "If we took the pressure off the outcome, what would your gut say?"
-                ],
-                soft: [
-                    "I sense we might be moving a bit fast. Should we pause for questions?",
-                    "My goal is your comfort with this process. How are you feeling?"
-                ]
-            },
-            high: {
-                direct: [
-                    "I'm going to stop here. I think I'm pushing too hard for an answer.",
-                    "Let's scrap the agenda. What's the one thing actually bothering you?"
-                ],
-                neutral: [
-                    "It feels like there's a lot of pressure on this moment. Let's reset.",
-                    "I'd like to apologize if I've come across as overly attached to the result."
-                ],
-                soft: [
-                    "You know your business best. I'm here to support, not to convince.",
-                    "What if we just closed the book on this for a week and checked back in?"
-                ]
-            }
-        };
+  } catch (err) {
+    console.error("PACE INDEX ERROR:", err);
 
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                score,
-                behavior,
-                confidence,
-                zoneKey,
-                scripts: SCRIPT_DATABASE[zoneKey][tone],
-                timestamp: new Date().toISOString()
-            })
-        };
-
-    } catch (error) {
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({
-                error: "Institutional Logic Engine Error",
-                detail: error.message
-            })
-        };
-    }
+    return response(500, {
+      error: "Calibration Engine Failure"
+    });
+  }
 };
+
+// ---------------- HELPERS ----------------
+
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json"
+  };
+}
+
+function response(code, data) {
+  return {
+    statusCode: code,
+    headers: corsHeaders(),
+    body: JSON.stringify(data)
+  };
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+// ---------------- LOGIC LAYERS ----------------
+
+function generateInsights(zone, tone) {
+
+  const map = {
+    low: {
+      meaning: "Prospect perceives low urgency and high safety.",
+      risk: "May delay decision or disengage."
+    },
+    mid: {
+      meaning: "Balanced tension supporting rational decision flow.",
+      risk: "Risk of slipping into over-explanation."
+    },
+    high: {
+      meaning: "Prospect perceives strong outcome pressure.",
+      risk: "High probability of defensive resistance."
+    }
+  };
+
+  return map[zone];
+}
+
+function generateScripts(zone, tone) {
+
+  const scripts = {
+    low: {
+      direct: [
+        "Walk me through what would need to change for this to become urgent.",
+        "What’s currently making this optional?"
+      ],
+      neutral: [
+        "How are you currently prioritizing this?",
+        "Where does this sit relative to other initiatives?"
+      ],
+      soft: [
+        "Curious — how important does this feel today?",
+        "Would it be okay if we explored timing together?"
+      ]
+    },
+
+    mid: {
+      direct: [
+        "What would prevent you from moving forward today?",
+        "Is there anything still unresolved on your side?"
+      ],
+      neutral: [
+        "How are you evaluating next steps internally?",
+        "What would you need to feel confident here?"
+      ],
+      soft: [
+        "What would make this feel like the right next move?",
+        "How are you feeling about this direction overall?"
+      ]
+    },
+
+    high: {
+      direct: [
+        "Let’s slow this down — what feels most pressured right now?",
+        "What concern should we address first?"
+      ],
+      neutral: [
+        "Where does this feel rushed from your perspective?",
+        "What would help create more clarity?"
+      ],
+      soft: [
+        "Would it help to step back and reassess priorities?",
+        "What part of this feels most uncertain?"
+      ]
+    }
+  };
+
+  return scripts[zone][tone];
+}
