@@ -1,10 +1,10 @@
 /**
  * PACEGUARD™ v3.0 | Heavy-Duty Backend
- * PRODUCTION VERSION - Hardened for Netlify Environment
+ * RY GUY LABS - PRODUCTION GRADE
  */
 
 exports.handler = async (event) => {
-    // REQUIRED: Production CORS and Response Headers
+    // 1. Mandatory Headers for Production Netlify Environment
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -12,78 +12,82 @@ exports.handler = async (event) => {
         'Content-Type': 'application/json'
     };
 
-    // Handle OPTIONS pre-flight
+    // 2. Handle Pre-flight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers, body: '' };
     }
 
     try {
-        if (!event.body) throw new Error("No payload detected");
+        if (!event.body) throw new Error("No data received");
         
-        const data = JSON.parse(event.body);
-        const { history = [], baseline = { vol: 5 } } = data;
-        
-        // Sophisticated fallback: If history is empty, return idle state instead of error
-        if (history.length === 0) {
+        const payload = JSON.parse(event.body);
+        const { history = [], baseline = { vol: 5 } } = payload;
+
+        // 3. Prevent Zero-Division if no speech is detected
+        if (history.length < 3) {
             return {
                 statusCode: 200,
                 headers,
                 body: JSON.stringify({
                     fusionScore: 0,
-                    insight: "AWAITING AUDIO INPUT...",
+                    insight: "AWAITING VOCAL INPUT",
                     diagnostics: { momentum: 10, volatility: 0, resonance: 100 }
                 })
             };
         }
 
         const volumes = history.map(h => h.vol);
-        const baselineVol = Math.max(baseline.vol, 1);
+        const baseVol = Math.max(baseline.vol, 1);
 
-        // 1. MOMENTUM (Weighted Moving Average)
+        // --- HEAVY DUTY ANALYTICS ---
+        
+        // MOMENTUM (Power vs Baseline)
         const recent = volumes.slice(-5);
         const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
-        const momentum = (avg / baselineVol);
+        const momRaw = (avg / baseVol);
 
-        // 2. VOLATILITY (Standard Deviation of Delta)
-        let deltaSum = 0;
+        // VOLATILITY (The delta between peaks)
+        let delta = 0;
         for (let i = 1; i < volumes.length; i++) {
-            deltaSum += Math.abs(volumes[i] - volumes[i-1]);
+            delta += Math.abs(volumes[i] - volumes[i-1]);
         }
-        const volatility = (deltaSum / volumes.length) * 10;
+        const volRaw = (delta / volumes.length) * 12;
 
-        // 3. RESONANCE (Vocal Stability)
+        // RESONANCE (Standard Deviation Stability)
         const mean = volumes.reduce((a, b) => a + b, 0) / volumes.length;
-        const variance = volumes.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / volumes.length;
-        const resonance = Math.max(0, 100 - (Math.sqrt(variance) * 12));
+        const vari = volumes.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / volumes.length;
+        const resRaw = Math.max(0, 100 - (Math.sqrt(vari) * 15));
 
-        // 4. FUSION CALCULATION (Weighted Formula)
-        const fusion = (momentum * 35) + (volatility * 0.8) - (resonance * 0.05);
+        // FUSION CORE MATH
+        const scoreCalc = (momRaw * 30) + (volRaw * 0.8) - (resRaw * 0.1);
+        const fusionScore = Math.round(Math.min(99, Math.max(0, scoreCalc)));
 
         // TACTICAL INSIGHTS
         let insight = "SPECTRUM OPTIMAL";
-        if (fusion > 80) insight = "CRITICAL: NEURAL OVERLOAD. RESET NOW.";
-        else if (volatility > 40) insight = "CADENCE WARNING: ERRATIC RHYTHM DETECTED.";
-        else if (momentum > 2.5) insight = "INTENSITY ALERT: LOWER VOCAL POWER.";
+        if (fusionScore > 80) insight = "CRITICAL: NEURAL OVERLOAD. RESET.";
+        else if (volRaw > 35) insight = "CADENCE WARNING: ERRATIC RHYTHM.";
+        else if (momRaw > 2.5) insight = "INTENSITY ALERT: VOCAL PUSHING.";
 
+        // 4. Final Response - Perfectly Mapped to Frontend Keys
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
-                fusionScore: Math.round(Math.min(99, Math.max(0, fusion))),
-                insight: insight,
+                fusionScore,
+                insight,
                 diagnostics: {
-                    momentum: Math.round(momentum * 10),
-                    volatility: Math.round(volatility),
-                    resonance: Math.round(resonance)
+                    momentum: Math.round(momRaw * 10),
+                    volatility: Math.round(volRaw),
+                    resonance: Math.round(resRaw)
                 }
             })
         };
+
     } catch (err) {
-        console.error("Backend Error:", err);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "INTERNAL ENGINE ERROR", msg: err.message })
+            body: JSON.stringify({ error: err.message, fusionScore: 0 })
         };
     }
 };
