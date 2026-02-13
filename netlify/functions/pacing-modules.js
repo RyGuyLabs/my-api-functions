@@ -1,70 +1,66 @@
-exports.handler = async (event) => {
-  // Allow POST only
+exports.handler = async (event, context) => {
+  // Security: Only allow POST requests
   if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      headers: {
-        "Allow": "POST",
-        "Access-Control-Allow-Origin": "*", // <-- CORS
-      },
-      body: JSON.stringify({ error: "Method Not Allowed" }),
-    };
+    return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   try {
     const data = JSON.parse(event.body);
+    const { time, outcome, questions, exit, phase, medium } = data;
 
-    const time = Number(data.time);
-    const outcome = Number(data.outcome);
-    const questions = Number(data.questions);
-    const exit = Number(data.exit);
-    const phase = Number(data.phase);
-    const medium = Number(data.medium);
+    // THE SECRET SAUCE (Hidden Logic)
+    // We maintain your proprietary weighting here, invisible to the client.
+    const weights = {
+      time: 0.3,
+      outcome: 0.3,
+      questions: 0.2,
+      exit: 0.2
+    };
 
-    const rawScore =
-      ((time * 0.3) +
-       (outcome * 0.3) +
-       (questions * 0.2) +
-       ((100 - exit) * 0.2)) *
-      phase * medium;
+    // Calculate Raw Base
+    const pressureComponent = (time * weights.time) + 
+                              (outcome * weights.outcome) + 
+                              (questions * weights.questions);
+    
+    const safetyComponent = (100 - exit) * weights.exit;
 
-    const pace = Math.min(100, Math.round(rawScore));
+    // Apply Contextual Multipliers
+    let rawScore = (pressureComponent + safetyComponent) * parseFloat(phase) * parseFloat(medium);
+    
+    // Final Calibration
+    const paceIndex = Math.min(100, Math.round(rawScore));
 
-    let zone;
-    let recommendation;
-
-    if (pace > 75) {
-      zone = "OVERHEATED";
-      recommendation = "CRITICAL: Reactance triggered. The counter-party likely feels cornered. Halt closing attempts. Pivot to autonomy scripts.";
-    } else if (pace > 45) {
-      zone = "COMPRESSED";
-      recommendation = "CAUTION: Psychological friction rising. Slow cadence. Use labeling and silence.";
+    // Determine Protocol Recommendations
+    let status, recommendation, color;
+    if (paceIndex > 75) {
+      status = "OVERHEATED";
+      color = "#ff3300";
+      recommendation = "CRITICAL: Reactance triggered. The counter-party likely feels cornered. Halt all closing attempts. Pivot to high-autonomy scripts immediately: 'It's completely fine if this isn't a fit right now.'";
+    } else if (paceIndex > 45) {
+      status = "COMPRESSED";
+      color = "#ffcc00";
+      recommendation = "CAUTION: Psychological friction rising. Slow the verbal cadence. Use labeling and silence to lower the perceived cost of the interaction.";
     } else {
-      zone = "CALIBRATED";
-      recommendation = "OPTIMAL: Behavioral alignment is high. Proceed at current pace.";
+      status = "CALIBRATED";
+      color = "#00ff88";
+      recommendation = "OPTIMAL: Behavioral alignment is high. The counter-party feels in control and safe. Proceed at current pace.";
     }
 
     return {
       statusCode: 200,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", // <-- CORS
+        "Access-Control-Allow-Origin": "*" // Adjust for Squarespace domain security
       },
       body: JSON.stringify({
-        pace,
-        zone,
+        paceIndex,
+        status,
         recommendation,
-      }),
+        color,
+        timestamp: new Date().toISOString()
+      })
     };
-
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", // <-- CORS
-      },
-      body: JSON.stringify({ error: "Calculation failed" }),
-    };
+  } catch (error) {
+    return { statusCode: 400, body: JSON.stringify({ error: "Invalid Payload" }) };
   }
 };
