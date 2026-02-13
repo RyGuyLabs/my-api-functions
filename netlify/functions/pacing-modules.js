@@ -1,6 +1,17 @@
 exports.handler = async (event) => {
-  try {
+  // Allow POST only
+  if (event.httpMethod !== "POST") {
+    return {
+      statusCode: 405,
+      headers: {
+        "Allow": "POST",
+        "Access-Control-Allow-Origin": "*", // <-- CORS
+      },
+      body: JSON.stringify({ error: "Method Not Allowed" }),
+    };
+  }
 
+  try {
     const data = JSON.parse(event.body);
 
     const time = Number(data.time);
@@ -12,9 +23,9 @@ exports.handler = async (event) => {
 
     const rawScore =
       ((time * 0.3) +
-      (outcome * 0.3) +
-      (questions * 0.2) +
-      ((100 - exit) * 0.2)) *
+       (outcome * 0.3) +
+       (questions * 0.2) +
+       ((100 - exit) * 0.2)) *
       phase * medium;
 
     const pace = Math.min(100, Math.round(rawScore));
@@ -25,31 +36,35 @@ exports.handler = async (event) => {
     if (pace > 75) {
       zone = "OVERHEATED";
       recommendation = "CRITICAL: Reactance triggered. The counter-party likely feels cornered. Halt closing attempts. Pivot to autonomy scripts.";
-    }
-    else if (pace > 45) {
+    } else if (pace > 45) {
       zone = "COMPRESSED";
       recommendation = "CAUTION: Psychological friction rising. Slow cadence. Use labeling and silence.";
-    }
-    else {
+    } else {
       zone = "CALIBRATED";
       recommendation = "OPTIMAL: Behavioral alignment is high. Proceed at current pace.";
     }
 
     return {
       statusCode: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*", // <-- CORS
+      },
       body: JSON.stringify({
         pace,
         zone,
-        recommendation
-      })
+        recommendation,
+      }),
     };
 
   } catch (err) {
-
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Calculation failed" })
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*", // <-- CORS
+      },
+      body: JSON.stringify({ error: "Calculation failed" }),
     };
-
   }
 };
