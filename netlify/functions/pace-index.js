@@ -1,33 +1,26 @@
 exports.handler = async function (event, context) {
 
-    // 1. SECURITY: DEFINING ALLOWED ORIGINS
-    // Replace with your actual production domain for maximum security
     const allowedOrigins = [
-        "https://your-production-domain.com",
-        "https://localhost:8888" // Keep for local development
+        "https://ryguyapi.netlify.app",
+        "https://ryguylabs.com",
+        "https://www.ryguylabs.com",
+        "http://localhost:8888"
     ];
 
     const origin = event.headers?.origin || "";
     const corsOrigin = allowedOrigins.includes(origin) ? origin : "*";
 
-    // PRODUCTION-GRADE HEADERS
     const headers = {
         "Access-Control-Allow-Origin": corsOrigin,
         "Access-Control-Allow-Headers": "Content-Type, X-Requested-With, Authorization",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Content-Type": "application/json",
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "X-XSS-Protection": "1; mode=block",
-        "Referrer-Policy": "strict-origin-when-cross-origin"
+        "Content-Type": "application/json"
     };
 
-    // HANDLING PREFLIGHT
     if (event.httpMethod === "OPTIONS") {
-        return { statusCode: 204, headers };
+        return { statusCode: 200, headers };
     }
 
-    // METHOD RESTRICTION
     if (event.httpMethod !== "POST") {
         return {
             statusCode: 405,
@@ -37,29 +30,28 @@ exports.handler = async function (event, context) {
     }
 
     try {
+
         if (!event.body) throw new Error("Missing request body");
 
         const body = JSON.parse(event.body);
 
-        // INPUT VALIDATION & SANITIZATION
         const v1 = Math.min(Math.max(parseInt(body.v1) || 50, 0), 100);
         const v2 = Math.min(Math.max(parseInt(body.v2) || 50, 0), 100);
         const v3 = Math.min(Math.max(parseInt(body.v3) || 50, 0), 100);
         const tone = ["direct", "neutral", "soft"].includes(body.tone) ? body.tone : "direct";
 
-        // PROPRIETARY CALIBRATION LOGIC
         const score = Math.round((v1 * 0.4) + (v2 * 0.3) + (v3 * 0.3));
-        const diff = Math.max(v1, v2, v3) - Math.min(v1, v2, v3);
-        const confidence = diff < 20 ? "HIGH" : (diff < 40 ? "MEDIUM" : "LOW");
 
-        const zoneKey = score < 40 ? "low" : (score < 75 ? "mid" : "high");
+        const diff = Math.max(v1, v2, v3) - Math.min(v1, v2, v3);
+        const confidence = diff < 20 ? "HIGH" : diff < 40 ? "MEDIUM" : "LOW";
+
+        const zoneKey = score < 40 ? "low" : score < 75 ? "mid" : "high";
 
         let behavior = "Balanced Pressure";
         if (v1 >= v2 && v1 >= v3) behavior = "Pressure is Outcome-Driven";
         else if (v2 >= v1 && v2 >= v3) behavior = "Pressure is Time-Driven";
         else behavior = "Pressure is Control-Driven";
 
-        // SECURE SCRIPT DATABASE
         const SCRIPT_DATABASE = {
             low: {
                 direct: [
@@ -105,33 +97,17 @@ exports.handler = async function (event, context) {
             }
         };
 
-        const result = {
-            score,
-            behavior,
-            confidence,
-            zoneKey,
-            scripts: SCRIPT_DATABASE[zoneKey][tone],
-            insights: {
-                meaning:
-                    zoneKey === "low"
-                        ? "Trust is accelerating. Your pace allows the other party to lean in without fear of being sold."
-                        : zoneKey === "mid"
-                        ? "Frictional load detected. You are likely providing answers before they've asked the questions."
-                        : "Reactance triggered. The other party likely feels cornered.",
-                risk:
-                    zoneKey === "low"
-                        ? "Minimal. Maintain current cadence."
-                        : zoneKey === "mid"
-                        ? "High Risk of Think-It-Over."
-                        : "Total Trust Decay likely."
-            },
-            timestamp: new Date().toISOString()
-        };
-
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(result)
+            body: JSON.stringify({
+                score,
+                behavior,
+                confidence,
+                zoneKey,
+                scripts: SCRIPT_DATABASE[zoneKey][tone],
+                timestamp: new Date().toISOString()
+            })
         };
 
     } catch (error) {
