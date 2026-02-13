@@ -6,44 +6,61 @@ const headers = {
 };
 
 exports.handler = async (event) => {
-  // Handle CORS preflight
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers };
-  }
-
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
+  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
   try {
     const { profile, pressure } = JSON.parse(event.body);
 
-    // PROPRIETARY ALGORITHM EXTRACTION
     const profiles = {
-      Anxious: { base: 30, high: "I feel pushed. I'm leaving.", low: "I appreciate the space." },
-      Guarded: { base: 45, high: "What's the catch?", low: "This feels transparent." },
-      Analytical: { base: 60, high: "Your logic is forced.", low: "This is a sound proposal." },
-      Skeptical: { base: 20, high: "Standard sales trap.", low: "You're actually listening." }
+      Anxious: { 
+        base: 30, 
+        high: "I feel pushed. I'm leaving.", 
+        mid: "I'm listening, but still a bit cautious.", 
+        low: "I appreciate the space you're giving me." 
+      },
+      Guarded: { 
+        base: 45, 
+        high: "What's the catch? This is too much.", 
+        mid: "Okay, I'm following your train of thought.", 
+        low: "This feels transparent and honest." 
+      },
+      Analytical: { 
+        base: 60, 
+        high: "Your logic is forced and aggressive.", 
+        mid: "The data points align so far.", 
+        low: "This is a sound, objective proposal." 
+      },
+      Skeptical: { 
+        base: 20, 
+        high: "Standard sales trap. I'm out.", 
+        mid: "You're making sense, surprisingly.", 
+        low: "You're actually listening to my concerns." 
+      }
     };
 
     const selectedProfile = profiles[profile] || profiles.Anxious;
-    
-    // Core Scoring Logic: Trust is negatively impacted by pressure beyond a specific base threshold
     const trust = Math.max(0, Math.min(100, selectedProfile.base + (100 - pressure) / 2 - (pressure / 4)));
     const heat = Math.round(pressure * 1.2);
 
-    let statusText = "Processing conversational input...";
+    let statusText = `"${selectedProfile.mid}"`;
     let statusColor = "#ffffff";
+    let coachInsight = null;
 
+    // Logic for the Spectrum Zones
     if (pressure > 70) {
       statusText = `"${selectedProfile.high}"`;
-      statusColor = "#ff3300"; // Danger
+      statusColor = "#ff3300"; // Danger Red
+      coachInsight = "RyGuyLabs Insight: High urgency creates 'Choice Paralysis'. Ease pressure to re-engage.";
     } else if (pressure < 30) {
       statusText = `"${selectedProfile.low}"`;
-      statusColor = "#00ff88"; // Safe
+      statusColor = "#00ff88"; // Safe Green
+      coachInsight = "RyGuyLabs Insight: High autonomy builds 'Relational Equity'. This is where the long-term win happens.";
+    } else {
+      statusText = `"${selectedProfile.mid}"`;
+      statusColor = "#ffaa00"; // Neutral/Momentum Orange
     }
 
-    // Return the calculated state to the thin client
     return {
       statusCode: 200,
       headers,
@@ -52,14 +69,10 @@ exports.handler = async (event) => {
         heat: heat,
         statusText: statusText,
         statusColor: statusColor,
-        coachInsight: pressure > 80 ? "RyGuyLabs Insight: High urgency creates 'Choice Paralysis'. Ease pressure to re-engage." : null
+        coachInsight: coachInsight
       })
     };
   } catch (error) {
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: "Internal Calibration Error" })
-    };
+    return { statusCode: 500, headers, body: JSON.stringify({ error: "Calibration Error" }) };
   }
 };
