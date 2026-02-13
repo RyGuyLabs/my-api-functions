@@ -1,33 +1,49 @@
 /**
  * RYGUYLABS BEHAVIORAL SYSTEMS: PROFILE PACE FRAMEWORK (V2.0)
  * PROPRIETARY CALIBRATION LOGIC - BACKEND MODULE
+ * * SETUP: 
+ * 1. Deploy as a Netlify Function or AWS Lambda.
+ * 2. Ensure the URL matches the API_URL in your index.html.
  */
 
 exports.handler = async function(event, context) {
+    // SECURITY: Define allowed headers for CORS
     const headers = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Origin": "*", // Change to "https://yourdomain.com" for production lockdown
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
         "Content-Type": "application/json"
     };
 
-    if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers };
+    // Handle Browser Preflight (OPTIONS request)
+    // Browsers send this before a POST to check permissions
+    if (event.httpMethod === "OPTIONS") {
+        return { 
+            statusCode: 200, 
+            headers 
+        };
+    }
 
-    // Standard Handshake
+    // Standard Health Check
     if (event.httpMethod === "GET") {
-        return { statusCode: 200, headers, body: JSON.stringify({ status: "online", version: "2.0.0" }) };
+        return { 
+            statusCode: 200, 
+            headers, 
+            body: JSON.stringify({ status: "online", version: "2.0.0", system: "RYGUY_CORE" }) 
+        };
     }
 
     if (event.httpMethod === "POST") {
         try {
             const data = JSON.parse(event.body);
             
-            // Inputs from the frontend
+            // Inputs from the frontend (normalized defaults)
             const a = parseFloat(data.attach) || 50;
             const t = parseFloat(data.time) || 50;
             const e = parseFloat(data.exit) || 50;
             
-            // The Secret Algorithm
+            // THE PROPRIETARY ALGORITHM
+            // Calculations remain hidden on server side
             const globalScore = Math.min(100, Math.round((a * 0.4) + (t * 0.4) + (100 - e) * 0.4));
 
             // Proprietary Content Library
@@ -44,7 +60,7 @@ exports.handler = async function(event, context) {
                 headline: `Operating at ${globalScore}% Pressure.`
             };
 
-            // Diagnostic Logic
+            // BEHAVIORAL DIAGNOSTIC LOGIC
             if (globalScore > 65) {
                 response.color = "#ff3300"; // Danger
                 response.means = "Chasing frequency detected. This creates reflexive push-back in high-status prospects.";
@@ -66,9 +82,19 @@ exports.handler = async function(event, context) {
             };
 
         } catch (err) {
-            return { statusCode: 500, headers, body: JSON.stringify({ error: "Logic Error" }) };
+            console.error("Logic Error:", err);
+            return { 
+                statusCode: 500, 
+                headers, 
+                body: JSON.stringify({ error: "Diagnostic Logic Failure", details: err.message }) 
+            };
         }
     }
 
-    return { statusCode: 405, headers, body: "Method Not Allowed" };
+    // Catch-all for unsupported methods
+    return { 
+        statusCode: 405, 
+        headers, 
+        body: JSON.stringify({ error: "Method Not Allowed" }) 
+    };
 };
