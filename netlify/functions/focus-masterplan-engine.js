@@ -1,4 +1,5 @@
 exports.handler = async (event) => {
+
     const headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type",
@@ -8,11 +9,12 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
 
-    const startTime = Date.now();
     const requestId = Math.random().toString(36).substring(2, 10);
+    const startTime = Date.now();
 
     try {
-        if (!event.body) throw new Error("Missing request body");
+
+        if (!event.body) throw new Error("Missing body");
 
         const data = JSON.parse(event.body);
 
@@ -22,12 +24,14 @@ exports.handler = async (event) => {
             impact = "",
             boundary = "",
             target = "",
-            step
+            step = 0
         } = data;
 
-        // --- BASIC SANITIZER ---
-        const clean = (str) =>
-            String(str)
+        // =====================
+        // SANITIZATION
+        // =====================
+        const clean = (s) =>
+            String(s || "")
                 .replace(/[<>]/g, "")
                 .trim()
                 .slice(0, 300);
@@ -40,47 +44,132 @@ exports.handler = async (event) => {
             target: clean(target)
         };
 
-        // --- PHRASE VARIATION ENGINE ---
+        // =====================
+        // UTILS
+        // =====================
         const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+        const clamp = (n, min = 0, max = 1) => Math.max(min, Math.min(max, n));
 
-        // --- VALIDATION BY STEP ---
+        // =====================
+        // STRATEGIC STATE ENGINE
+        // =====================
+        let state = {
+            focusDebt: Math.random() * 0.4,
+            executionMomentum: Math.random() * 0.6,
+            boundaryIntegrity: 0.7 + Math.random() * 0.3,
+            strategicClarity: safe.impact.length > 10 ? 0.8 : 0.5
+        };
+
+        // =====================
+        // LANGUAGE GRAPH
+        // =====================
+        const GRAPH = {
+            authority: [
+                "Operational command requires",
+                "Strategic dominance demands",
+                "Execution protocol requires"
+            ],
+            focus: [
+                "total cognitive priority on",
+                "full resource alignment toward",
+                "singular execution focus on"
+            ],
+            risk: [
+                "Fragmentation introduces timeline delay.",
+                "Deviation increases execution cost.",
+                "Context switching compounds failure probability."
+            ]
+        };
+
+        const generateDirective = () => `
+            ${pick(GRAPH.authority)}
+            ${pick(GRAPH.focus)}
+            "${safe.impact}".
+            ${pick(GRAPH.risk)}
+        `;
+
+        // =====================
+        // TONE ENGINE
+        // =====================
+        const getTone = () => {
+
+            if (state.executionMomentum > 0.75)
+                return "elite";
+
+            if (state.focusDebt > 0.6)
+                return "corrective";
+
+            return "standard";
+        };
+
+        const TONES = {
+            elite: [
+                "Momentum confirmed. Maintain dominance.",
+                "Execution velocity optimal. Continue pressure."
+            ],
+            corrective: [
+                "Drift detected. Realignment required.",
+                "Focus degradation unacceptable. Correct course."
+            ],
+            standard: [
+                "Stay on mission.",
+                "Maintain execution discipline."
+            ]
+        };
+
+        // =====================
+        // REINFORCEMENT ENGINE
+        // =====================
+        const reinforcement = () => {
+
+            if (state.executionMomentum > 0.7)
+                return "Progress velocity increasing.";
+
+            if (state.focusDebt > 0.6)
+                return "Cognitive fragmentation risk rising.";
+
+            return "Execution stability maintained.";
+        };
+
+        // =====================
+        // STEP VALIDATION
+        // =====================
         const requireFields = (fields) => {
             for (const f of fields) {
-                if (!safe[f] && safe[f] !== 0) {
-                    throw new Error(`Missing required field: ${f}`);
-                }
+                if (!safe[f]) throw new Error(`Missing field: ${f}`);
             }
         };
 
-        // =============================
-        // ALGORITHM 1 — STRATEGIC AUDIT
-        // =============================
+        // =====================
+        // STEP 2 — STRATEGIC AUDIT
+        // =====================
         if (step === 2) {
 
             requireFields(["area", "impact", "today"]);
 
-            const audit = {
-                directive: pick([
-                    `The ${safe.area} theater requires absolute focus. Prioritize "${safe.impact}" above all else.`,
-                    `All momentum must consolidate around "${safe.impact}" inside the ${safe.area} domain.`,
-                    `Strategic dominance in ${safe.area} requires total commitment to "${safe.impact}".`
-                ]),
+            const tone = getTone();
 
-                permission: pick([
-                    `You are authorized to ignore anything not directly enabling "${safe.today}".`,
-                    `Non-aligned requests are operational noise. Discard anything outside "${safe.today}".`,
-                    `If it doesn't move "${safe.today}" forward — it is not your concern today.`
-                ]),
+            const response = {
+                directive: generateDirective(),
 
-                risk: pick([
-                    `Fragmented attention here delays ${safe.area} advancement by weeks.`,
-                    `Context switching will sabotage velocity inside ${safe.area}.`,
-                    `Dilution of focus will extend your ${safe.area} timeline significantly.`
-                ]),
+                permission: `
+                    You are authorized to ignore anything
+                    not directly advancing "${safe.today}".
+                `,
+
+                risk: pick(GRAPH.risk),
+
+                reinforcement: reinforcement(),
+
+                toneLine: pick(TONES[tone]),
 
                 meta: {
-                    step: 2,
-                    urgencyScore: 0.85,
+                    tone,
+                    urgencyScore: clamp(
+                        state.executionMomentum +
+                        state.strategicClarity -
+                        state.focusDebt
+                    ),
                     requestId
                 }
             };
@@ -88,58 +177,77 @@ exports.handler = async (event) => {
             return {
                 statusCode: 200,
                 headers,
-                body: JSON.stringify(audit)
+                body: JSON.stringify(response)
             };
         }
 
-        // =============================
-        // ALGORITHM 2 — FINAL SYNTHESIS
-        // =============================
+        // =====================
+        // STEP 4 — FINAL PROTOCOL
+        // =====================
         if (step === 4) {
 
             requireFields(["target", "impact", "today", "boundary"]);
 
+            const tone = getTone();
+
             const protocol = `
                 <div class="space-y-6">
+
                     <div class="border-l-4 border-blue-500 pl-4">
-                        <h4 class="text-blue-400 font-bold uppercase text-xs">Primary Mission</h4>
+                        <h4 class="text-blue-400 font-bold uppercase text-xs">
+                            Primary Mission
+                        </h4>
                         <p class="text-lg">
-                            Achieve "${safe.target}" by maximizing "${safe.impact}".
+                            Achieve "${safe.target}" via
+                            leverage of "${safe.impact}".
                         </p>
                     </div>
 
                     <div class="border-l-4 border-purple-500 pl-4">
-                        <h4 class="text-purple-400 font-bold uppercase text-xs">Daily Execution</h4>
+                        <h4 class="text-purple-400 font-bold uppercase text-xs">
+                            Daily Execution
+                        </h4>
                         <p>
-                            Complete "${safe.today}" before engaging in any low-leverage activity.
+                            Complete "${safe.today}"
+                            before engaging secondary tasks.
                         </p>
                     </div>
 
                     <div class="border-l-4 border-red-500 pl-4">
-                        <h4 class="text-red-400 font-bold uppercase text-xs">Operational Boundary</h4>
+                        <h4 class="text-red-400 font-bold uppercase text-xs">
+                            Operational Boundary
+                        </h4>
                         <p>
-                            Reject: "${safe.boundary}". Protect cognitive bandwidth aggressively.
+                            Reject: "${safe.boundary}".
                         </p>
                     </div>
+
                 </div>
             `;
+
+            const response = {
+                protocol,
+                reinforcement: reinforcement(),
+                toneLine: pick(TONES[tone]),
+                meta: {
+                    tone,
+                    confidenceScore: clamp(
+                        state.strategicClarity +
+                        state.executionMomentum +
+                        state.boundaryIntegrity
+                    ) / 3,
+                    requestId
+                }
+            };
 
             return {
                 statusCode: 200,
                 headers,
-                body: JSON.stringify({
-                    protocol,
-                    meta: {
-                        step: 4,
-                        confidence: 0.92,
-                        executionMode: "focused",
-                        requestId
-                    }
-                })
+                body: JSON.stringify(response)
             };
         }
 
-        throw new Error("Invalid step provided");
+        throw new Error("Invalid step");
 
     } catch (err) {
 
@@ -151,8 +259,10 @@ exports.handler = async (event) => {
                 requestId
             })
         };
+
     } finally {
-        const duration = Date.now() - startTime;
-        console.log(`Request ${requestId} completed in ${duration}ms`);
+        console.log(
+            `Request ${requestId} completed in ${Date.now() - startTime}ms`
+        );
     }
 };
