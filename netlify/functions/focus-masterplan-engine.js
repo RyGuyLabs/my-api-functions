@@ -1,64 +1,85 @@
-/**
- * RyGuyLabs Strategic Engine: Focus & Masterplan
- * Secure Backend logic for processing user focus areas and generating 
- * production-grade strategic blueprints.
- */
+exports.handler = async (event) => {
 
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json"
+  };
 
-exports.handler = async (event, context) => {
-    // Standard Production Guardrails
+  try {
+
+    if (event.httpMethod === "OPTIONS") {
+      return { statusCode: 204, headers };
+    }
+
     if (event.httpMethod !== "POST") {
-        return { statusCode: 405, body: "Method Not Allowed" };
+      return {
+        statusCode: 405,
+        headers,
+        body: JSON.stringify({ error: "Method Not Allowed" })
+      };
     }
 
-    const apiKey = ""; // Environment handles this in production
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash-preview-09-2025",
-        systemInstruction: "You are the RyGuyLabs Strategic Engine. Your goal is to transform user inputs into high-leverage, no-nonsense executive directives. You prioritize speed, momentum, and extreme focus. Use professional, analytical, and motivating language. Avoid fluff. Focus on ROI of time and energy."
-    });
+    const body = JSON.parse(event.body || "{}");
 
-    try {
-        const { area, today, impact } = JSON.parse(event.body);
+    const targetName = body.targetName || "that person";
+    const targetWin = body.targetWin || "the win";
+    const selections = Array.isArray(body.selections) ? body.selections : [];
 
-        const prompt = `
-            Analyze the following priority area and goals to create a high-visibility masterplan.
-            
-            PRIORITY AREA: ${area}
-            MICRO-ACTION (TODAY): ${today}
-            HIGH-IMPACT MOVE (LEVERAGE): ${impact}
-            
-            Return a structured JSON object with the following keys:
-            - directive: A powerful 1-sentence focus directive for today.
-            - permission: What specifically the user has permission to ignore/sacrifice to achieve this.
-            - risk: The cognitive or strategic risk if they fail to focus on this.
-            - path: A high-level optimization path (3 steps).
-            - blueprint: An array of 4 objects, each with {icon, label, content}. 
-                Labels should be: "Focus Directive", "Energy Alignment", "Boundary Enforcement", "90-Day Target".
-        `;
-
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
-        
-        // Clean and parse the AI response
-        const cleanedJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
-        const masterplan = JSON.parse(cleanedJson);
-
-        return {
-            statusCode: 200,
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*" // Adjust for production CORS
-            },
-            body: JSON.stringify(masterplan)
-        };
-
-    } catch (error) {
-        console.error("Strategic Engine Error:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: "Failed to initialize strategic calculation." })
-        };
+    if (selections.length === 0) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Invalid selections array" })
+      };
     }
+
+    const totalScore = selections.reduce((sum, val) => sum + Number(val || 0), 0);
+
+    let title, color, desc, quote;
+
+    if (totalScore >= 60) {
+      title = "The Golden Cage";
+      color = "#00f2ff";
+      desc = `You're looking at ${targetName}'s ${targetWin}, but you aren't seeing the bars. The true cost here is freedom. They have the trophy, but they've signed over their time and soul to keep it.`;
+      quote = "Prestige is the trophy you get for winning a race you didn’t want.";
+    }
+    else if (totalScore >= 30) {
+      title = "The Paper Tiger";
+      color = "#ffae00";
+      desc = `${targetName} has high visibility but low internal stability. The ${targetWin} is likely masking deeper instability.`;
+      quote = "Most people don’t want success. They want comparison dominance.";
+    }
+    else {
+      title = "The Real Deal";
+      color = "#00ff88";
+      desc = `${targetName} may have earned this ${targetWin} with genuine balance. Use it as data, not envy fuel.`;
+      quote = "The only real debt is living someone else’s life.";
+    }
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        totalScore,
+        title,
+        color,
+        desc,
+        quote
+      })
+    };
+
+  } catch (err) {
+
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({
+        error: "Server Error",
+        message: err.message
+      })
+    };
+
+  }
 };
