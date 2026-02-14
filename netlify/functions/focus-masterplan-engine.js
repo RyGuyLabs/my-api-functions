@@ -1,12 +1,14 @@
 /**
- * Focus Masterplan Engine - Logic Extraction
+ * Focus Masterplan Engine - Version 6.0 (Production Logs & CORS Fix)
  * Path: /netlify/functions/focus-masterplan-engine.js
  */
 
 exports.handler = async (event) => {
-    // CORS Handling for ryguylabs.com
-    const origin = event.headers.origin || event.headers.Origin || "";
+    // 1. DYNAMIC CORS HANDLING
+    const origin = event.headers.origin || event.headers.Origin;
     const allowedOrigins = ["https://ryguylabs.com", "https://www.ryguylabs.com"];
+    
+    // Fallback to the requested origin if it's one of ours, otherwise default to the primary
     const accessControlOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
 
     const headers = {
@@ -16,66 +18,77 @@ exports.handler = async (event) => {
         "Content-Type": "application/json"
     };
 
-    if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
+    // 2. LOGGING FOR DEBUGGING (This will show up in Netlify Logs)
+    console.log(`[ENGINE] Request Received: ${event.httpMethod} from ${origin}`);
+
+    if (event.httpMethod === "OPTIONS") {
+        return { statusCode: 204, headers };
+    }
+
+    if (event.httpMethod !== "POST") {
+        console.error(`[ENGINE] Invalid Method: ${event.httpMethod}`);
+        return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+    }
 
     try {
         const payload = JSON.parse(event.body);
         const { area, today, impact, boundary, target, step } = payload;
+        
+        console.log(`[ENGINE] Processing Step ${step} for Area: ${area}`);
 
-        // --- STEP 2 LOGIC: ANALYTICAL OUTPUT ---
+        // --- INTERNAL LOGIC ENGINE ---
+        const framework = {
+            Career: { logic: "Eisenhower-Matrix Optimization", failure: "Decision Fatigue", rule: "90-Min Deep Work" },
+            Creativity: { logic: "Flow-State Iteration", failure: "Perfectionist Stalling", rule: "Rapid Prototyping" },
+            Health: { logic: "Biological Primalism", failure: "Sleep/Energy Debt", rule: "Circadian Alignment" },
+            Social: { logic: "High-Value Synthesis", failure: "Low-Yield Drainage", rule: "Network Pruning" }
+        };
+
+        const active = framework[area] || framework.Career;
+
         if (step === 2) {
-            const focusDirective = impact ? `Focus your energy on: "${impact}". This is where your leverage compounds.` : '';
-            const strategicPermission = today ? `It's okay to ignore distractions that do not move "${today}" forward.` : '';
-            const cognitiveRisk = today || impact ? `Beware of overloading your attention. Fragmentation dilutes results.` : '';
-            const thoughtPlan = (today || impact) ? `Plan: execute daily small wins, protect focus, review direction weekly.` : '';
-
             return {
                 statusCode: 200,
                 headers,
                 body: JSON.stringify({
-                    focusDirective,
-                    strategicPermission,
-                    cognitiveRisk,
-                    thoughtPlan
+                    focusDirective: `AUDIT: System detected "${impact}" as the primary lever for ${area}.`,
+                    strategicPermission: `PROTOCOL: Activate ${active.rule}. Ignore all non-essential communication.`,
+                    cognitiveRisk: `FAILURE ALERT: High probability of ${active.failure} today.`,
+                    thoughtPlan: `PHASE 1: Execute "${today}" as the lead-in to ${impact}.`
                 })
             };
         }
 
-        // --- STEP 4 LOGIC: ENRICHED SUMMARY ---
         if (step === 4) {
-            const bulletsHTML = `
-                <ul class="space-y-3 md:space-y-4 text-left">
-                    <li class="bg-blue-500/20 p-3 rounded-lg border border-blue-500/40">
-                        💡 <span class="font-bold">Focus Directive:</span> Protect your energy and focus on <span class="underline">${impact || "key high-impact areas"}</span>.
-                        <p class="text-sm text-white/70 mt-1">Stay consistent and prioritize what moves the needle.</p>
-                    </li>
-                    <li class="bg-green-500/20 p-3 rounded-lg border border-green-500/40">
-                        ⚡ <span class="font-bold">Energy Alignment:</span> Today, aim to achieve <span class="underline">${today || "small wins"}</span>.
-                        <p class="text-sm text-white/70 mt-1">Momentum compounds with every micro-action.</p>
-                    </li>
-                    <li class="bg-purple-500/20 p-3 rounded-lg border border-purple-500/40">
-                        🛡️ <span class="font-bold">Boundary Enforcement:</span> "${boundary || "Set limits to protect focus"}".
-                        <p class="text-sm text-white/70 mt-1">Boundaries safeguard your energy from distractions.</p>
-                    </li>
-                    <li class="bg-red-500/20 p-3 rounded-lg border border-red-500/40">
-                        🎯 <span class="font-bold">90-Day Target:</span> "${target || "Define a clear outcome in 3 months"}".
-                        <p class="text-sm text-white/70 mt-1">Keep your eyes on the goal and track progress weekly.</p>
-                    </li>
-                </ul>
-            `;
-
             return {
                 statusCode: 200,
                 headers,
-                body: JSON.stringify({ bulletsHTML })
+                body: JSON.stringify({
+                    bulletsHTML: `
+                        <div class="space-y-4 text-sm">
+                            <div class="p-3 border border-blue-500/30 bg-blue-500/5 rounded">
+                                <h4 class="text-xs font-bold text-blue-400 mb-1 uppercase tracking-widest">Masterplan Active</h4>
+                                <p class="text-white/80">Applying <strong>${active.logic}</strong> to achieve "${target}".</p>
+                            </div>
+                            <div class="p-3 border border-purple-500/30 bg-purple-500/5 rounded">
+                                <h4 class="text-xs font-bold text-purple-400 mb-1 uppercase tracking-widest">Energy Shield</h4>
+                                <p class="text-white/80">Boundary: "${boundary}". Failure to enforce this will trigger <strong>${active.failure}</strong>.</p>
+                            </div>
+                            <div class="mt-4 pt-4 border-t border-white/10 text-center text-[10px] text-white/40 uppercase tracking-[0.4em]">
+                                Verified by RyGuyLabs // Strat-Engine
+                            </div>
+                        </div>
+                    `
+                })
             };
         }
 
     } catch (err) {
+        console.error(`[ENGINE] Runtime Error: ${err.message}`);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "Logic Error", details: err.message })
+            body: JSON.stringify({ error: "Logic Engine Fault", message: err.message })
         };
     }
 };
