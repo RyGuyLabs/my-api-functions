@@ -1,134 +1,121 @@
 /**
- * Netlify Serverless Function: focus-masterplan-engine.js
- * Version: 2.0 (Heuristic Strategy Edition)
- * No external APIs. Fully self-contained logic.
+ * Focus Masterplan Engine - Version 5.0 (Final Production)
+ * Path: /netlify/functions/focus-masterplan-engine.js
+ * * 100% SELF-CONTAINED LOGIC. NO EXTERNAL API CALLS.
+ * Proprietary Strategic Synthesis Framework.
  */
 
-exports.handler = async (event, context) => {
-    const allowedOrigin = "https://ryguylabs.com";
+exports.handler = async (event) => {
+    // Production Security Headers
     const headers = {
-        "Access-Control-Allow-Origin": allowedOrigin,
+        "Access-Control-Allow-Origin": "https://ryguylabs.com",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Content-Type": "application/json"
     };
 
+    // Handle Pre-flight
     if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers };
-    if (event.httpMethod !== "POST") return { statusCode: 405, headers, body: "Method Not Allowed" };
 
     try {
-        const body = JSON.parse(event.body);
-        const { area, today, impact, boundary, target, step } = body;
+        const payload = JSON.parse(event.body);
+        const { area, today, impact, boundary, target, step } = payload;
 
-        // --- INTERNAL ENGINE LOGIC ---
+        // --- INTERNAL LOGIC ENGINE (NO API) ---
         
-        // 1. Analyze Input Density (The "Heuristic")
-        const inputComplexity = (today?.length || 0) + (impact?.length || 0);
-        const intensityScore = inputComplexity > 100 ? "HIGH" : inputComplexity > 40 ? "MODERATE" : "STABILITY";
-        
-        // 2. Keyword Vectoring (Search for high-performance triggers)
-        const powerKeywords = ['scale', 'build', 'launch', 'revenue', 'health', 'code', 'master', 'system'];
-        const hasPowerTerm = powerKeywords.some(word => 
-            (impact?.toLowerCase().includes(word) || target?.toLowerCase().includes(word))
-        );
-
-        let result = {};
-
-        // STEP 2: STRATEGIC NOISE FILTERING
-        if (step === 2) {
-            // Generate tailored directives based on Priority Area + Intensity
-            const directives = {
-                Career: {
-                    HIGH: "Your trajectory requires radical delegation. If it isn't moving the 'Impact' needle, it's a threat.",
-                    STABILITY: "Focus on foundational consistency. Small daily repetitions are your primary leverage."
-                },
-                Creativity: {
-                    HIGH: "You are in a 'Flow-State' build. Block all external inputs for 4-hour windows.",
-                    STABILITY: "Lower the stakes. Ship the micro-action today to break the friction of perfectionism."
-                },
-                Health: {
-                    HIGH: "Maximum output requires maximum recovery. Your 'Impact Move' is tied to your biology.",
-                    STABILITY: "Consistency over intensity. Do not break the chain of today's micro-win."
-                },
-                Social: {
-                    HIGH: "Focus on high-value networks. Prune low-energy interactions that drain your focus.",
-                    STABILITY: "Practice presence. One meaningful interaction outweighs ten surface-level ones."
-                }
-            };
-
-            const areaSpecific = directives[area] || directives.Career;
-            const chosenDirective = intensityScore === "HIGH" ? areaSpecific.HIGH : areaSpecific.STABILITY;
-
-            result = {
-                focusDirective: chosenDirective,
-                strategicPermission: hasPowerTerm ? 
-                    `Optimization detected: Accelerate "${impact}". Ignore minor maintenance tasks.` : 
-                    `Permission granted: Focus exclusively on "${today}". Everything else is noise.`,
-                cognitiveRisk: intensityScore === "HIGH" ? 
-                    "Warning: High cognitive load detected. Risk of burnout is elevated. Enforce strict boundaries." : 
-                    "Warning: Momentum stall detected. The risk is 'over-thinking'. Start the micro-action immediately.",
-                thoughtPlan: `Engine recommendation: Execute ${today} before 11:00 AM. Review ${impact} results at EOD.`
-            };
-        }
-
-        // STEP 4: FINAL MASTERPLAN SYNTHESIS (THE "PROTOCOL")
-        if (step === 4) {
-            // Determine Protocol Type
-            let protocolName = "MOMENTUM PROTOCOL";
-            let accentColor = "blue";
-            
-            if (intensityScore === "HIGH" && hasPowerTerm) {
-                protocolName = "ARCHITECT EXPANSION PROTOCOL";
-                accentColor = "purple";
-            } else if (intensityScore === "STABILITY") {
-                protocolName = "CONSISTENCY CHAIN PROTOCOL";
-                accentColor = "green";
+        // Strategic framework data (The "Brain" of the app)
+        const framework = {
+            Career: {
+                logic: "Eisenhower-Matrix Optimization",
+                primaryFailure: "Prioritizing the Urgent over the Important",
+                recoveryRule: "The 4-Hour Deep Work Block"
+            },
+            Creativity: {
+                logic: "Flow-State Iteration",
+                primaryFailure: "Premature Optimization / Perfectionism",
+                recoveryRule: "The 10-Minute Rapid Start"
+            },
+            Health: {
+                logic: "Biological Primalism",
+                primaryFailure: "Energy Depletion via Sleep Neglect",
+                recoveryRule: "The Circadian Reset"
+            },
+            Social: {
+                logic: "High-Value Network Synthesis",
+                primaryFailure: "Low-Frequency Social Drainage",
+                recoveryRule: "Active Boundary Enforcement"
             }
+        };
 
-            result = {
-                bulletsHTML: `
-                    <div class="mb-6 border-b border-white/10 pb-4">
-                        <span class="text-xs font-bold tracking-[0.2em] text-${accentColor}-400 uppercase">Active Engine Protocol</span>
-                        <h3 class="text-2xl font-bold text-white">${protocolName}</h3>
-                    </div>
-                    <ul class="space-y-4 text-left">
-                        <li class="bg-${accentColor}-500/10 p-4 rounded-xl border border-${accentColor}-500/30">
-                            <div class="flex items-start gap-3">
-                                <span class="text-xl">🎯</span>
-                                <div>
-                                    <span class="block font-bold text-white">Execution Priority</span>
-                                    <p class="text-sm text-white/70">The system has identified <span class="text-white underline">${impact}</span> as your 80/20 leverage point. 
-                                    ${intensityScore === 'HIGH' ? 'Maintain aggressive focus.' : 'Focus on starting, not finishing.'}</p>
-                                </div>
-                            </div>
-                        </li>
-                        <li class="bg-white/5 p-4 rounded-xl border border-white/10">
-                            <div class="flex items-start gap-3">
-                                <span class="text-xl">🛡️</span>
-                                <div>
-                                    <span class="block font-bold text-white">Energy Guardrail</span>
-                                    <p class="text-sm text-white/70">"${boundary}". <strong>Logic:</strong> This boundary prevents decision fatigue and protects your peak energy hours.</p>
-                                </div>
-                            </div>
-                        </li>
-                        <li class="bg-${accentColor}-900/20 p-4 rounded-xl border border-${accentColor}-500/20">
-                            <div class="flex items-start gap-3">
-                                <span class="text-xl">🚀</span>
-                                <div>
-                                    <span class="block font-bold text-white">90-Day Trajectory</span>
-                                    <p class="text-sm text-white/70">Target: <span class="italic text-white">"${target}"</span>. 
-                                    Daily compounding of "${today}" leads to a ${hasPowerTerm ? '10x' : 'significant'} increase in success probability.</p>
-                                </div>
-                            </div>
-                        </li>
-                    </ul>
-                `
+        const activeStrat = framework[area] || framework.Career;
+
+        // Step 2 Logic: Initial Analysis & Audit
+        if (step === 2) {
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({
+                    focusDirective: `STRATEGIC AUDIT: Your current plan for ${area} is being processed via ${activeStrat.logic}. Target detected: ${impact}.`,
+                    strategicPermission: `PROTOCOL: You are authorized to ignore low-yield interruptions to execute "${today}" immediately.`,
+                    cognitiveRisk: `POINT OF FAILURE: System predicts ${activeStrat.primaryFailure} as your main obstacle today.`,
+                    thoughtPlan: `PHASE 1: Implementation of ${activeStrat.recoveryRule} initiated.`
+                })
             };
         }
 
-        return { statusCode: 200, headers, body: JSON.stringify(result) };
+        // Step 4 Logic: Final Masterplan Synthesis
+        if (step === 4) {
+            // Calculated Intensity Index based on input length
+            const intensityIndex = ((today?.length || 0) + (impact?.length || 0) + (boundary?.length || 0)) / 100;
+            const clarityRating = intensityIndex > 1.5 ? "HIGH DENSITY" : "ACTIONABLE";
+
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({
+                    bulletsHTML: `
+                        <div class="space-y-6">
+                            <!-- Tactical Header -->
+                            <div class="flex justify-between items-center border-b border-white/20 pb-2">
+                                <span class="text-[10px] font-bold text-blue-400">PLAN CLARITY: ${clarityRating}</span>
+                                <span class="text-[10px] font-bold text-blue-400">LOGIC: ${activeStrat.logic}</span>
+                            </div>
+
+                            <!-- The Synthesis -->
+                            <div class="p-4 bg-blue-500/10 border-l-4 border-blue-500 rounded-r-lg">
+                                <h4 class="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1">Execution Command</h4>
+                                <p class="text-sm text-white">
+                                    Instead of treating <strong>"${today}"</strong> as a standalone task, treat it as the trigger for <strong>"${impact}"</strong>. 
+                                    By applying the ${activeStrat.logic}, you eliminate the "choice-paralysis" usually associated with ${area}.
+                                </p>
+                            </div>
+
+                            <!-- The Shield -->
+                            <div class="p-4 bg-purple-500/10 border-l-4 border-purple-500 rounded-r-lg">
+                                <h4 class="text-xs font-bold text-purple-400 uppercase tracking-widest mb-1">Boundary Reinforcement</h4>
+                                <p class="text-sm text-white italic">
+                                    "${boundary}"
+                                </p>
+                                <p class="text-[10px] text-white/50 mt-2">
+                                    Logic: This boundary is the only thing preventing ${activeStrat.primaryFailure}. Without it, your 90-day target of "${target}" will fail.
+                                </p>
+                            </div>
+
+                            <!-- Strategic Footnote -->
+                            <div class="mt-8 text-center border-t border-white/5 pt-4">
+                                <p class="text-[9px] text-white/30 uppercase tracking-[0.3em]">System Intelligence: 2026 Task-Oriented Mode</p>
+                            </div>
+                        </div>
+                    `
+                })
+            };
+        }
 
     } catch (err) {
-        return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: "Logic Engine Failure", details: err.message })
+        };
     }
 };
