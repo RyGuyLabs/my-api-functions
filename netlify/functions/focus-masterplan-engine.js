@@ -1,85 +1,81 @@
-exports.handler = async (event) => {
+/**
+ * RyGuyLabs Strategic Engine: High-Stakes Auditor
+ * Aligned with Command Center UI v4.0
+ */
 
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json"
-  };
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-  try {
-
-    if (event.httpMethod === "OPTIONS") {
-      return { statusCode: 204, headers };
-    }
-
+exports.handler = async (event, context) => {
     if (event.httpMethod !== "POST") {
-      return {
-        statusCode: 405,
-        headers,
-        body: JSON.stringify({ error: "Method Not Allowed" })
-      };
+        return { statusCode: 405, body: "Method Not Allowed" };
     }
 
-    const body = JSON.parse(event.body || "{}");
+    const apiKey = ""; // Environment handles this
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
+    const systemInstruction = `
+        You are the RyGuyLabs Strategic Auditor. 
+        Philosophy: Money is Primary. Sleep is Secondary. 
+        Goal: Ruthless efficiency and overcoming the Prime Directive (Fear/Anxiety).
+        
+        Rules:
+        1. Rate inputs: S-TIER (High Leverage), B-TIER (Average), GARBAGE (Busy work/Avoidance).
+        2. Create a "Fear-Eraser": A 5-minute action that forces exposure to the user's reported fear.
+        3. Calculate "Opportunity Cost": A monetary or progress-based value lost if they don't act now.
+        4. No fluff. No "self-care" language. Only directives.
+    `;
 
-    const targetName = body.targetName || "that person";
-    const targetWin = body.targetWin || "the win";
-    const selections = Array.isArray(body.selections) ? body.selections : [];
+    const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.5-flash-preview-09-2025",
+        systemInstruction: systemInstruction
+    });
 
-    if (selections.length === 0) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: "Invalid selections array" })
-      };
+    try {
+        const { area, today, impact, fear } = JSON.parse(event.body);
+
+        const prompt = `
+            AUDIT DATA:
+            Area: ${area}
+            Immediate Task: ${today}
+            Leverage Move: ${impact}
+            Reported Anxiety/Fear: ${fear}
+            
+            Return JSON only:
+            {
+                "auditRating": "S-TIER" | "B-TIER" | "GARBAGE",
+                "feedback": "A ruthless 1-sentence critique of their choices.",
+                "fearEraser": "A specific 5-minute task to kill the fear reported.",
+                "opportunityCost": "Estimated $$$ or progress loss per day of delay.",
+                "directive": "A 10-word maximum command for the next 4 hours.",
+                "revenueProjection": "High-level impact statement.",
+                "path": "Step 1. Step 2. Step 3."
+            }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+        
+        // Ensure clean JSON output
+        const cleanedJson = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const auditResult = JSON.parse(cleanedJson);
+
+        return {
+            statusCode: 200,
+            headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*" 
+            },
+            body: JSON.stringify(auditResult)
+        };
+
+    } catch (error) {
+        console.error("Audit Engine Failure:", error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ 
+                error: "Strategic Engine Failure",
+                feedback: "The system crashed under the weight of low-leverage inputs. Re-align and try again."
+            })
+        };
     }
-
-    const totalScore = selections.reduce((sum, val) => sum + Number(val || 0), 0);
-
-    let title, color, desc, quote;
-
-    if (totalScore >= 60) {
-      title = "The Golden Cage";
-      color = "#00f2ff";
-      desc = `You're looking at ${targetName}'s ${targetWin}, but you aren't seeing the bars. The true cost here is freedom. They have the trophy, but they've signed over their time and soul to keep it.`;
-      quote = "Prestige is the trophy you get for winning a race you didn’t want.";
-    }
-    else if (totalScore >= 30) {
-      title = "The Paper Tiger";
-      color = "#ffae00";
-      desc = `${targetName} has high visibility but low internal stability. The ${targetWin} is likely masking deeper instability.`;
-      quote = "Most people don’t want success. They want comparison dominance.";
-    }
-    else {
-      title = "The Real Deal";
-      color = "#00ff88";
-      desc = `${targetName} may have earned this ${targetWin} with genuine balance. Use it as data, not envy fuel.`;
-      quote = "The only real debt is living someone else’s life.";
-    }
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        totalScore,
-        title,
-        color,
-        desc,
-        quote
-      })
-    };
-
-  } catch (err) {
-
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({
-        error: "Server Error",
-        message: err.message
-      })
-    };
-
-  }
 };
