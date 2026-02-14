@@ -1,4 +1,3 @@
-// reality-check.js
 exports.handler = async function(event, context) {
   // Set standard headers for CORS
   const headers = {
