@@ -1,5 +1,5 @@
 /**
- * RYGUY LABS | THE STOCKHOLM CLOSE BACKEND (V2 - ENHANCED)
+ * RYGUY LABS | THE STOCKHOLM CLOSE BACKEND (V3 - HIGH DIMENSIONALITY)
  * PATH: /.netlify/functions/stockholm-close
  */
 
@@ -16,44 +16,58 @@ exports.handler = async (event) => {
     try {
         const { 
             projectName, 
-            investmentLevel, 
             dayZeroResponse, 
+            investmentLevel, 
             hourlyValue, 
-            yearsLeft,
-            emotionalDrain 
+            emotionalDrain,
+            marketSentiment,
+            revenueTrajectory,
+            teamFriction,
+            lastMajorWin
         } = JSON.parse(event.body);
 
-        // --- THE HEURISTIC ENGINE (Proprietary Logic) ---
+        // --- ENHANCED HEURISTIC ENGINE ---
         
-        // 1. Opportunity Cost Calculation
-        // If they spend 20 hours a week on a dead project for 1 more year...
-        const weeklyHours = 20; 
+        // 1. Opportunity Cost (Calculated on 30 hours/week for serious commitments)
+        const weeklyHours = 30; 
         const yearlyHours = weeklyHours * 52;
-        const potentialLoss = yearlyHours * (hourlyValue || 50);
+        const potentialLoss = yearlyHours * (hourlyValue || 100);
         
-        // 2. The Stockholm Index (0-100)
-        let stockholmIndex = 0;
-        if (dayZeroResponse === "no") stockholmIndex += 60;
-        if (investmentLevel === "high") stockholmIndex += 25;
-        if (emotionalDrain === "high") stockholmIndex += 15;
+        // 2. Multi-Layered Stockholm Index (Max 100)
+        let score = 0;
+        if (dayZeroResponse === "no") score += 40;
+        if (investmentLevel === "high") score += 15;
+        if (emotionalDrain === "high") score += 10;
+        if (marketSentiment === "dying") score += 15;
+        if (revenueTrajectory === "declining") score += 10;
+        if (teamFriction === "toxic") score += 10;
 
-        // 3. Status Determination
+        // 3. Dynamic Narrative Generation (The "AI" Feel)
         let status = "";
         let recommendation = "";
         let pivotPath = "";
+        let diagnosis = "";
 
-        if (stockholmIndex >= 80) {
-            status = "SUNK COST TRAP (CRITICAL)";
-            recommendation = `You are currently burning approximately $${potentialLoss.toLocaleString()} per year in opportunity cost.`;
-            pivotPath = "TOTAL EJECT: Stop all operations within 48 hours. Redirect this energy into a 'Day Zero' project immediately.";
-        } else if (stockholmIndex >= 50) {
-            status = "ZOMBIE PROJECT";
-            recommendation = "This project is neither dead nor alive. It consumes just enough resources to keep you from starting something great.";
-            pivotPath = "AGGRESSIVE PIVOT: Strip the project down to its 1 most valuable feature. Kill the rest. Re-evaluate in 14 days.";
+        if (score >= 75) {
+            status = "TERMINAL SUNK-COST SYNDROME";
+            diagnosis = `The combination of ${marketSentiment} market sentiment and ${teamFriction} team dynamics suggests this isn't just a project—it's a liability. Your "Day Zero" intuition is correct: you are guarding a graveyard.`;
+            recommendation = `EJECT PROTOCOL: You are incinerating $${potentialLoss.toLocaleString()} of potential yearly wealth. Every hour spent here is a double loss (the time spent + the opportunity missed).`;
+            pivotPath = "IMMEDIATE LIQUIDATION: Sell assets, fire clients, or archive code. Do not 'transition'—just stop.";
+        } else if (score >= 45) {
+            status = "STRATEGIC STAGNATION (ZOMBIE)";
+            diagnosis = `With a ${revenueTrajectory} trajectory and ${emotionalDrain} emotional drain, this project is "walking dead." It's not failing enough to quit, but not winning enough to matter.`;
+            recommendation = `The $${potentialLoss.toLocaleString()} burn rate is tolerable now, but it will become your ceiling. You are trading your greatness for "fine."`;
+            pivotPath = "THE 80/20 PURGE: Identify the 20% of this project that actually works. Kill the other 80% within 7 days. If the needle doesn't move, Eject.";
         } else {
-            status = "STRATEGIC ASSET";
-            recommendation = "You are in the clear, but stay vigilant. Sunk cost bias can creep in as investment grows.";
-            pivotPath = "DOUBLE DOWN: Since you would choose this today, increase your intensity. Speed is your only protection.";
+            status = "FOUNDATIONAL GROWTH";
+            diagnosis = `Despite the ${investmentLevel} investment, your Day Zero alignment is strong. The ${marketSentiment} market outlook suggests you are in the right place at the right time.`;
+            recommendation = "Maintain current velocity. Your opportunity cost is an investment, not a loss.";
+            pivotPath = "INTENSIFY: Aggressively automate the mundane. You have Day Zero clarity—don't waste it on slow execution.";
+        }
+
+        // Add a specialized insight based on "Last Major Win"
+        if (lastMajorWin === "ancient") {
+            diagnosis += " Crucial Note: Your lack of recent wins indicates you are living on nostalgia, not momentum.";
         }
 
         return {
@@ -61,8 +75,9 @@ exports.handler = async (event) => {
             headers,
             body: JSON.stringify({
                 status,
-                index: stockholmIndex,
+                index: Math.min(score, 100),
                 opportunityCost: potentialLoss,
+                diagnosis,
                 recommendation,
                 pivotPath,
                 project: projectName
