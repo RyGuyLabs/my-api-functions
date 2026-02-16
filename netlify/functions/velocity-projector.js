@@ -1,7 +1,7 @@
 /**
- * RYGUY LABS - VELOCITY PROJECTOR BACKEND
+ * RYGUY LABS - STRATEGIC VELOCITY ENGINE
  * Path: /netlify/functions/velocity-projector.js
- * Proprietary compounding algorithms for revenue projection.
+ * Version: 5.0.0 - Multi-Scenario & Mastery Curve Logic
  */
 
 exports.handler = async (event, context) => {
@@ -16,36 +16,56 @@ exports.handler = async (event, context) => {
     try {
         const { velocity, dividend, factor } = JSON.parse(event.body);
 
-        // Validation
         if (!velocity || !dividend) {
-            return { statusCode: 400, headers, body: JSON.stringify({ error: "MISSING_NUCLEUS_DATA" }) };
+            return { statusCode: 400, headers, body: JSON.stringify({ error: "NUCLEUS_INCOMPLETE" }) };
         }
 
-        // --- RYGUY PROPRIETARY LOGIC ---
         const workingDays = 22;
         const dailyBase = velocity * dividend;
         const monthlyBase = dailyBase * workingDays;
         
-        // Non-linear compounding logic (Simulation of skill acquisition)
-        // We apply a "Mastery Curve" where growth starts slow and accelerates
-        let trajectory = [];
-        let currentMonthly = monthlyBase;
-        const annualMultiplier = parseFloat(factor);
+        // Define Scenarios
+        const scenarios = [
+            { id: 'conservative', multiplier: 1.00, label: 'Linear Floor' },
+            { id: 'standard', multiplier: parseFloat(factor), label: 'RyGuy Standard' },
+            { id: 'aggressive', multiplier: Math.max(parseFloat(factor) * 1.5, 1.25), label: 'Dominant Producer' }
+        ];
 
-        for (let m = 1; m <= 12; m++) {
-            trajectory.push({
-                month: `M${m}`,
-                revenue: Math.round(currentMonthly),
-                cumulative: Math.round(currentMonthly * m) // Simplified for projection
-            });
-            
-            // Compounding happens monthly based on the factor
-            // Factor of 1.10 = 10% annual increase, split into monthly compounding steps
-            const monthlyGrowth = 1 + ((annualMultiplier - 1) / 12);
-            currentMonthly *= monthlyGrowth;
-        }
+        const projection = scenarios.map(scenario => {
+            let trajectory = [];
+            let currentMonthly = monthlyBase;
+            let totalAnnual = 0;
 
-        const projectedAnnual = trajectory.reduce((acc, curr) => acc + curr.revenue, 0);
+            for (let m = 1; m <= 12; m++) {
+                trajectory.push({
+                    month: `M${m}`,
+                    revenue: Math.round(currentMonthly)
+                });
+                totalAnnual += currentMonthly;
+                // Monthly compounding logic
+                const monthlyGrowth = 1 + ((scenario.multiplier - 1) / 12);
+                currentMonthly *= monthlyGrowth;
+            }
+
+            return {
+                id: scenario.id,
+                label: scenario.label,
+                annual: Math.round(totalAnnual),
+                trajectory: trajectory
+            };
+        });
+
+        // Milestone Engine
+        const standardAnnual = projection.find(p => p.id === 'standard').annual;
+        const milestones = [];
+        if (standardAnnual > 100000) milestones.push({ icon: "◈", text: "Six-Figure Velocity Verified" });
+        if (standardAnnual > 300000) milestones.push({ icon: "⚡", text: "RyGuy Benchmark Exceeded" });
+        if (standardAnnual > 500000) milestones.push({ icon: "👑", text: "Market Dominance Imminent" });
+
+        // Tier Logic
+        let tier = "Standard Producer";
+        if (standardAnnual > 250000) tier = "Velocity Master";
+        if (standardAnnual > 500000) tier = "Apex Producer";
 
         return {
             statusCode: 200,
@@ -53,18 +73,15 @@ exports.handler = async (event, context) => {
             body: JSON.stringify({
                 daily: dailyBase,
                 monthly: monthlyBase,
-                annual: projectedAnnual,
-                trajectory: trajectory,
-                protocol: "V4.0_STABLE",
+                scenarios: projection,
+                milestones: milestones,
+                tier: tier,
+                protocol: "V5.0_STABLE",
                 timestamp: new Date().toISOString()
             })
         };
 
     } catch (error) {
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: "PROJECTION_ENGINE_FAILURE" })
-        };
+        return { statusCode: 500, headers, body: JSON.stringify({ error: "ENGINE_FAULT" }) };
     }
 };
