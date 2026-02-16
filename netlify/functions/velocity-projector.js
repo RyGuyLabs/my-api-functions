@@ -1,7 +1,7 @@
 /**
  * RYGUY LABS - STRATEGIC VELOCITY ENGINE
  * Path: /netlify/functions/velocity-projector.js
- * Version: 5.0.0 - Multi-Scenario & Mastery Curve Logic
+ * Version: 5.0.0 - Non-linear Mastery Curve & Multi-Scenario Logic
  */
 
 exports.handler = async (event, context) => {
@@ -16,22 +16,29 @@ exports.handler = async (event, context) => {
     try {
         const { velocity, dividend, factor } = JSON.parse(event.body);
 
+        // Nucleus Guard
         if (!velocity || !dividend) {
-            return { statusCode: 400, headers, body: JSON.stringify({ error: "NUCLEUS_INCOMPLETE" }) };
+            return { 
+                statusCode: 400, 
+                headers, 
+                body: JSON.stringify({ error: "NUCLEUS_INCOMPLETE", message: "Velocity and Dividend required." }) 
+            };
         }
 
         const workingDays = 22;
         const dailyBase = velocity * dividend;
         const monthlyBase = dailyBase * workingDays;
-        
-        // Define Scenarios
-        const scenarios = [
-            { id: 'conservative', multiplier: 1.00, label: 'Linear Floor' },
-            { id: 'standard', multiplier: parseFloat(factor), label: 'RyGuy Standard' },
-            { id: 'aggressive', multiplier: Math.max(parseFloat(factor) * 1.5, 1.25), label: 'Dominant Producer' }
+        const annualFactor = parseFloat(factor);
+
+        // 1. Scenario Definitions
+        const scenariosConfig = [
+            { id: 'cons', label: 'Conservative (Linear)', growthScale: 1.0 },
+            { id: 'std', label: 'RyGuy Standard', growthScale: annualFactor },
+            { id: 'agg', label: 'Aggressive (Dominant)', growthScale: Math.max(annualFactor * 1.5, 1.25) }
         ];
 
-        const projection = scenarios.map(scenario => {
+        // 2. Trajectory Generation with Non-linear Skill Curve
+        const scenarios = scenariosConfig.map(config => {
             let trajectory = [];
             let currentMonthly = monthlyBase;
             let totalAnnual = 0;
@@ -42,30 +49,44 @@ exports.handler = async (event, context) => {
                     revenue: Math.round(currentMonthly)
                 });
                 totalAnnual += currentMonthly;
-                // Monthly compounding logic
-                const monthlyGrowth = 1 + ((scenario.multiplier - 1) / 12);
+
+                // Non-linear Skill Curve Modifier: 
+                // Growth accelerates as "M" increases (m/12)^1.5 to simulate compounding skill acquisition.
+                const skillModifier = Math.pow(m / 12, 1.5);
+                const monthlyGrowth = 1 + (((config.growthScale - 1) / 12) * skillModifier);
+                
                 currentMonthly *= monthlyGrowth;
             }
 
             return {
-                id: scenario.id,
-                label: scenario.label,
+                id: config.id,
+                label: config.label,
                 annual: Math.round(totalAnnual),
                 trajectory: trajectory
             };
         });
 
-        // Milestone Engine
-        const standardAnnual = projection.find(p => p.id === 'standard').annual;
-        const milestones = [];
-        if (standardAnnual > 100000) milestones.push({ icon: "◈", text: "Six-Figure Velocity Verified" });
-        if (standardAnnual > 300000) milestones.push({ icon: "⚡", text: "RyGuy Benchmark Exceeded" });
-        if (standardAnnual > 500000) milestones.push({ icon: "👑", text: "Market Dominance Imminent" });
+        const standardPath = scenarios.find(s => s.id === 'std');
+        const annualTotal = standardPath.annual;
 
-        // Tier Logic
+        // 3. Dynamic Milestone Engine
+        const milestones = [];
+        if (annualTotal >= 100000) milestones.push({ icon: "◈", text: "Six-Figure Target Locked" });
+        if (annualTotal >= 300000) milestones.push({ icon: "⚡", text: "RyGuy Standard Active" });
+        if (annualTotal >= 500000) milestones.push({ icon: "👑", text: "Market Apex Verified" });
+        if (dailyBase >= 2000) milestones.push({ icon: "⚛", text: "Daily Floor Protocol Cleared" });
+
+        // 4. Statistics Cards Logic
+        const stats = {
+            avgMonthlyGrowth: ((annualFactor - 1) / 12).toFixed(4),
+            peakMonth: standardPath.trajectory[11].revenue,
+            cumulativeAnnual: annualTotal
+        };
+
+        // 5. Tier Assessment
         let tier = "Standard Producer";
-        if (standardAnnual > 250000) tier = "Velocity Master";
-        if (standardAnnual > 500000) tier = "Apex Producer";
+        if (annualTotal > 250000) tier = "Velocity Master";
+        if (annualTotal > 500000) tier = "Apex Producer";
 
         return {
             statusCode: 200,
@@ -73,8 +94,10 @@ exports.handler = async (event, context) => {
             body: JSON.stringify({
                 daily: dailyBase,
                 monthly: monthlyBase,
-                scenarios: projection,
+                annual: annualTotal,
+                scenarios: scenarios,
                 milestones: milestones,
+                stats: stats,
                 tier: tier,
                 protocol: "V5.0_STABLE",
                 timestamp: new Date().toISOString()
@@ -82,6 +105,10 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        return { statusCode: 500, headers, body: JSON.stringify({ error: "ENGINE_FAULT" }) };
+        return { 
+            statusCode: 500, 
+            headers, 
+            body: JSON.stringify({ error: "ENGINE_FAULT", message: error.message }) 
+        };
     }
 };
