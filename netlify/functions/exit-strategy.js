@@ -1,5 +1,5 @@
 /**
- * RyGuyLabs - Clean Exit Strategy Backend Logic
+ * RyGuyLabs - Clean Exit Strategy Evaluation Logic
  * File: exit-strategy.js (Netlify Serverless Function)
  */
 
@@ -9,47 +9,53 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        const data = JSON.parse(event.body);
+        const body = JSON.parse(event.body);
+        
+        // INPUT PARSING
+        const target = body.target || "Current Venture";
+        const weeklyHours = parseFloat(body.hours) || 0;
+        const hourlyRate = parseFloat(body.rate) || 0;
+        const directExpenses = parseFloat(body.expenses) || 0;
+        const missedProfits = parseFloat(body.missedProfit) || 0;
 
-        // LEVERAGE ALGORITHM
-        // Calculate the total temporal sink
-        const weeklyHours = parseInt(data.hours) || 0;
-        const totalMonths = parseInt(data.duration) || 0;
-        const totalHoursSunk = weeklyHours * 4 * totalMonths;
+        // ALGORITHMIC CALCULATIONS
+        const annualTimeCost = weeklyHours * 52 * hourlyRate;
+        const leakTotal = directExpenses + missedProfits;
+        const totalExposure = annualTimeCost + leakTotal;
 
-        // Calculate total financial sink
-        const capitalInvested = parseFloat(data.capital) || 0;
-        const moneyLost = parseFloat(data.moneyLost) || 0;
-        const totalSunkFinancial = capitalInvested + moneyLost;
+        // VERDICT LOGIC
+        // If the total opportunity cost + leak is high relative to typical startup windows
+        // we suggest a pivot. This is an evaluation tool, not a blind quiting tool.
+        let shouldPivot = false;
+        let message = "";
 
-        // Determine Verdict Severity
-        let verdict = "SOFT FADE";
-        if (totalHoursSunk > 500 || totalSunkFinancial > 10000) {
-            verdict = "CLEAN CUT";
+        if (totalExposure > 100000) {
+            shouldPivot = true;
+            message = `The combined value drain of ${target} is currently exceeding high-leverage benchmarks. Reclaiming this energy for your primary dream is statistically superior.`;
+        } else if (leakTotal > annualTimeCost * 0.5) {
+            shouldPivot = true;
+            message = `Direct leakage and missed profits are disproportionately high compared to your time investment. This structure is inefficient.`;
+        } else {
+            shouldPivot = false;
+            message = `Your current exposure in ${target} is within manageable growth limits. Optimization and expansion of this venture is recommended over abandonment.`;
         }
-        if (totalHoursSunk > 2000 || totalSunkFinancial > 50000) {
-            verdict = "IMMEDIATE EXIT";
-        }
 
-        // Return calculated diagnostics
         return {
             statusCode: 200,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                verdict: verdict,
-                totalHours: totalHoursSunk.toLocaleString(),
-                totalSunk: totalSunkFinancial.toLocaleString(),
-                hours: weeklyHours,
-                target: data.target,
-                reclaimed: data.reclaimed,
-                fear: data.fear
+                shouldPivot,
+                message,
+                annualTimeCost: annualTimeCost.toLocaleString(),
+                leakTotal: leakTotal.toLocaleString(),
+                target
             })
         };
 
     } catch (error) {
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "Failed to process diagnostic logic" })
+            body: JSON.stringify({ error: "Diagnostic calculation failed." })
         };
     }
 };
