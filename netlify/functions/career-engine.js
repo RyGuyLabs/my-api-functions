@@ -1,6 +1,6 @@
 /**
  * RyGuyLabs - Career Alignment Engine
- * Version 2.4 - Stable v1 API Route
+ * Version 2.5 - Stable v1 Handshake + Logic Restoration
  */
 
 exports.handler = async (event, context) => {
@@ -23,29 +23,37 @@ exports.handler = async (event, context) => {
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: "Config Error", message: "API Key missing." })
+                body: JSON.stringify({ error: "Config Error", message: "API Key missing in Netlify environment." })
             };
         }
 
-        // Switching to the STABLE v1 API to ensure model 'gemini-1.5-flash' is found
-        const baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
-        const url = `${baseUrl}?key=${apiKey}`;
+        // STABLE v1 URL
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{ 
                 parts: [{ 
-                    text: `Identify a high-performance career for this profile:
+                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine. 
+                    PRIME DIRECTIVE: Help users overcome social anxiety and fear to achieve their high-performance dreams. 
+                    
+                    USER DATA:
                     Hobbies: ${hobbies}
                     Skills: ${skills}
                     Talents: ${talents}
                     Location: ${country}
 
-                    Return ONLY a VALID JSON object (no markdown, no backticks):
+                    TASK:
+                    1. Identify a career path that aligns these traits.
+                    2. Calculate an Alignment Score based on trait synergy.
+                    3. Provide a task-oriented Attainment Roadmap where money and progress are primary.
+                    4. Address potential fears/anxieties with logical reasoning.
+
+                    RETURN ONLY VALID JSON:
                     {
                         "careerTitle": "string",
                         "alignmentScore": number,
                         "earningPotential": "string",
-                        "attainmentPlan": ["step 1", "step 2", "step 3"],
+                        "attainmentPlan": ["step 1", "step 2", "step 3", "step 4"],
                         "reasoning": "string",
                         "searchKeywords": ["keyword1", "keyword2"]
                     }` 
@@ -53,7 +61,8 @@ exports.handler = async (event, context) => {
             }],
             generationConfig: {
                 temperature: 0.7,
-                responseMimeType: "application/json"
+                // Fixed the v1 field name from responseMimeType to response_mime_type
+                response_mime_type: "application/json"
             }
         };
 
@@ -66,20 +75,20 @@ exports.handler = async (event, context) => {
         const result = await response.json();
 
         if (!response.ok) {
-            console.error("Gemini Error:", JSON.stringify(result));
+            console.error("Gemini Handshake Error:", JSON.stringify(result));
             return {
                 statusCode: response.status,
                 headers,
                 body: JSON.stringify({ 
-                    error: "Upstream API Error", 
-                    message: result.error?.message || "Google API connection failed." 
+                    error: "Upstream Logic Error", 
+                    message: result.error?.message || "Connection succeeded but request was rejected." 
                 })
             };
         }
 
-        const rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         
-        // Handle potential string vs object returns
+        // Final safety check for JSON parsing
         const finalData = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
 
         return {
@@ -89,7 +98,7 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        console.error("Fatal Error:", error);
+        console.error("Critical Function Failure:", error);
         return {
             statusCode: 500,
             headers,
