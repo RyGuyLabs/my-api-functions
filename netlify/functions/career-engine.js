@@ -1,6 +1,6 @@
 /**
  * RyGuyLabs - Career Alignment Engine
- * Version 2.1 - URL Parse Fix
+ * Version 2.2 - Upstream Fix & Response Cleaning
  */
 
 exports.handler = async (event, context) => {
@@ -11,6 +11,7 @@ exports.handler = async (event, context) => {
         "Content-Type": "application/json"
     };
 
+    // Handle Preflight
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 200, headers, body: "OK" };
     }
@@ -23,28 +24,44 @@ exports.handler = async (event, context) => {
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: "API Key is missing in Netlify environment variables." })
+                body: JSON.stringify({ error: "Config Error", message: "API Key missing in Netlify." })
             };
         }
 
-        // Ensure URL is a clean string with no line breaks
-        const baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
-        const finalUrl = `${baseUrl}?key=${apiKey}`;
+        // Use the stable 1.5 Flash endpoint
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{ 
                 parts: [{ 
-                    text: `Align these: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}, Location: ${country}. 
-                    Return ONLY JSON: {"careerTitle":"","alignmentScore":0,"earningPotential":"","attainmentPlan":[],"reasoning":"","searchKeywords":[]}` 
+                    text: `Identify a high-performance career for this profile:
+                    Hobbies: ${hobbies}
+                    Skills: ${skills}
+                    Talents: ${talents}
+                    Location: ${country}
+
+                    Return a VALID JSON object exactly like this:
+                    {
+                        "careerTitle": "string",
+                        "alignmentScore": number,
+                        "earningPotential": "string",
+                        "attainmentPlan": ["step 1", "step 2", "step 3"],
+                        "reasoning": "string",
+                        "searchKeywords": ["keyword1", "keyword2"]
+                    }
+                    Important: Do not include any text before or after the JSON.` 
                 }] 
             }],
             generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.7
+                temperature: 1,
+                topP: 0.95,
+                topK: 40,
+                maxOutputTokens: 1024,
+                responseMimeType: "application/json"
             }
         };
 
-        const response = await fetch(finalUrl, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(apiPayload)
@@ -53,25 +70,37 @@ exports.handler = async (event, context) => {
         const result = await response.json();
 
         if (!response.ok) {
+            console.error("Gemini Error:", result);
             return {
                 statusCode: response.status,
                 headers,
-                body: JSON.stringify({ error: "Upstream API Error", details: result })
+                body: JSON.stringify({ 
+                    error: "Upstream API Error", 
+                    message: result.error?.message || "Google API rejected the request." 
+                })
             };
         }
 
-        const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        // Extract the text content
+        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        // Cleanup: Remove markdown backticks if Gemini accidentally included them
+        if (rawContent.includes("```")) {
+            rawContent = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
+        }
+
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(JSON.parse(rawText))
+            body: JSON.stringify(JSON.parse(rawContent))
         };
 
     } catch (error) {
+        console.error("Internal Error:", error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "URL or Parsing Error", message: error.message })
+            body: JSON.stringify({ error: "Logic Error", message: error.message })
         };
     }
 };
