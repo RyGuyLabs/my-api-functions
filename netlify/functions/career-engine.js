@@ -1,6 +1,6 @@
 /**
  * RyGuyLabs - Career Alignment Engine
- * Version 2.2 - Upstream Fix & Response Cleaning
+ * Version 2.3 - Model Identifier Fix (404 Resolved)
  */
 
 exports.handler = async (event, context) => {
@@ -11,7 +11,6 @@ exports.handler = async (event, context) => {
         "Content-Type": "application/json"
     };
 
-    // Handle Preflight
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 200, headers, body: "OK" };
     }
@@ -24,12 +23,13 @@ exports.handler = async (event, context) => {
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: "Config Error", message: "API Key missing in Netlify." })
+                body: JSON.stringify({ error: "Config Error", message: "API Key missing." })
             };
         }
 
-        // Use the stable 1.5 Flash endpoint
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        // Updated Model String to 'gemini-1.5-flash-latest' which is the standard for v1beta
+        const modelId = "gemini-1.5-flash-latest";
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{ 
@@ -49,14 +49,11 @@ exports.handler = async (event, context) => {
                         "reasoning": "string",
                         "searchKeywords": ["keyword1", "keyword2"]
                     }
-                    Important: Do not include any text before or after the JSON.` 
+                    No conversational text. No markdown formatting. Just the JSON object.` 
                 }] 
             }],
             generationConfig: {
-                temperature: 1,
-                topP: 0.95,
-                topK: 40,
-                maxOutputTokens: 1024,
+                temperature: 0.9,
                 responseMimeType: "application/json"
             }
         };
@@ -70,37 +67,34 @@ exports.handler = async (event, context) => {
         const result = await response.json();
 
         if (!response.ok) {
-            console.error("Gemini Error:", result);
+            console.error("Gemini Error Detail:", JSON.stringify(result));
             return {
                 statusCode: response.status,
                 headers,
                 body: JSON.stringify({ 
                     error: "Upstream API Error", 
-                    message: result.error?.message || "Google API rejected the request." 
+                    message: result.error?.message || "Model connection failed." 
                 })
             };
         }
 
-        // Extract the text content
         let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        // Cleanup: Remove markdown backticks if Gemini accidentally included them
-        if (rawContent.includes("```")) {
-            rawContent = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
-        }
+        // Ensure we handle cases where Gemini might return a string instead of pre-parsed JSON
+        const parsedContent = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
 
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(JSON.parse(rawContent))
+            body: JSON.stringify(parsedContent)
         };
 
     } catch (error) {
-        console.error("Internal Error:", error);
+        console.error("Internal Function Error:", error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "Logic Error", message: error.message })
+            body: JSON.stringify({ error: "Processing Error", message: error.message })
         };
     }
 };
