@@ -1,107 +1,116 @@
+/**
+ * RyGuyLabs - Career Alignment Engine
+ * Production Grade Serverless Function
+ */
+
 exports.handler = async (event, context) => {
-  // Handle Preflight OPTIONS request for CORS
-  if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: {
+    // MANDATORY: Universal Production Headers
+    const headers = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-      },
+        "Content-Type": "application/json"
     };
-  }
 
-  if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: "Method Not Allowed"
-    };
-  }
-
-  try {
-    const { hobbies, skills, talents, country } = JSON.parse(event.body);
-    const apiKey = process.env.FIRST_API_KEY;
-
-    if (!apiKey) {
-      return {
-        statusCode: 500,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Environment variable FIRST_API_KEY is missing." })
-      };
+    // 1. Handle Preflight OPTIONS
+    if (event.httpMethod === "OPTIONS") {
+        return { statusCode: 200, headers, body: "OK" };
     }
 
-    const systemPrompt = `You are a Career Alignment Engine. Your primary objective is to extract specific personal characteristics (hobbies, interests, skills, experience) from the user and align them with an ideal career path. You must provide clear steps for attainment and a realistic earning measure for their region.`;
+    // 2. Guard Method
+    if (event.httpMethod !== "POST") {
+        return { 
+            statusCode: 405, 
+            headers, 
+            body: JSON.stringify({ error: "Method Not Allowed" }) 
+        };
+    }
 
-    const userPrompt = `
-    User Profile Extraction:
-    - Hobbies & Interests: ${hobbies}
-    - Technical/Soft Skills: ${skills}
-    - Natural Talents: ${talents}
-    - Geographical Context: ${country}
+    try {
+        const { hobbies, skills, talents, country } = JSON.parse(event.body);
+        const apiKey = process.env.FIRST_API_KEY;
 
-    Based on these characteristics, generate a Career Alignment Blueprint.
-    Return ONLY a JSON object:
-    {
-        "careerTitle": "The specific ideal job role",
-        "alignmentScore": 98,
-        "earningPotential": "Annual salary range in local currency",
-        "attainmentPlan": [
-            "Specific educational or certification step",
-            "Practical experience or portfolio building step",
-            "Networking or application strategy"
-        ],
-        "reasoning": "A detailed explanation of how their specific hobbies and skills translate to success in this role.",
-        "searchKeywords": ["Job title 1", "Search term 2"]
-    }`;
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: userPrompt }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.7
+        if (!apiKey) {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ error: "Configuration Error: API Key Missing" })
+            };
         }
-      })
-    });
 
-    const result = await response.json();
+        const systemPrompt = `You are a Career Alignment Engine. Your objective is to extract characteristics (hobbies, interests, skills, talents) and align them with an ideal career path. You must provide clear steps for attainment and realistic earning for their region.`;
 
-    if (!response.ok) {
-      return {
-        statusCode: response.status,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Upstream API error", details: result })
-      };
+        const userPrompt = `
+        User Profile:
+        - Hobbies: ${hobbies}
+        - Skills: ${skills}
+        - Talents: ${talents}
+        - Location: ${country}
+
+        Generate a Career Alignment Blueprint. 
+        IMPORTANT: Return ONLY a valid JSON object. No intro text.
+        Structure:
+        {
+            "careerTitle": "string",
+            "alignmentScore": number,
+            "earningPotential": "string",
+            "attainmentPlan": ["string", "string", "string"],
+            "reasoning": "string",
+            "searchKeywords": ["string", "string"]
+        }`;
+
+        // Using the stable flash-preview endpoint compatible with standard JSON configs
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    temperature: 0.7
+                }
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            console.error("Upstream Error:", result);
+            return {
+                statusCode: response.status,
+                headers,
+                body: JSON.stringify({ error: "AI Engine Sync Failed", details: result.error?.message || "Unknown error" })
+            };
+        }
+
+        // Validate structure
+        const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) {
+            throw new Error("Empty response from AI engine");
+        }
+
+        // Parse and Return
+        const careerData = JSON.parse(rawText);
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify(careerData)
+        };
+
+    } catch (error) {
+        console.error("Internal Error:", error);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ 
+                error: "Internal Processing Error", 
+                message: error.message,
+                tip: "Check if the API Key is set in Netlify Environment Variables."
+            })
+        };
     }
-
-    if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
-      return {
-        statusCode: 500,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "No data returned from API" })
-      };
-    }
-
-    const careerData = JSON.parse(result.candidates[0].content.parts[0].text);
-
-    return {
-      statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify(careerData)
-    };
-
-  } catch (error) {
-    return {
-      statusCode: 500,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ error: "Internal processing error", message: error.message })
-    };
-  }
 };
