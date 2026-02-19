@@ -1,6 +1,6 @@
 /**
  * RyGuyLabs - Career Alignment Engine
- * Version 2.3 - Model Identifier Fix (404 Resolved)
+ * Version 2.4 - Stable v1 API Route
  */
 
 exports.handler = async (event, context) => {
@@ -27,9 +27,9 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Updated Model String to 'gemini-1.5-flash-latest' which is the standard for v1beta
-        const modelId = "gemini-1.5-flash-latest";
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        // Switching to the STABLE v1 API to ensure model 'gemini-1.5-flash' is found
+        const baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
+        const url = `${baseUrl}?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{ 
@@ -40,7 +40,7 @@ exports.handler = async (event, context) => {
                     Talents: ${talents}
                     Location: ${country}
 
-                    Return a VALID JSON object exactly like this:
+                    Return ONLY a VALID JSON object (no markdown, no backticks):
                     {
                         "careerTitle": "string",
                         "alignmentScore": number,
@@ -48,12 +48,11 @@ exports.handler = async (event, context) => {
                         "attainmentPlan": ["step 1", "step 2", "step 3"],
                         "reasoning": "string",
                         "searchKeywords": ["keyword1", "keyword2"]
-                    }
-                    No conversational text. No markdown formatting. Just the JSON object.` 
+                    }` 
                 }] 
             }],
             generationConfig: {
-                temperature: 0.9,
+                temperature: 0.7,
                 responseMimeType: "application/json"
             }
         };
@@ -67,30 +66,30 @@ exports.handler = async (event, context) => {
         const result = await response.json();
 
         if (!response.ok) {
-            console.error("Gemini Error Detail:", JSON.stringify(result));
+            console.error("Gemini Error:", JSON.stringify(result));
             return {
                 statusCode: response.status,
                 headers,
                 body: JSON.stringify({ 
                     error: "Upstream API Error", 
-                    message: result.error?.message || "Model connection failed." 
+                    message: result.error?.message || "Google API connection failed." 
                 })
             };
         }
 
-        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        // Ensure we handle cases where Gemini might return a string instead of pre-parsed JSON
-        const parsedContent = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+        const rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        // Handle potential string vs object returns
+        const finalData = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
 
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(parsedContent)
+            body: JSON.stringify(finalData)
         };
 
     } catch (error) {
-        console.error("Internal Function Error:", error);
+        console.error("Fatal Error:", error);
         return {
             statusCode: 500,
             headers,
