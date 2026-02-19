@@ -1,6 +1,6 @@
 /**
  * RyGuyLabs - Career Alignment Engine
- * Version 2.5 - Stable v1 Handshake + Logic Restoration
+ * Version 2.6 - Universal Handshake & Logic Restoration
  */
 
 exports.handler = async (event, context) => {
@@ -23,46 +23,45 @@ exports.handler = async (event, context) => {
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: "Config Error", message: "API Key missing in Netlify environment." })
+                body: JSON.stringify({ error: "Config Error", message: "API Key missing." })
             };
         }
 
-        // STABLE v1 URL
+        // Using v1 stable - most reliable for model availability
         const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{ 
                 parts: [{ 
-                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine. 
-                    PRIME DIRECTIVE: Help users overcome social anxiety and fear to achieve their high-performance dreams. 
-                    
-                    USER DATA:
+                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
+                    PRIME DIRECTIVE: Help users overcome social anxiety and fear. 
+                    Schedules must be task-oriented. Money and progress are primary; sleep is secondary.
+
+                    USER PROFILE:
                     Hobbies: ${hobbies}
                     Skills: ${skills}
                     Talents: ${talents}
                     Location: ${country}
 
                     TASK:
-                    1. Identify a career path that aligns these traits.
-                    2. Calculate an Alignment Score based on trait synergy.
-                    3. Provide a task-oriented Attainment Roadmap where money and progress are primary.
-                    4. Address potential fears/anxieties with logical reasoning.
+                    Align these traits to a high-performance career. Provide a roadmap focused on execution.
 
-                    RETURN ONLY VALID JSON:
+                    OUTPUT FORMAT:
+                    Return ONLY a raw JSON object. No markdown, no "json" tags, no preamble.
                     {
                         "careerTitle": "string",
                         "alignmentScore": number,
                         "earningPotential": "string",
-                        "attainmentPlan": ["step 1", "step 2", "step 3", "step 4"],
+                        "attainmentPlan": ["string", "string", "string", "string"],
                         "reasoning": "string",
-                        "searchKeywords": ["keyword1", "keyword2"]
+                        "searchKeywords": ["string", "string"]
                     }` 
                 }] 
             }],
             generationConfig: {
-                temperature: 0.7,
-                // Fixed the v1 field name from responseMimeType to response_mime_type
-                response_mime_type: "application/json"
+                temperature: 0.8,
+                maxOutputTokens: 1000
+                // response_mime_type removed to prevent "Unknown name" 400 errors
             }
         };
 
@@ -80,16 +79,24 @@ exports.handler = async (event, context) => {
                 statusCode: response.status,
                 headers,
                 body: JSON.stringify({ 
-                    error: "Upstream Logic Error", 
-                    message: result.error?.message || "Connection succeeded but request was rejected." 
+                    error: "Upstream Error", 
+                    message: result.error?.message || "Google rejected the request payload." 
                 })
             };
         }
 
-        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
         
-        // Final safety check for JSON parsing
-        const finalData = typeof rawContent === 'string' ? JSON.parse(rawContent) : rawContent;
+        // ROBUST JSON EXTRACTION: Finds the first { and last } to strip away any conversational junk
+        const startBracket = rawContent.indexOf('{');
+        const endBracket = rawContent.lastIndexOf('}');
+        
+        if (startBracket === -1 || endBracket === -1) {
+            throw new Error("AI failed to return valid JSON structure.");
+        }
+
+        const jsonString = rawContent.substring(startBracket, endBracket + 1);
+        const finalData = JSON.parse(jsonString);
 
         return {
             statusCode: 200,
@@ -98,7 +105,7 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        console.error("Critical Function Failure:", error);
+        console.error("Critical Failure:", error);
         return {
             statusCode: 500,
             headers,
