@@ -1,54 +1,112 @@
-const https = require('https');
+/**
+ * RyGuyLabs - Career Alignment Engine
+ * Version 2.7 - Final Routing & Logic Restoration
+ */
+const fetch = require('node-fetch');
 
-exports.handler = async (e) => {
-    const h = {
+exports.handler = async (event, context) => {
+    const headers = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Content-Type": "application/json"
     };
-    
-    if (e.httpMethod === "OPTIONS") return { statusCode: 200, headers: h, body: "" };
+
+    if (event.httpMethod === "OPTIONS") {
+        return { statusCode: 200, headers, body: "OK" };
+    }
 
     try {
-        if (!e.body) throw new Error("Missing request body");
-        const { hobbies, skills, talents, country } = JSON.parse(e.body);
-        const key = process.env.CAREER_BUILD_KEY;
-        if (!key) throw new Error("Server configuration error: Key missing");
+        const { hobbies, skills, talents, country } = JSON.parse(event.body);
+        const apiKey = process.env.FIRST_API_KEY;
 
-        const apiPayload = JSON.stringify({
+        if (!apiKey) {
+            return {
+                statusCode: 500,
+                headers,
+                body: JSON.stringify({ error: "Config Error", message: "API Key missing." })
+            };
+        }
+
+        // Switching back to v1beta with the most compatible model string
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+        const apiPayload = {
             contents: [{ 
                 parts: [{ 
-                    text: `Return JSON ONLY. PRIME DIRECTIVE: Overcome social anxiety/fear to achieve high-performance dreams. 
-                    Data: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}, Location: ${country}.
-                    Required Fields: careerTitle, alignmentScore (number), earningPotential, attainmentPlan (array), reasoning, searchKeywords (array).` 
+                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
+                    PRIME DIRECTIVE: Help users overcome social anxiety and fear to achieve high-performance dreams. 
+                    SCHEDULE RULES: Entirely task-oriented. Money and progress are primary; sleep is secondary. No wind-down time.
+
+                    USER DATA:
+                    Hobbies: ${hobbies}
+                    Skills: ${skills}
+                    Talents: ${talents}
+                    Location: ${country}
+
+                    TASK:
+                    Align these traits to a high-performance career. Return a JSON object ONLY.
+
+                    FORMAT:
+                    {
+                        "careerTitle": "string",
+                        "alignmentScore": number,
+                        "earningPotential": "string",
+                        "attainmentPlan": ["step 1", "step 2", "step 3", "step 4"],
+                        "reasoning": "string",
+                        "searchKeywords": ["keyword1", "keyword2"]
+                    }` 
                 }] 
             }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
+            generationConfig: {
+                temperature: 0.8,
+                // response_mime_type is omitted to ensure maximum compatibility across API versions
+            }
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(apiPayload)
         });
 
-        const result = await new Promise((resolve, reject) => {
-            const req = https.request(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${key}`,
-                { method: 'POST', headers: { 'Content-Type': 'application/json' } },
-                (res) => {
-                    let data = '';
-                    res.on('data', (chunk) => data += chunk);
-                    res.on('end', () => resolve({ ok: res.statusCode === 200, status: res.statusCode, body: JSON.parse(data) }));
-                }
-            );
-            req.on('error', reject);
-            req.write(apiPayload);
-            req.end();
-        });
+        const result = await response.json();
 
-        if (!result.ok) throw new Error(result.body.error?.message || "Gemini API Error");
+        if (!response.ok) {
+            console.error("Gemini Error:", JSON.stringify(result));
+            return {
+                statusCode: response.status,
+                headers,
+                body: JSON.stringify({ 
+                    error: "Upstream Error", 
+                    message: result.error?.message || "Google API handshake failed." 
+                })
+            };
+        }
 
-        const content = result.body.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!content) throw new Error("AI failed to generate a response");
+        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        
+        // Extract JSON block even if the AI adds markdown backticks
+        const start = rawContent.indexOf('{');
+        const end = rawContent.lastIndexOf('}');
+        if (start === -1 || end === -1) throw new Error("Invalid AI Response Format");
+        
+        const jsonString = rawContent.substring(start, end + 1);
+        const finalData = JSON.parse(jsonString);
 
-        return { statusCode: 200, headers: h, body: content };
-    } catch (err) {
-        return { statusCode: 500, headers: h, body: JSON.stringify({ error: "Internal Error", message: err.message }) };
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify(finalData)
+        };
+
+    } catch (error) {
+        console.error("Internal Failure:", error);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: "Processing Error", message: error.message })
+        };
     }
 };
+
