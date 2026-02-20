@@ -1,6 +1,6 @@
 /**
  * RyGuyLabs - Career Alignment Engine
- * Version 2.7 - Final Routing & Logic Restoration
+ * Version 5.0 - Full Logic Restoration + CAREER_BUILD_KEY
  */
 
 exports.handler = async (event, context) => {
@@ -17,17 +17,16 @@ exports.handler = async (event, context) => {
 
     try {
         const { hobbies, skills, talents, country } = JSON.parse(event.body);
-        const apiKey = process.env.FIRST_API_KEY;
+        const apiKey = process.env.CAREER_BUILD_KEY;
 
         if (!apiKey) {
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: "Config Error", message: "API Key missing." })
+                body: JSON.stringify({ error: "Config Error", message: "CAREER_BUILD_KEY is missing." })
             };
         }
 
-        // Switching back to v1beta with the most compatible model string
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const apiPayload = {
@@ -35,7 +34,7 @@ exports.handler = async (event, context) => {
                 parts: [{ 
                     text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
                     PRIME DIRECTIVE: Help users overcome social anxiety and fear to achieve high-performance dreams. 
-                    SCHEDULE RULES: Entirely task-oriented. Money and progress are primary; sleep is secondary. No wind-down time.
+                    CORE RULES: Entirely task-oriented. Money and progress are primary; sleep is secondary. No wind-down time. Execution is the only priority.
 
                     USER DATA:
                     Hobbies: ${hobbies}
@@ -44,9 +43,11 @@ exports.handler = async (event, context) => {
                     Location: ${country}
 
                     TASK:
-                    Align these traits to a high-performance career. Return a JSON object ONLY.
-
-                    FORMAT:
+                    1. Align these traits to a specific high-performance career.
+                    2. Provide an attainment roadmap (4 steps) where execution is the only focus.
+                    3. Address how this path specifically bypasses their social anxieties through logical progress.
+                    
+                    OUTPUT: Return ONLY a raw JSON object:
                     {
                         "careerTitle": "string",
                         "alignmentScore": number,
@@ -58,8 +59,8 @@ exports.handler = async (event, context) => {
                 }] 
             }],
             generationConfig: {
-                temperature: 0.8,
-                // response_mime_type is omitted to ensure maximum compatibility across API versions
+                temperature: 0.85,
+                topP: 0.95
             }
         };
 
@@ -72,23 +73,19 @@ exports.handler = async (event, context) => {
         const result = await response.json();
 
         if (!response.ok) {
-            console.error("Gemini Error:", JSON.stringify(result));
+            console.error("Gemini Handshake Error:", JSON.stringify(result));
             return {
                 statusCode: response.status,
                 headers,
-                body: JSON.stringify({ 
-                    error: "Upstream Error", 
-                    message: result.error?.message || "Google API handshake failed." 
-                })
+                body: JSON.stringify({ error: "Upstream Error", message: result.error?.message })
             };
         }
 
-        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        
-        // Extract JSON block even if the AI adds markdown backticks
+        const rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const start = rawContent.indexOf('{');
         const end = rawContent.lastIndexOf('}');
-        if (start === -1 || end === -1) throw new Error("Invalid AI Response Format");
+        
+        if (start === -1 || end === -1) throw new Error("AI failed to return valid JSON.");
         
         const jsonString = rawContent.substring(start, end + 1);
         const finalData = JSON.parse(jsonString);
@@ -100,7 +97,7 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        console.error("Internal Failure:", error);
+        console.error("Function Failure:", error);
         return {
             statusCode: 500,
             headers,
