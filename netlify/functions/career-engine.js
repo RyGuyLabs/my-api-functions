@@ -9,11 +9,17 @@ exports.handler = async (e) => {
     if (e.httpMethod === "OPTIONS") return { statusCode: 200, headers: h, body: "" };
 
     try {
+        if (!e.body) throw new Error("Missing request body");
         const { hobbies, skills, talents, country } = JSON.parse(e.body);
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.CAREER_BUILD_KEY}`;
+        
+        const key = process.env.CAREER_BUILD_KEY;
+        if (!key) throw new Error("Server configuration error: Key missing");
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${key}`;
         
         const res = await fetch(url, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ 
                     parts: [{ 
@@ -22,16 +28,30 @@ exports.handler = async (e) => {
                         Required Fields: careerTitle, alignmentScore (number), earningPotential, attainmentPlan (array), reasoning, searchKeywords (array).` 
                     }] 
                 }],
-                generationConfig: { responseMimeType: "application/json" }
+                generationConfig: { 
+                    responseMimeType: "application/json",
+                    temperature: 0.7
+                }
             })
         });
 
         const d = await res.json();
         if (!res.ok) throw new Error(d.error?.message || "Gemini API Error");
 
-        let t = d.candidates[0].content.parts[0].text;
-        return { statusCode: 200, headers: h, body: t };
+        const content = d.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!content) throw new Error("AI failed to generate a response");
+
+        return { 
+            statusCode: 200, 
+            headers: h, 
+            body: content 
+        };
     } catch (err) {
-        return { statusCode: 500, headers: h, body: JSON.stringify({ error: err.message }) };
+        console.error("Handler Error:", err.message);
+        return { 
+            statusCode: 500, 
+            headers: h, 
+            body: JSON.stringify({ error: "Internal Server Error", message: err.message }) 
+        };
     }
 };
