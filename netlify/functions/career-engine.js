@@ -9,31 +9,28 @@ exports.handler = async (event) => {
     if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers, body: "OK" };
 
     try {
-        const { hobbies, skills, talents, country } = JSON.parse(event.body);
+        const body = JSON.parse(event.body);
         const apiKey = process.env.CAREER_BUILD_KEY;
 
-        // Using the most universal, stable endpoint and model name
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(url, {
             method: 'POST',
             body: JSON.stringify({
-                contents: [{ 
-                    parts: [{ 
-                        text: `SYSTEM: RyGuyLabs Career Engine. PRIME DIRECTIVE: Overcome fear/anxiety. Focus on task-execution and money. Return JSON ONLY: { "careerTitle": "string", "alignmentScore": 95, "earningPotential": "$100k+", "attainmentPlan": ["step1", "step2", "step3", "step4"], "reasoning": "string", "searchKeywords": ["k1"] }. DATA: ${hobbies}, ${skills}, ${talents}, ${country}` 
-                    }] 
-                }]
+                contents: [{ parts: [{ text: `Return JSON only: { "careerTitle": "AI Dev", "alignmentScore": 90, "earningPotential": "$150k", "attainmentPlan": ["Step1"], "reasoning": "Fit", "searchKeywords": ["AI"] }. Data: ${JSON.stringify(body)}` }] }]
             })
         });
 
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error?.message || "API Error");
+        if (!response.ok) {
+            console.error("Gemini Error:", result);
+            return { statusCode: 500, headers, body: JSON.stringify(result) };
+        }
 
         const text = result.candidates[0].content.parts[0].text;
-        const finalJson = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
-
-        return { statusCode: 200, headers, body: JSON.stringify(finalJson) };
+        return { statusCode: 200, headers, body: JSON.stringify(JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1))) };
     } catch (e) {
+        console.error("Internal Crash:", e.message);
         return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
     }
 };
