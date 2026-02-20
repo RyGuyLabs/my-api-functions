@@ -1,9 +1,9 @@
 exports.handler = async (e) => {
-    const h = { 
-        "Access-Control-Allow-Origin": "*", 
+    const h = {
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Content-Type": "application/json" 
+        "Content-Type": "application/json"
     };
     
     if (e.httpMethod === "OPTIONS") return { statusCode: 200, headers: h, body: "" };
@@ -14,8 +14,15 @@ exports.handler = async (e) => {
         
         const res = await fetch(url, {
             method: 'POST',
-            body: JSON.stringify({ 
-                contents: [{ parts: [{ text: `Return JSON only. Career advice for: ${hobbies}, ${skills}, ${talents}, ${country}. Follow Prime Directive.` }] }] 
+            body: JSON.stringify({
+                contents: [{ 
+                    parts: [{ 
+                        text: `Return JSON ONLY. PRIME DIRECTIVE: Overcome social anxiety/fear to achieve high-performance dreams. 
+                        Data: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}, Location: ${country}.
+                        Required Fields: careerTitle, alignmentScore (number), earningPotential, attainmentPlan (array), reasoning, searchKeywords (array).` 
+                    }] 
+                }],
+                generationConfig: { responseMimeType: "application/json" }
             })
         });
 
@@ -23,11 +30,8 @@ exports.handler = async (e) => {
         if (!res.ok) throw new Error(d.error?.message || "Gemini API Error");
 
         let t = d.candidates[0].content.parts[0].text;
-        const jsonMatch = t.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("Invalid JSON response");
-
-        return { statusCode: 200, headers: h, body: jsonMatch[0] };
+        return { statusCode: 200, headers: h, body: t };
     } catch (err) {
-        return { statusCode: 200, headers: h, body: JSON.stringify({ error: err.message }) };
+        return { statusCode: 500, headers: h, body: JSON.stringify({ error: err.message }) };
     }
 };
