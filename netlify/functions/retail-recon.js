@@ -3,6 +3,9 @@
  * RyGuyLabs – Sensitive market fee, profit & SEO logic
  */
 
+// Define environment variable for API calls
+const API_KEY = process.env.RETAIL_RECON_KEY || "";
+
 const MARKET_LOGIC = {
     categories: {
         standard: { ebayFee: 0.1325, poshFee: 0.20, vol: 0.05 },
