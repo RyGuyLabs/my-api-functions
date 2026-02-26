@@ -1,6 +1,7 @@
 /**
  * retail-recon.js
  * RyGuyLabs – Secure Market Intelligence Engine
+ * Netlify Function Compatible
  */
 
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
@@ -21,79 +22,65 @@ function rateLimit(ip) {
     const now = Date.now();
     const windowMs = 60 * 1000;
     const maxRequests = 15;
-
     if (!requestLog[ip]) requestLog[ip] = [];
     requestLog[ip] = requestLog[ip].filter(t => now - t < windowMs);
-
     if (requestLog[ip].length >= maxRequests) return false;
-
     requestLog[ip].push(now);
     return true;
 }
 
 function generateSEO({ title, description, keywords }) {
-    if (!title || !description) {
-        return { error: "Title and description required" };
-    }
-
+    if (!title || !description) return { error: "Title and description required" };
     return {
         seoTitle: `${title} | RyGuyLabs`,
-        seoDescription:
-            description.length > 160
-                ? description.slice(0, 157) + "..."
-                : description,
-        seoKeywords:
-            keywords && Array.isArray(keywords)
-                ? keywords.join(", ")
-                : ""
+        seoDescription: description.length > 160 ? description.slice(0, 157) + "..." : description,
+        seoKeywords: keywords && Array.isArray(keywords) ? keywords.join(", ") : ""
     };
 }
 
-export default async function handler(event) {
+module.exports = async function handler(event, context) {
+    // Netlify Functions don’t provide res.status like Express
+    const jsonResponse = (status, data) => ({
+        statusCode: status,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    });
+
+    if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
+
     try {
-        if (event.httpMethod !== "POST") {
-            return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
-        }
+        const reqBody = JSON.parse(event.body || "{}");
+        const ip = event.headers["x-forwarded-for"] || "unknown";
 
-        const req = { body: JSON.parse(event.body), headers: event.headers };
-        const ip = req.headers["x-forwarded-for"] || "unknown";
+        if (!rateLimit(ip)) return jsonResponse(429, { error: "Rate limit exceeded. Please wait." });
 
-        // 🔒 RATE LIMIT
-        if (!rateLimit(ip)) {
-            return { statusCode: 429, body: JSON.stringify({ error: "Rate limit exceeded. Please wait." }) };
-        }
-
-        const { action } = req.body;
+        const { action } = reqBody;
 
         // Optional API key protection
         if (API_KEY) {
-            const clientKey = req.headers["x-api-key"];
-            if (clientKey !== API_KEY) {
-                return { statusCode: 403, body: JSON.stringify({ error: "Unauthorized request" }) };
-            }
+            const clientKey = event.headers["x-api-key"];
+            if (clientKey !== API_KEY) return jsonResponse(403, { error: "Unauthorized request" });
         }
 
-        // =====================
-        // SEO MODE
-        // =====================
-        if (action === "seo") {
-            return { statusCode: 200, body: JSON.stringify(generateSEO(req.body)) };
-        }
+        // SEO mode
+        if (action === "seo") return jsonResponse(200, generateSEO(reqBody));
 
-        // =====================
-        // RETAIL RECON MODE
-        // =====================
-        const { price, cost, weight, category, taxMode, marketSort, isReverseMode } = req.body;
+        // Retail Recon mode
+        const {
+            price,
+            cost,
+            weight,
+            category,
+            taxMode,
+            marketSort,
+            isReverseMode
+        } = reqBody;
 
-        // Basic validation
-        if ([price, cost, weight].some(v => typeof v !== "number" || v < 0)) {
-            return { statusCode: 400, body: JSON.stringify({ error: "Invalid numeric inputs" }) };
-        }
+        if ([price, cost, weight].some(v => typeof v !== "number" || v < 0))
+            return jsonResponse(400, { error: "Invalid numeric inputs" });
 
-        // Upper bounds protection
-        if (price > 100000 || cost > 100000 || weight > 200) {
-            return { statusCode: 400, body: JSON.stringify({ error: "Input exceeds allowed range" }) };
-        }
+        if (price > 100000 || cost > 100000 || weight > 200)
+            return jsonResponse(400, { error: "Input exceeds allowed range" });
 
         const activeFees = MARKET_LOGIC.categories[category] || MARKET_LOGIC.categories.standard;
 
@@ -155,10 +142,10 @@ export default async function handler(event) {
             return b.postTax - a.postTax;
         });
 
-        return { statusCode: 200, body: JSON.stringify({ results, topResult: results[0] }) };
+        return jsonResponse(200, { results, topResult: results[0] });
 
     } catch (err) {
         console.error("Retail Recon Error:", err);
-        return { statusCode: 500, body: JSON.stringify({ error: "Internal server error" }) };
+        return jsonResponse(500, { error: "Internal server error" });
     }
-}
+};
