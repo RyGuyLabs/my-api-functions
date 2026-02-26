@@ -49,21 +49,18 @@ function generateSEO({ title, description, keywords }) {
     };
 }
 
-export default async function handler(req, res) {
-    if (req.method !== "POST")
-        return res.status(405).json({ error: "Method not allowed" });
-
+export default async function handler(event) {
     try {
-        const ip =
-            req.headers["x-forwarded-for"] ||
-            req.connection?.remoteAddress ||
-            "unknown";
+        if (event.httpMethod !== "POST") {
+            return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
+        }
 
-        // 🔒 RATE LIMIT FIRST
+        const req = { body: JSON.parse(event.body), headers: event.headers };
+        const ip = req.headers["x-forwarded-for"] || "unknown";
+
+        // 🔒 RATE LIMIT
         if (!rateLimit(ip)) {
-            return res.status(429).json({
-                error: "Rate limit exceeded. Please wait."
-            });
+            return { statusCode: 429, body: JSON.stringify({ error: "Rate limit exceeded. Please wait." }) };
         }
 
         const { action } = req.body;
@@ -72,9 +69,7 @@ export default async function handler(req, res) {
         if (API_KEY) {
             const clientKey = req.headers["x-api-key"];
             if (clientKey !== API_KEY) {
-                return res.status(403).json({
-                    error: "Unauthorized request"
-                });
+                return { statusCode: 403, body: JSON.stringify({ error: "Unauthorized request" }) };
             }
         }
 
@@ -82,43 +77,25 @@ export default async function handler(req, res) {
         // SEO MODE
         // =====================
         if (action === "seo") {
-            return res.status(200).json(generateSEO(req.body));
+            return { statusCode: 200, body: JSON.stringify(generateSEO(req.body)) };
         }
 
         // =====================
         // RETAIL RECON MODE
         // =====================
-        const {
-            price,
-            cost,
-            weight,
-            category,
-            taxMode,
-            marketSort,
-            isReverseMode
-        } = req.body;
+        const { price, cost, weight, category, taxMode, marketSort, isReverseMode } = req.body;
 
         // Basic validation
-        if (
-            [price, cost, weight].some(
-                v => typeof v !== "number" || v < 0
-            )
-        ) {
-            return res.status(400).json({
-                error: "Invalid numeric inputs"
-            });
+        if ([price, cost, weight].some(v => typeof v !== "number" || v < 0)) {
+            return { statusCode: 400, body: JSON.stringify({ error: "Invalid numeric inputs" }) };
         }
 
         // Upper bounds protection
         if (price > 100000 || cost > 100000 || weight > 200) {
-            return res.status(400).json({
-                error: "Input exceeds allowed range"
-            });
+            return { statusCode: 400, body: JSON.stringify({ error: "Input exceeds allowed range" }) };
         }
 
-        const activeFees =
-            MARKET_LOGIC.categories[category] ||
-            MARKET_LOGIC.categories.standard;
+        const activeFees = MARKET_LOGIC.categories[category] || MARKET_LOGIC.categories.standard;
 
         const platforms = [
             { name: "Poshmark", risk: "Low", baseRisk: 1, riskClass: "risk-low", feeFn: p => p < 15 ? 2.95 : p * activeFees.poshFee, shipFn: w => w > 5 ? (w - 5) * 4.5 : 0, days: 5, logic: "Buyer Pays Shipping", complexity: "Low" },
@@ -142,7 +119,6 @@ export default async function handler(req, res) {
             if (isReverseMode) {
                 const target = price;
                 p = (target + cost + plat.shipFn(weight)) / 0.8;
-
                 for (let i = 0; i < 10; i++) {
                     net = p - plat.feeFn(p) - plat.shipFn(weight) - cost;
                     p = p + (target - net);
@@ -179,15 +155,10 @@ export default async function handler(req, res) {
             return b.postTax - a.postTax;
         });
 
-        return res.status(200).json({
-            results,
-            topResult: results[0]
-        });
+        return { statusCode: 200, body: JSON.stringify({ results, topResult: results[0] }) };
 
     } catch (err) {
         console.error("Retail Recon Error:", err);
-        return res.status(500).json({
-            error: "Internal server error"
-        });
+        return { statusCode: 500, body: JSON.stringify({ error: "Internal server error" }) };
     }
 }
