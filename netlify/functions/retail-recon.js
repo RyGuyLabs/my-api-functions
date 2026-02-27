@@ -29,12 +29,84 @@ function rateLimit(ip) {
     return true;
 }
 
-function generateSEO({ title, description, keywords }) {
-    if (!title || !description) return { error: "Title and description required" };
+function generateSEO({ title, description, keywords = [], platform = "general" }) {
+    if (!title || !description) {
+        return { error: "Title and description required" };
+    }
+
+    // Clean & prioritize keywords
+    const cleanKeywords = keywords
+        .filter(k => typeof k === "string")
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+
+    const primaryKeywords = cleanKeywords.slice(0, 3).join(" ");
+    const secondaryKeywords = cleanKeywords.slice(3).join(" ");
+
+    let seoTitle = "";
+    let seoDescription = "";
+
+    switch (platform.toLowerCase()) {
+
+        case "ebay":
+            // eBay: 80 character limit, front-loaded keywords
+            seoTitle = `${primaryKeywords} ${title}`.trim().slice(0, 80);
+
+            seoDescription =
+                `${primaryKeywords}\n\n` +
+                `${description}\n\n` +
+                `Features: ${secondaryKeywords}\n\n` +
+                `Fast shipping. Competitive pricing. Trusted seller.`;
+
+            break;
+
+        case "poshmark":
+            // Poshmark: More natural language + hashtags
+            seoTitle = `${title} | ${primaryKeywords}`.slice(0, 100);
+
+            seoDescription =
+                `${description}\n\n` +
+                `✨ Highlights: ${primaryKeywords}\n\n` +
+                cleanKeywords.map(k => `#${k.replace(/\s+/g, "")}`).join(" ");
+
+            break;
+
+        case "etsy":
+            // Etsy: Long-tail keyword repetition for search depth
+            seoTitle = `${primaryKeywords} | ${title} | ${secondaryKeywords}`.slice(0, 140);
+
+            seoDescription =
+                `${primaryKeywords}.\n\n` +
+                `${description}\n\n` +
+                `Perfect for buyers searching for ${primaryKeywords}. ` +
+                `Designed for quality and long-term value.`;
+
+            break;
+
+        case "mercari":
+            // Mercari: Simple, direct, mobile-first
+            seoTitle = `${primaryKeywords} ${title}`.slice(0, 90);
+
+            seoDescription =
+                `${description}\n\n` +
+                `Condition: Excellent.\n` +
+                `Ships quickly.\n` +
+                `Keywords: ${cleanKeywords.join(", ")}`;
+
+            break;
+
+        default:
+            // General fallback
+            seoTitle = `${primaryKeywords} ${title}`.trim();
+            seoDescription = description.length > 160
+                ? description.slice(0, 157) + "..."
+                : description;
+    }
+
     return {
-        seoTitle: `${title} | RyGuyLabs`,
-        seoDescription: description.length > 160 ? description.slice(0, 157) + "..." : description,
-        seoKeywords: keywords && Array.isArray(keywords) ? keywords.join(", ") : ""
+        seoTitle: seoTitle.trim(),
+        seoDescription: seoDescription.trim(),
+        seoKeywords: cleanKeywords.join(", ")
     };
 }
 
