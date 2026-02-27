@@ -23,56 +23,34 @@ function rateLimit(ip) {
     return true;
 }
 
-// AI-powered generateSEO using YOUR API
-const fetch = require("node-fetch");
-
 async function generateSEO({ title, description, platform = "general" }) {
     if (!title || !description) {
         return { error: "Title and description required" };
     }
 
     try {
-        const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        // --- CALL YOUR OWN DEPLOYED API INSTEAD OF OPENAI ---
+        const apiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${process.env.RETAIL_RECON_API}`
+                "x-api-key": process.env.RETAIL_RECON_KEY
             },
-            body: JSON.stringify({
-                model: "gpt-4o-mini",
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are an expert eCommerce SEO optimization engine."
-                    },
-                    {
-                        role: "user",
-                        content: `
-Platform: ${platform}
-Title: ${title}
-Description: ${description}
-
-Return ONLY valid JSON in this format:
-{
-  "seoTitle": "...",
-  "seoDescription": "...",
-  "seoKeywords": "comma,separated,keywords",
-  "styleTags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8"]
-}
-`
-                    }
-                ],
-                temperature: 0.7
-            })
+            body: JSON.stringify({ title, description, platform })
         });
 
-        const aiData = await aiResponse.json();
+        if (!apiResponse.ok) {
+            throw new Error("Backend API failed");
+        }
 
-        const raw = aiData.choices[0].message.content;
+        const parsed = await apiResponse.json();
 
-        const parsed = JSON.parse(raw);
-
-        return parsed;
+        return {
+            seoTitle: parsed.seoTitle || title,
+            seoDescription: parsed.seoDescription || description,
+            seoKeywords: parsed.seoKeywords || "",
+            styleTags: parsed.styleTags || []
+        };
 
     } catch (err) {
         console.error("AI SEO Error:", err);
