@@ -29,23 +29,20 @@ async function generateSEO({ title, description, platform = "general" }) {
     }
 
     try {
-    const parsed = {
-    seoTitle: `${title} - Optimized`,
-    seoDescription: `${description} - Optimized for ${platform}`,
-    seoKeywords: title.split(" ").slice(0, 10).join(","),
-    styleTags: title.split(" ").slice(0, 5)
-};
+    const apiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.RETAIL_RECON_KEY
+    },
+    body: JSON.stringify({ title, description, platform, action: "seo" })
+});
 
-        // Debug logging (optional, helps see why it fails)
-        console.log("SEO API status:", apiResponse.status, apiResponse.statusText);
-        const rawText = await apiResponse.text();
-        console.log("SEO API raw response:", rawText);
+if (!apiResponse.ok) {
+    throw new Error(`Backend SEO API failed with status ${apiResponse.status}`);
+}
 
-        if (!apiResponse.ok) {
-            throw new Error(`Backend API failed with status ${apiResponse.status}`);
-        }
-
-        const parsed = JSON.parse(rawText); // parse the actual JSON returned by your API
+const parsed = await apiResponse.json();
 
         return {
             seoTitle: parsed.seoTitle || title,
