@@ -67,12 +67,6 @@ exports.handler = async function(event, context) {
 
         const { action } = reqBody;
 
-        // Optional API key check
-        if (API_KEY) {
-            const clientKey = event.headers["x-api-key"];
-            if (clientKey !== API_KEY) return jsonResponse(403, { error: "Unauthorized request" });
-        }
-
         // SEO mode
         if (action === "seo") return jsonResponse(200, generateSEO(reqBody));
 
