@@ -23,9 +23,6 @@ function rateLimit(ip) {
     return true;
 }
 
-// Enhanced generateSEO with optional AI rewrite
-const fetch = require("node-fetch");
-
 // AI-powered generateSEO using YOUR API
 async function generateSEO({ title, description, platform = "general" }) {
     if (!title || !description) {
