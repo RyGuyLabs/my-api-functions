@@ -29,108 +29,54 @@ function rateLimit(ip) {
     return true;
 }
 
-function generateSEO({ title, description, platform = "general" }) {
+async function generateSEO({ title, description, platform = "general" }) {
+    if (!title || !description) return { error: "Title and description required" };
 
-    if (!title || !description) {
-        return { error: "Title and description required" };
+    // Call your external AI API to generate optimized SEO title, description, and style tags
+    try {
+        const aiResponse = await fetch("https://your-ai-endpoint.com/rewrite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, description, platform })
+        });
+
+        if (!aiResponse.ok) throw new Error("AI API failed");
+
+        const data = await aiResponse.json();
+
+        return {
+            seoTitle: data.seoTitle || title,
+            seoDescription: data.seoDescription || description,
+            styleTags: data.styleTags || [],
+            seoKeywords: data.seoKeywords || ""
+        };
+
+    } catch (err) {
+        console.error("SEO AI Error:", err);
+
+        // Fallback to your original deterministic method
+        const raw = `${title} ${description}`;
+        const tokens = raw.replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);
+        return {
+            seoTitle: tokens.slice(0, 6).join(" "),
+            seoDescription: description.slice(0, 200),
+            styleTags: [],
+            seoKeywords: tokens.join(", ")
+        };
     }
+}
 
-    const raw = `${title} ${description}`;
+// ----------------------
+// 🔹 Handler: only change is async SEO call
+// ----------------------
+if (action === "seo") {
+    const seoResult = await generateSEO({
+        title: reqBody.title,
+        description: reqBody.description,
+        platform: reqBody.platform
+    });
 
-    // Basic tokenization
-    const tokens = raw
-        .replace(/[^\w\s]/g, "")
-        .split(/\s+/)
-        .filter(Boolean);
-
-    // Detect condition keywords
-    const conditionWords = ["new", "excellent", "mint", "used", "good", "fair"];
-    const detectedCondition = tokens.find(t =>
-        conditionWords.includes(t.toLowerCase())
-    );
-
-    // Detect size pattern (XL, L, 10, etc.)
-    const sizeMatch = raw.match(/\b(XXL|XL|L|M|S|XS|\d{1,2})\b/i);
-    const detectedSize = sizeMatch ? sizeMatch[0] : "";
-
-    // Assume first capitalized word is brand (basic heuristic)
-    const brandMatch = raw.match(/\b[A-Z][a-zA-Z]+\b/);
-    const detectedBrand = brandMatch ? brandMatch[0] : "";
-
-    // Remove filler words
-    const stopwords = ["the", "and", "with", "for", "on", "in", "at", "a"];
-    const filteredTokens = tokens.filter(t =>
-        !stopwords.includes(t.toLowerCase())
-    );
-
-    const primaryKeywords = filteredTokens.slice(0, 6).join(" ");
-
-    let seoTitle = "";
-    let seoDescription = "";
-
-    switch (platform.toLowerCase()) {
-
-        case "ebay":
-            seoTitle = `${detectedBrand} ${primaryKeywords} ${detectedSize} ${detectedCondition || ""}`
-                .replace(/\s+/g, " ")
-                .trim()
-                .slice(0, 80);
-
-            seoDescription =
-                `${seoTitle}\n\n` +
-                `Condition: ${detectedCondition || "See description"}\n` +
-                `Size: ${detectedSize || "Refer to listing"}\n\n` +
-                `Features: ${filteredTokens.slice(6, 15).join(" ")}\n\n` +
-                `Fast shipping. Trusted seller. Competitive pricing.`;
-
-            break;
-
-        case "poshmark":
-            seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 100);
-
-            seoDescription =
-                `${primaryKeywords}\n\n` +
-                `Condition: ${detectedCondition || "Excellent"}\n\n` +
-                filteredTokens.slice(6, 15).join(" ") + "\n\n" +
-                filteredTokens.map(k => `#${k}`).join(" ");
-
-            break;
-
-        case "etsy":
-            seoTitle = `${primaryKeywords} | ${detectedBrand} ${detectedSize}`
-                .trim()
-                .slice(0, 140);
-
-            seoDescription =
-                `${primaryKeywords}.\n\n` +
-                `Perfect for buyers searching for ${primaryKeywords}.\n\n` +
-                `Condition: ${detectedCondition || "High Quality"}.\n` +
-                `Crafted for durability and value.`;
-
-            break;
-
-        case "mercari":
-            seoTitle = `${primaryKeywords} ${detectedSize}`
-                .trim()
-                .slice(0, 90);
-
-            seoDescription =
-                `${primaryKeywords}\n\n` +
-                `Condition: ${detectedCondition || "See photos"}\n\n` +
-                `Ships quickly. Ready to sell.`;
-
-            break;
-
-        default:
-            seoTitle = primaryKeywords.slice(0, 100);
-            seoDescription = description.slice(0, 200);
-    }
-
-    return {
-        seoTitle: seoTitle.trim(),
-        seoDescription: seoDescription.trim(),
-        seoKeywords: filteredTokens.join(", ")
-    };
+    return jsonResponse(200, seoResult);
 }
 
 // ✅ Netlify requires exports.handler
