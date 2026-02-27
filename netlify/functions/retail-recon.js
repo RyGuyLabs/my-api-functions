@@ -20,7 +20,7 @@ const requestLog = {};
 
 function rateLimit(ip) {
     const now = Date.now();
-    const windowMs = 60 * 1000; // 1 minute
+    const windowMs = 60 * 1000;
     const maxRequests = 15;
     if (!requestLog[ip]) requestLog[ip] = [];
     requestLog[ip] = requestLog[ip].filter(t => now - t < windowMs);
@@ -38,13 +38,24 @@ function generateSEO({ title, description, keywords }) {
     };
 }
 
-// ✅ FIXED EXPORT: Netlify expects exports.handler
+// ✅ Netlify requires exports.handler
 exports.handler = async function(event, context) {
+
     const jsonResponse = (status, data) => ({
         statusCode: status,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*", // allow frontend calls
+            "Access-Control-Allow-Headers": "Content-Type, x-api-key",
+            "Access-Control-Allow-Methods": "POST, OPTIONS"
+        },
         body: JSON.stringify(data)
     });
+
+    // Handle preflight requests
+    if (event.httpMethod === "OPTIONS") {
+        return jsonResponse(200, { message: "CORS OK" });
+    }
 
     if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
