@@ -20,7 +20,7 @@ const requestLog = {};
 
 function rateLimit(ip) {
     const now = Date.now();
-    const windowMs = 60 * 1000;
+    const windowMs = 60 * 1000; // 1 minute
     const maxRequests = 15;
     if (!requestLog[ip]) requestLog[ip] = [];
     requestLog[ip] = requestLog[ip].filter(t => now - t < windowMs);
@@ -38,8 +38,8 @@ function generateSEO({ title, description, keywords }) {
     };
 }
 
-module.exports = async function handler(event, context) {
-    // Netlify Functions don’t provide res.status like Express
+// ✅ FIXED EXPORT: Netlify expects exports.handler
+exports.handler = async function(event, context) {
     const jsonResponse = (status, data) => ({
         statusCode: status,
         headers: { "Content-Type": "application/json" },
@@ -56,7 +56,7 @@ module.exports = async function handler(event, context) {
 
         const { action } = reqBody;
 
-        // Optional API key protection
+        // Optional API key check
         if (API_KEY) {
             const clientKey = event.headers["x-api-key"];
             if (clientKey !== API_KEY) return jsonResponse(403, { error: "Unauthorized request" });
@@ -66,15 +66,7 @@ module.exports = async function handler(event, context) {
         if (action === "seo") return jsonResponse(200, generateSEO(reqBody));
 
         // Retail Recon mode
-        const {
-            price,
-            cost,
-            weight,
-            category,
-            taxMode,
-            marketSort,
-            isReverseMode
-        } = reqBody;
+        const { price, cost, weight, category, taxMode, marketSort, isReverseMode } = reqBody;
 
         if ([price, cost, weight].some(v => typeof v !== "number" || v < 0))
             return jsonResponse(400, { error: "Invalid numeric inputs" });
