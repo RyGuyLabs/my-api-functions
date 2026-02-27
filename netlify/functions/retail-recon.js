@@ -140,13 +140,13 @@ exports.handler = async function(event, context) {
         const { action } = reqBody;
 
         // SEO mode
-        if (action === "seo") {
-    return jsonResponse(200, generateSEO({
-        title: reqBody.title,
-        description: reqBody.description,
-        keywords: reqBody.keywords,
-        platform: reqBody.platform
-    }));
+if (action === "seo") {
+    const seoResult = generateSEO({
+        title: reqBody.title || "",
+        description: reqBody.description || "",
+        platform: reqBody.platform || "general"
+    });
+    return jsonResponse(200, seoResult);
 }
 
         // Retail Recon mode
