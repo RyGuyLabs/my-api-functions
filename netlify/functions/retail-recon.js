@@ -29,53 +29,108 @@ function rateLimit(ip) {
     return true;
 }
 
+// Enhanced generateSEO with optional AI rewrite
 async function generateSEO({ title, description, platform = "general" }) {
-    if (!title || !description) return { error: "Title and description required" };
+    if (!title || !description) {
+        return { error: "Title and description required" };
+    }
 
-    // Call your external AI API to generate optimized SEO title, description, and style tags
+    const raw = `${title} ${description}`;
+
+    // Basic tokenization
+    const tokens = raw
+        .replace(/[^\w\s]/g, "")
+        .split(/\s+/)
+        .filter(Boolean);
+
+    // Detect condition keywords
+    const conditionWords = ["new", "excellent", "mint", "used", "good", "fair"];
+    const detectedCondition = tokens.find(t =>
+        conditionWords.includes(t.toLowerCase())
+    );
+
+    // Detect size pattern
+    const sizeMatch = raw.match(/\b(XXL|XL|L|M|S|XS|\d{1,2})\b/i);
+    const detectedSize = sizeMatch ? sizeMatch[0] : "";
+
+    // Basic brand detection
+    const brandMatch = raw.match(/\b[A-Z][a-zA-Z]+\b/);
+    const detectedBrand = brandMatch ? brandMatch[0] : "";
+
+    // Remove filler words
+    const stopwords = ["the", "and", "with", "for", "on", "in", "at", "a"];
+    const filteredTokens = tokens.filter(t => !stopwords.includes(t.toLowerCase()));
+
+    const primaryKeywords = filteredTokens.slice(0, 6).join(" ");
+
+    let seoTitle = "";
+    let seoDescription = "";
+
+    // Platform-specific enhancements
+    switch (platform.toLowerCase()) {
+        case "ebay":
+            seoTitle = `${detectedBrand} ${primaryKeywords} ${detectedSize} ${detectedCondition || ""}`
+                .replace(/\s+/g, " ").trim().slice(0, 80);
+            seoDescription = `${seoTitle}\n\nCondition: ${detectedCondition || "See description"}\nSize: ${detectedSize || "Refer to listing"}\n\nFeatures: ${filteredTokens.slice(6, 15).join(" ")}\n\nFast shipping. Trusted seller. Competitive pricing.`;
+            break;
+
+        case "poshmark":
+            seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 100);
+            seoDescription = `${primaryKeywords}\n\nCondition: ${detectedCondition || "Excellent"}\n\n${filteredTokens.slice(6, 15).join(" ")}\n\n${filteredTokens.map(k => `#${k}`).join(" ")}`;
+            break;
+
+        case "etsy":
+            seoTitle = `${primaryKeywords} | ${detectedBrand} ${detectedSize}`.trim().slice(0, 140);
+            seoDescription = `${primaryKeywords}.\n\nPerfect for buyers searching for ${primaryKeywords}.\n\nCondition: ${detectedCondition || "High Quality"}.\nCrafted for durability and value.`;
+            break;
+
+        case "mercari":
+            seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 90);
+            seoDescription = `${primaryKeywords}\n\nCondition: ${detectedCondition || "See photos"}\n\nShips quickly. Ready to sell.`;
+            break;
+
+        default:
+            seoTitle = primaryKeywords.slice(0, 100);
+            seoDescription = description.slice(0, 200);
+    }
+
+    // ✅ Optional: AI rewriting call (async-safe)
     try {
+        // Example: call your external AI API
+        // Replace the URL and payload with your actual AI endpoint
         const aiResponse = await fetch("https://your-ai-endpoint.com/rewrite", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, description, platform })
+            body: JSON.stringify({
+                title: seoTitle,
+                description: seoDescription,
+                platform
+            })
         });
 
-        if (!aiResponse.ok) throw new Error("AI API failed");
-
-        const data = await aiResponse.json();
-
-        return {
-            seoTitle: data.seoTitle || title,
-            seoDescription: data.seoDescription || description,
-            styleTags: data.styleTags || [],
-            seoKeywords: data.seoKeywords || ""
-        };
-
+        if (aiResponse.ok) {
+            const aiData = await aiResponse.json();
+            seoTitle = aiData.title || seoTitle;
+            seoDescription = aiData.description || seoDescription;
+        }
     } catch (err) {
-        console.error("SEO AI Error:", err);
-
-        // Fallback to your original deterministic method
-        const raw = `${title} ${description}`;
-        const tokens = raw.replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);
-        return {
-            seoTitle: tokens.slice(0, 6).join(" "),
-            seoDescription: description.slice(0, 200),
-            styleTags: [],
-            seoKeywords: tokens.join(", ")
-        };
+        console.error("AI SEO rewrite failed:", err);
+        // Fallback: keep the existing SEO
     }
+
+    return {
+        seoTitle: seoTitle.trim(),
+        seoDescription: seoDescription.trim(),
+        seoKeywords: filteredTokens.join(", ")
+    };
 }
 
-// ----------------------
-// 🔹 Handler: only change is async SEO call
-// ----------------------
 if (action === "seo") {
     const seoResult = await generateSEO({
         title: reqBody.title,
         description: reqBody.description,
         platform: reqBody.platform
     });
-
     return jsonResponse(200, seoResult);
 }
 
