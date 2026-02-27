@@ -24,90 +24,51 @@ function rateLimit(ip) {
 }
 
 // Enhanced generateSEO with optional AI rewrite
-function generateSEO({ title, description, platform = "general" }) {
+const fetch = require("node-fetch");
+
+// AI-powered generateSEO using YOUR API
+async function generateSEO({ title, description, platform = "general" }) {
     if (!title || !description) {
         return { error: "Title and description required" };
     }
 
-    const raw = `${title} ${description}`;
+    try {
+        const aiResponse = await fetch("https://YOUR-AI-ENDPOINT.com/rewrite", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": API_KEY
+            },
+            body: JSON.stringify({
+                title,
+                description,
+                platform
+            })
+        });
 
-    // Tokenize input
-    const tokens = raw
-        .replace(/[^\w\s]/g, "")
-        .split(/\s+/)
-        .filter(Boolean);
+        if (!aiResponse.ok) {
+            throw new Error("AI API failed");
+        }
 
-    const conditionWords = ["new", "excellent", "mint", "used", "good", "fair"];
-    const detectedCondition = tokens.find(t => conditionWords.includes(t.toLowerCase()));
+        const aiData = await aiResponse.json();
 
-    const sizeMatch = raw.match(/\b(XXL|XL|L|M|S|XS|\d{1,2})\b/i);
-    const detectedSize = sizeMatch ? sizeMatch[0] : "";
+        return {
+            seoTitle: aiData.seoTitle || title,
+            seoDescription: aiData.seoDescription || description,
+            seoKeywords: aiData.seoKeywords || "",
+            styleTags: aiData.styleTags || []
+        };
 
-    const brandMatch = raw.match(/\b[A-Z][a-zA-Z]+\b/);
-    const detectedBrand = brandMatch ? brandMatch[0] : "";
+    } catch (err) {
+        console.error("AI SEO Error:", err);
 
-    const stopwords = ["the", "and", "with", "for", "on", "in", "at", "a"];
-    const filteredTokens = tokens.filter(t => !stopwords.includes(t.toLowerCase()));
-
-    const primaryKeywords = filteredTokens.slice(0, 6).join(" ");
-
-    let seoTitle = "";
-    let seoDescription = "";
-    let styleTags = [];
-
-    switch (platform.toLowerCase()) {
-        case "ebay":
-            seoTitle = `${detectedBrand} ${primaryKeywords} ${detectedSize} ${detectedCondition || ""}`
-                .replace(/\s+/g, " ").trim().slice(0, 80);
-
-            seoDescription = `Selling this ${detectedBrand} ${primaryKeywords} ${detectedSize} in ${detectedCondition || "great condition"}. ` +
-                `Perfect for collectors or everyday use. Fast shipping and trusted seller.`;
-
-            styleTags = filteredTokens.slice(0, 10).map(t => t.toLowerCase());
-            break;
-
-        case "poshmark":
-            seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 100);
-
-            seoDescription = `Upgrade your wardrobe with this ${primaryKeywords} ${detectedSize}. ` +
-                `Condition: ${detectedCondition || "Excellent"}. Modern style meets comfort. ` +
-                `Limited availability, get it now!`;
-
-            styleTags = ["fashion", "trendy", "vintage", "streetwear", "sale"]
-                .concat(filteredTokens.slice(0, 5));
-            break;
-
-        case "etsy":
-            seoTitle = `${primaryKeywords} | ${detectedBrand} ${detectedSize}`.trim().slice(0, 140);
-
-            seoDescription = `Handcrafted ${primaryKeywords} by ${detectedBrand}. ` +
-                `Perfect for gifting or personal use. Condition: ${detectedCondition || "High Quality"}. ` +
-                `Unique item made with care and attention to detail.`;
-
-            styleTags = ["handmade", "unique", "gift", "custom", "craft"].concat(filteredTokens.slice(0, 5));
-            break;
-
-        case "mercari":
-            seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 90);
-
-            seoDescription = `Quickly sell your ${primaryKeywords} ${detectedSize}. ` +
-                `Condition: ${detectedCondition || "See photos"}. Fast shipping and ready to buy.`;
-
-            styleTags = ["resale", "fastship", "budget"].concat(filteredTokens.slice(0, 5));
-            break;
-
-        default:
-            seoTitle = primaryKeywords.slice(0, 100);
-            seoDescription = description.slice(0, 200);
-            styleTags = filteredTokens.slice(0, 10);
+        return {
+            seoTitle: title,
+            seoDescription: description,
+            seoKeywords: "",
+            styleTags: []
+        };
     }
-
-    return {
-        seoTitle: seoTitle.trim(),
-        seoDescription: seoDescription.trim(),
-        seoKeywords: filteredTokens.join(", "),
-        styleTags
-    };
 }
 
 // ✅ Netlify requires exports.handler
