@@ -33,7 +33,7 @@ async function generateSEO({ title, description, platform = "general" }) {
     }
 
     try {
-        const aiResponse = await fetch("https://YOUR-AI-ENDPOINT.com/rewrite", {
+        const aiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -102,7 +102,7 @@ exports.handler = async function(event, context) {
 
         // SEO mode
 if (action === "seo") {
-    const seoResult = generateSEO({
+    const seoResult = await generateSEO({
         title: reqBody.title || "",
         description: reqBody.description || "",
         platform: reqBody.platform || "general"
