@@ -1,9 +1,3 @@
-/**
- * retail-recon.js
- * RyGuyLabs – Secure Market Intelligence Engine
- * Netlify Function Compatible
- */
-
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
 
 const MARKET_LOGIC = {
@@ -30,34 +24,28 @@ function rateLimit(ip) {
 }
 
 // Enhanced generateSEO with optional AI rewrite
-async function generateSEO({ title, description, platform = "general" }) {
+function generateSEO({ title, description, platform = "general" }) {
     if (!title || !description) {
         return { error: "Title and description required" };
     }
 
     const raw = `${title} ${description}`;
 
-    // Basic tokenization
+    // Tokenize input
     const tokens = raw
         .replace(/[^\w\s]/g, "")
         .split(/\s+/)
         .filter(Boolean);
 
-    // Detect condition keywords
     const conditionWords = ["new", "excellent", "mint", "used", "good", "fair"];
-    const detectedCondition = tokens.find(t =>
-        conditionWords.includes(t.toLowerCase())
-    );
+    const detectedCondition = tokens.find(t => conditionWords.includes(t.toLowerCase()));
 
-    // Detect size pattern
     const sizeMatch = raw.match(/\b(XXL|XL|L|M|S|XS|\d{1,2})\b/i);
     const detectedSize = sizeMatch ? sizeMatch[0] : "";
 
-    // Basic brand detection
     const brandMatch = raw.match(/\b[A-Z][a-zA-Z]+\b/);
     const detectedBrand = brandMatch ? brandMatch[0] : "";
 
-    // Remove filler words
     const stopwords = ["the", "and", "with", "for", "on", "in", "at", "a"];
     const filteredTokens = tokens.filter(t => !stopwords.includes(t.toLowerCase()));
 
@@ -65,73 +53,61 @@ async function generateSEO({ title, description, platform = "general" }) {
 
     let seoTitle = "";
     let seoDescription = "";
+    let styleTags = [];
 
-    // Platform-specific enhancements
     switch (platform.toLowerCase()) {
         case "ebay":
             seoTitle = `${detectedBrand} ${primaryKeywords} ${detectedSize} ${detectedCondition || ""}`
                 .replace(/\s+/g, " ").trim().slice(0, 80);
-            seoDescription = `${seoTitle}\n\nCondition: ${detectedCondition || "See description"}\nSize: ${detectedSize || "Refer to listing"}\n\nFeatures: ${filteredTokens.slice(6, 15).join(" ")}\n\nFast shipping. Trusted seller. Competitive pricing.`;
+
+            seoDescription = `Selling this ${detectedBrand} ${primaryKeywords} ${detectedSize} in ${detectedCondition || "great condition"}. ` +
+                `Perfect for collectors or everyday use. Fast shipping and trusted seller.`;
+
+            styleTags = filteredTokens.slice(0, 10).map(t => t.toLowerCase());
             break;
 
         case "poshmark":
             seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 100);
-            seoDescription = `${primaryKeywords}\n\nCondition: ${detectedCondition || "Excellent"}\n\n${filteredTokens.slice(6, 15).join(" ")}\n\n${filteredTokens.map(k => `#${k}`).join(" ")}`;
+
+            seoDescription = `Upgrade your wardrobe with this ${primaryKeywords} ${detectedSize}. ` +
+                `Condition: ${detectedCondition || "Excellent"}. Modern style meets comfort. ` +
+                `Limited availability, get it now!`;
+
+            styleTags = ["fashion", "trendy", "vintage", "streetwear", "sale"]
+                .concat(filteredTokens.slice(0, 5));
             break;
 
         case "etsy":
             seoTitle = `${primaryKeywords} | ${detectedBrand} ${detectedSize}`.trim().slice(0, 140);
-            seoDescription = `${primaryKeywords}.\n\nPerfect for buyers searching for ${primaryKeywords}.\n\nCondition: ${detectedCondition || "High Quality"}.\nCrafted for durability and value.`;
+
+            seoDescription = `Handcrafted ${primaryKeywords} by ${detectedBrand}. ` +
+                `Perfect for gifting or personal use. Condition: ${detectedCondition || "High Quality"}. ` +
+                `Unique item made with care and attention to detail.`;
+
+            styleTags = ["handmade", "unique", "gift", "custom", "craft"].concat(filteredTokens.slice(0, 5));
             break;
 
         case "mercari":
             seoTitle = `${primaryKeywords} ${detectedSize}`.trim().slice(0, 90);
-            seoDescription = `${primaryKeywords}\n\nCondition: ${detectedCondition || "See photos"}\n\nShips quickly. Ready to sell.`;
+
+            seoDescription = `Quickly sell your ${primaryKeywords} ${detectedSize}. ` +
+                `Condition: ${detectedCondition || "See photos"}. Fast shipping and ready to buy.`;
+
+            styleTags = ["resale", "fastship", "budget"].concat(filteredTokens.slice(0, 5));
             break;
 
         default:
             seoTitle = primaryKeywords.slice(0, 100);
             seoDescription = description.slice(0, 200);
-    }
-
-    // ✅ Optional: AI rewriting call (async-safe)
-    try {
-        // Example: call your external AI API
-        // Replace the URL and payload with your actual AI endpoint
-        const aiResponse = await fetch("https://your-ai-endpoint.com/rewrite", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                title: seoTitle,
-                description: seoDescription,
-                platform
-            })
-        });
-
-        if (aiResponse.ok) {
-            const aiData = await aiResponse.json();
-            seoTitle = aiData.title || seoTitle;
-            seoDescription = aiData.description || seoDescription;
-        }
-    } catch (err) {
-        console.error("AI SEO rewrite failed:", err);
-        // Fallback: keep the existing SEO
+            styleTags = filteredTokens.slice(0, 10);
     }
 
     return {
         seoTitle: seoTitle.trim(),
         seoDescription: seoDescription.trim(),
-        seoKeywords: filteredTokens.join(", ")
+        seoKeywords: filteredTokens.join(", "),
+        styleTags
     };
-}
-
-if (action === "seo") {
-    const seoResult = await generateSEO({
-        title: reqBody.title,
-        description: reqBody.description,
-        platform: reqBody.platform
-    });
-    return jsonResponse(200, seoResult);
 }
 
 // ✅ Netlify requires exports.handler
