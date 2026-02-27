@@ -24,37 +24,55 @@ function rateLimit(ip) {
 }
 
 // AI-powered generateSEO using YOUR API
+const fetch = require("node-fetch");
+
 async function generateSEO({ title, description, platform = "general" }) {
     if (!title || !description) {
         return { error: "Title and description required" };
     }
 
     try {
-        const aiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
+        const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": API_KEY
+                "Authorization": `Bearer ${process.env.RETAIL_RECON_API}`
             },
             body: JSON.stringify({
-                title,
-                description,
-                platform
+                model: "gpt-4o-mini",
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are an expert eCommerce SEO optimization engine."
+                    },
+                    {
+                        role: "user",
+                        content: `
+Platform: ${platform}
+Title: ${title}
+Description: ${description}
+
+Return ONLY valid JSON in this format:
+{
+  "seoTitle": "...",
+  "seoDescription": "...",
+  "seoKeywords": "comma,separated,keywords",
+  "styleTags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8"]
+}
+`
+                    }
+                ],
+                temperature: 0.7
             })
         });
 
-        if (!aiResponse.ok) {
-            throw new Error("AI API failed");
-        }
-
         const aiData = await aiResponse.json();
 
-        return {
-            seoTitle: aiData.seoTitle || title,
-            seoDescription: aiData.seoDescription || description,
-            seoKeywords: aiData.seoKeywords || "",
-            styleTags: aiData.styleTags || []
-        };
+        const raw = aiData.choices[0].message.content;
+
+        const parsed = JSON.parse(raw);
+
+        return parsed;
 
     } catch (err) {
         console.error("AI SEO Error:", err);
