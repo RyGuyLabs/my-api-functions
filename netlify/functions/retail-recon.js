@@ -28,7 +28,7 @@ async function generateSEO({ title, description, platform = "general" }) {
 
     try {
         const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.RETAIL_RECON_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.RETAIL_RECON_KEY}`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -47,10 +47,13 @@ async function generateSEO({ title, description, platform = "general" }) {
         );
 
         const data = await geminiResponse.json();
-        
-        // This line dives into the specific Gemini response structure
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
+        // Check if Gemini actually returned an answer
+        if (!data.candidates || !data.candidates[0].content) {
+            throw new Error(data.error?.message || "AI returned empty response");
+        }
+
+        const rawText = data.candidates[0].content.parts[0].text;
         const cleaned = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
         const parsed = JSON.parse(cleaned);
 
@@ -62,10 +65,12 @@ async function generateSEO({ title, description, platform = "general" }) {
         };
 
     } catch (error) {
-        console.error("Gemini Error:", error);
+        console.error("DEBUG - AI Failure:", error.message);
+        // This is where the "repetition" happens. 
+        // We add "AI Error" so you can SEE that it failed.
         return {
-            aiTitle: title, // Fallback to original
-            aiDescription: description,
+            aiTitle: `(AI Error) ${title}`, 
+            aiDescription: `(AI Error) ${description}`,
             aiStatus: "error"
         };
     }
