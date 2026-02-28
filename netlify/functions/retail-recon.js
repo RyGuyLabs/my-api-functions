@@ -141,10 +141,15 @@ exports.handler = async function(event, context) {
                 "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
             ].map(async (platName) => {
                 const calc = await MARKET_LOGIC.calculateDynamic(platName, price, cost, weight, category);
-                let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-                const postTaxNet = calc.net > 0 ? calc.net * (1 - taxRate) : calc.net;
                 
-                // NEW: Manual ROI calculation to ensure accuracy
+                // 1. Subtract cost from net to get true profit
+                const trueProfit = calc.net - cost; 
+                
+                // 2. Apply tax rate to true profit
+                let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
+                const postTaxNet = trueProfit > 0 ? trueProfit * (1 - taxRate) : trueProfit;
+
+                // 3. ROI: (Net Profit / Your Investment) * 100
                 const manualRoi = cost > 0 ? (postTaxNet / cost) * 100 : 0;
 
                 const meta = {
@@ -162,7 +167,7 @@ exports.handler = async function(event, context) {
                     name: platName,
                     net: postTaxNet,
                     fee: calc.fee,
-                    roi: Math.round(manualRoi), // Fixed: Now uses the manual calculation
+                    roi: Math.round(manualRoi),
                     postTax: postTaxNet,
                     days: meta.days,
                     risk: meta.risk,
@@ -170,6 +175,7 @@ exports.handler = async function(event, context) {
                 };
             }));
 
+            // Sort results based on the manual calculations
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
             return jsonResponse(200, { results, topResult: results[0] });
         }
