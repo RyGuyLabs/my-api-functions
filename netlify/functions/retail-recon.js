@@ -132,14 +132,14 @@ exports.handler = async function(event, context) {
                 return jsonResponse(400, { error: "Please enter valid numbers." });
             }
 
-            const results = [
+            // Use Promise.all to fetch dynamic data for all platforms at once
+            const results = await Promise.all([
                 "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
-            ].map(platName => {
-                // Passed 'cost' to calculate real profit
-                const calc = MARKET_LOGIC.calculate(platName, price, weight, category, cost);
+            ].map(async (platName) => {
+                const calc = await MARKET_LOGIC.calculateDynamic(platName, price, cost, weight, category);
                 
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-                // Tax only applies if there is actual profit
+                // Tax only applies to positive profit
                 const postTaxNet = calc.net > 0 ? calc.net * (1 - taxRate) : calc.net;
                 
                 const meta = {
@@ -151,16 +151,15 @@ exports.handler = async function(event, context) {
 
                 return {
                     name: platName,
-                    net: postTaxNet || 0,
-                    fee: calc.fee || 0,
-                    roi: calc.roi || 0,
-                    postTax: postTaxNet || 0,
+                    net: postTaxNet, 
+                    fee: calc.fee,
+                    roi: calc.roi,
+                    postTax: postTaxNet,
                     days: meta.days,
                     risk: meta.risk,
                     complexity: meta.complexity
                 };
-            });
-
+            }));
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
             return jsonResponse(200, { results, topResult: results[0] });
         }
