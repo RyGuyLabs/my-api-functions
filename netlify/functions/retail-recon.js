@@ -1,35 +1,39 @@
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
 
 const MARKET_LOGIC = {
-    calculate: (platform, price, weight, category) => {
+    calculate: (platform, price, weight, category, cost) => {
         let fee = 0;
         let shipping = 0;
         const p = parseFloat(price) || 0;
         const w = parseFloat(weight) || 0;
+        const c = parseFloat(cost) || 0;
         const shipCost = w <= 1 ? 6.50 : w <= 5 ? 8.27 : 12.00;
 
         switch (platform) {
             case 'poshmark':
                 fee = p < 15 ? 2.95 : p * 0.20;
+                shipping = 0; // Buyer pays
                 break;
             case 'ebay':
                 const rate = MARKET_LOGIC.categories[category]?.ebayFee || 0.136;
-                fee = (p * rate) + 0.40;
-                shipping = shipCost * 0.136; 
+                fee = ((p + shipCost) * rate) + 0.30;
+                shipping = shipCost; // Seller pays
                 break;
             case 'mercari':
-                fee = (p + shipCost) * 0.10;
+                fee = (p * 0.10) + 0.50;
+                shipping = 0; // Buyer pays
                 break;
             case 'depop':
                 fee = (p * 0.033) + 0.45;
+                shipping = 0;
                 break;
         }
-        const net = p - fee - shipping;
-        // The || 0 ensures we never return null
+        const payout = p - fee - shipping;
+        const netProfit = payout - c; 
         return { 
-            net: net || 0, 
+            net: netProfit || 0, 
             fee: (fee + shipping) || 0, 
-            roi: p > 0 ? ((net / p) * 100) : 0 
+            roi: c > 0 ? ((netProfit / c) * 100) : 0 
         };
     },
     categories: {
