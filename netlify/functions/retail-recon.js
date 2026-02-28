@@ -23,43 +23,24 @@ function rateLimit(ip) {
     return true;
 }
 
-// line 54–72 replacement
+// line 54–72 replacement (no self-call)
 async function generateSEO({ title, description, platform = "general" }) {
+    // input check
     if (!title || !description) {
         return { error: "Title and description required", aiStatus: "input missing" };
     }
 
     try {
-        if (!process.env.RETAIL_RECON_KEY) {
-            return {
-                seoTitle: title,
-                seoDescription: description,
-                seoKeywords: "",
-                styleTags: [],
-                aiStatus: "env missing"
-            };
-        }
-
-        const apiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": process.env.RETAIL_RECON_KEY
-            },
-            body: JSON.stringify({ title, description, platform, action: "seo" })
-        });
-
-        if (!apiResponse.ok) throw new Error(`Backend SEO API failed with status ${apiResponse.status}`);
-
-        const parsed = await apiResponse.json();
-
-        return {
-            seoTitle: parsed.seoTitle || title,
-            seoDescription: parsed.seoDescription || description,
-            seoKeywords: parsed.seoKeywords || "",
-            styleTags: parsed.styleTags || [],
-            aiStatus: "online"
+        // ❌ Removed self-call to Netlify function
+        // Provide static fallback so app works until real AI is integrated
+        const parsed = {
+            seoTitle: `[SEO] ${title}`,
+            seoDescription: `[SEO Description for ${platform}]: ${description}`,
+            seoKeywords: "example, seo, product",
+            styleTags: ["seo", platform]
         };
+
+        return { ...parsed, aiStatus: "stub-online" };
 
     } catch (err) {
         console.error("AI SEO Error:", err);
