@@ -155,9 +155,12 @@ exports.handler = async function(event, context) {
             const results = [
                 "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
             ].map(platName => {
-                const calc = MARKET_LOGIC.calculate(platName, price, weight, category);
+                // Passed 'cost' to calculate real profit
+                const calc = MARKET_LOGIC.calculate(platName, price, weight, category, cost);
+                
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-                const postTaxNet = calc.net - (calc.net * taxRate);
+                // Tax only applies if there is actual profit
+                const postTaxNet = calc.net > 0 ? calc.net * (1 - taxRate) : calc.net;
                 
                 const meta = {
                     poshmark: { days: 5, risk: "Low", complexity: "Low" },
@@ -168,7 +171,7 @@ exports.handler = async function(event, context) {
 
                 return {
                     name: platName,
-                    net: calc.net || 0,
+                    net: postTaxNet || 0,
                     fee: calc.fee || 0,
                     roi: calc.roi || 0,
                     postTax: postTaxNet || 0,
