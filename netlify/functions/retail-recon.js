@@ -108,7 +108,6 @@ exports.handler = async function(event, context) {
         return jsonResponse(200, { message: "CORS OK" });
     }
 
-    if (event.httpMethod === "OPTIONS") return jsonResponse(200, { message: "CORS OK" });
     if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
     try {
