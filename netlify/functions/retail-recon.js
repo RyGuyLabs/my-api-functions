@@ -143,28 +143,31 @@ exports.handler = async function(event, context) {
                 const calc = await MARKET_LOGIC.calculateDynamic(platName, price, cost, weight, category);
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
                 const postTaxNet = calc.net > 0 ? calc.net * (1 - taxRate) : calc.net;
+                
+                // NEW: Manual ROI calculation to ensure accuracy
+                const manualRoi = cost > 0 ? (postTaxNet / cost) * 100 : 0;
 
                 const meta = {
-    poshmark: { days: 5, risk: "Low", complexity: "Low" },
-    ebay: { days: 3, risk: "Med", complexity: "High" },
-    mercari: { days: 4, risk: "Med", complexity: "Low" },
-    depop: { days: 4, risk: "Med", complexity: "Low" },
-    stockx: { days: 2, risk: "Low", complexity: "Med" },
-    offerup: { days: 1, risk: "High", complexity: "Low" },
-    etsy: { days: 7, risk: "Low", complexity: "High" },
-    pinterest: { days: 10, risk: "Low", complexity: "Med" }
-}[platName];
+                    poshmark: { days: 5, risk: "Low", complexity: "Low" },
+                    ebay: { days: 3, risk: "Med", complexity: "High" },
+                    mercari: { days: 4, risk: "Med", complexity: "Low" },
+                    depop: { days: 4, risk: "Med", complexity: "Low" },
+                    stockx: { days: 2, risk: "Low", complexity: "Med" },
+                    offerup: { days: 1, risk: "High", complexity: "Low" },
+                    etsy: { days: 7, risk: "Low", complexity: "High" },
+                    pinterest: { days: 10, risk: "Low", complexity: "Med" }
+                }[platName];
 
-return {
-    name: platName,
-    net: postTaxNet,
-    fee: calc.fee,
-    roi: calc.roi,
-    postTax: postTaxNet,
-    days: meta.days,
-    risk: meta.risk,
-    complexity: meta.complexity
-};
+                return {
+                    name: platName,
+                    net: postTaxNet,
+                    fee: calc.fee,
+                    roi: Math.round(manualRoi), // Fixed: Now uses the manual calculation
+                    postTax: postTaxNet,
+                    days: meta.days,
+                    risk: meta.risk,
+                    complexity: meta.complexity
+                };
             }));
 
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
