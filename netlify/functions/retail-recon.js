@@ -135,18 +135,19 @@ Item: ${title}
         aiStatus: "online"
     };
 
-} catch (err) {
-    console.error("Gemini Fatal Error:", err);
+    } catch (err) {
+        console.error("Gemini Fatal Error:", err);
 
-    return {
-        seoTitle: title,
-        seoDescription: description,
-        aiTitle: title,
-        aiDescription: description,
-        styleTags: [],
-        seoKeywords: "",
-        aiStatus: "fatal-error"
-    };
+        return {
+            seoTitle: title,
+            seoDescription: description,
+            aiTitle: title,
+            aiDescription: description,
+            styleTags: [],
+            seoKeywords: "",
+            aiStatus: "fatal-error"
+        };
+    }
 }
 exports.handler = async function(event, context) {
 
