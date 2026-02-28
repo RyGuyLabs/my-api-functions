@@ -4,26 +4,33 @@ const MARKET_LOGIC = {
     calculate: (platform, price, weight, category) => {
         let fee = 0;
         let shipping = 0;
-        const shipCost = weight <= 1 ? 6.50 : weight <= 5 ? 8.27 : 12.00;
+        const p = parseFloat(price) || 0;
+        const w = parseFloat(weight) || 0;
+        const shipCost = w <= 1 ? 6.50 : w <= 5 ? 8.27 : 12.00;
 
         switch (platform) {
             case 'poshmark':
-                fee = price < 15 ? 2.95 : price * 0.20;
+                fee = p < 15 ? 2.95 : p * 0.20;
                 break;
             case 'ebay':
                 const rate = MARKET_LOGIC.categories[category]?.ebayFee || 0.136;
-                fee = (price * rate) + 0.40;
+                fee = (p * rate) + 0.40;
                 shipping = shipCost * 0.136; 
                 break;
             case 'mercari':
-                fee = (price + shipCost) * 0.10;
+                fee = (p + shipCost) * 0.10;
                 break;
             case 'depop':
-                fee = (price * 0.033) + 0.45;
+                fee = (p * 0.033) + 0.45;
                 break;
         }
-        const net = price - fee - shipping;
-        return { net, fee: fee + shipping, roi: ((net / price) * 100) };
+        const net = p - fee - shipping;
+        // The || 0 ensures we never return null
+        return { 
+            net: net || 0, 
+            fee: (fee + shipping) || 0, 
+            roi: p > 0 ? ((net / p) * 100) : 0 
+        };
     },
     categories: {
         standard: { ebayFee: 0.136 },
