@@ -77,13 +77,37 @@ Return response in JSON format like this:
         const rawText =
             data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-        // Extract JSON safely
-        const cleaned = rawText
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim();
+       let parsed;
 
-        const parsed = JSON.parse(cleaned);
+try {
+    const cleaned = rawText
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+    // Extract first JSON object from response
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+        throw new Error("No JSON found in Gemini response");
+    }
+
+    parsed = JSON.parse(jsonMatch[0]);
+
+} catch (parseErr) {
+    console.error("Gemini Parse Error:", parseErr);
+    console.error("Raw Gemini Response:", rawText);
+
+    return {
+        seoTitle: title,
+        seoDescription: description,
+        aiTitle: title,
+        aiDescription: description,
+        styleTags: [],
+        seoKeywords: "",
+        aiStatus: "parse-failed"
+    };
+}
 
         return {
             seoTitle: parsed.title,
