@@ -1,7 +1,6 @@
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
 
 const MARKET_LOGIC = {
-    // This replaces the static switch-case with a dynamic AI fetch
     calculateDynamic: async (platform, price, cost, weight, category) => {
         try {
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.RETAIL_RECON_KEY}`, {
@@ -10,16 +9,16 @@ const MARKET_LOGIC = {
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: `Act as a 2026 resale auditor. Calculate EXACT profit for ${platform}. 
 Rules: 
-- Poshmark: 20% fee ($2.95 if <$15), $0 shipping.
-- eBay: 13.25% fee + $0.40, ${weight}lb shipping.
-- Mercari: 10% fee + 2.9% + $0.50, $0 shipping.
-- Depop: 10% fee + 3.3% + $0.45, $0 shipping.
-- Etsy: 6.5% + 3.1% + $0.45, ${weight}lb shipping.
-- StockX: 9% + 3%, $4 shipping.
+- Poshmark: 20% fee ($2.95 if <$15), $0 shipping (Buyer pays).
+- eBay: 13.25% fee + $0.40, ${weight}lb shipping label cost.
+- Mercari: 10% flat fee, $0 processing, $0 shipping (Buyer pays).
+- Depop: 0% fee, 3.3% + $0.45 processing, $0 shipping (Buyer pays).
+- Etsy: 6.5% + 3% + $0.25, $0.20 listing fee, ${weight}lb shipping.
+- StockX: 9% fee + 3% processing, $5 shipping fee.
 - OfferUp: 12.9% fee (min $1.99), $0 shipping.
-- Pinterest: 2.3% + $0.30, ${weight}lb shipping.
+- Pinterest: 0% fee (Direct checkout), 2.3% + $0.30 processing, ${weight}lb shipping.
 Item: ${category} at $${price}, Cost: $${cost}, Weight: ${weight}lbs. 
-Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number, "roi": number}` }] }]
+Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number}` }] }]
                 })
             });
             const data = await response.json();
@@ -27,12 +26,11 @@ Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number, "roi"
             const parsed = JSON.parse(raw);
             return {
                 net: parsed.netProfit || 0,
-                fee: (parsed.fee + parsed.shipping) || 0,
-                roi: parsed.roi || 0
+                fee: (parsed.fee + parsed.shipping) || 0
             };
         } catch (err) {
             console.error("Math AI Error:", err);
-            return { net: 0, fee: 0, roi: 0 }; // Failsafe
+            return { net: 0, fee: 0 }; 
         }
     }
 };
