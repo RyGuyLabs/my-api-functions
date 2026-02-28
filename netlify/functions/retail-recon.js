@@ -1,12 +1,54 @@
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
 
 const MARKET_LOGIC = {
+    // 2026 Resale Engine Logic
+    calculate: (platform, price, weight, category) => {
+        let fee = 0;
+        let shipping = 0;
+        
+        // Estimated 2026 Shipping based on weight (lb)
+        const shipCost = weight <= 1 ? 6.50 : weight <= 5 ? 8.27 : 12.00;
+
+        switch (platform) {
+            case 'poshmark':
+                // Poshmark 2026: Under $15 is flat $2.95, else 20%
+                fee = price < 15 ? 2.95 : price * 0.20;
+                shipping = 0; // Buyer pays Poshmark's flat label
+                break;
+
+            case 'ebay':
+                // eBay 2026: ~13.6% + $0.40 fixed fee (Avg category)
+                const categoryRate = MARKET_LOGIC.categories[category]?.ebayFee || 0.136;
+                fee = (price * categoryRate) + 0.40;
+                shipping = shipCost * 0.136; // eBay charges fees ON shipping too
+                break;
+
+            case 'mercari':
+                // Mercari 2026: 10% flat on (Price + Shipping)
+                fee = (price + shipCost) * 0.10;
+                shipping = 0; // Assuming buyer-paid shipping
+                break;
+
+            case 'depop':
+                // Depop 2026: 0% Listing Fee, but 3.3% + $0.45 Payment Processing
+                fee = (price * 0.033) + 0.45;
+                shipping = 0;
+                break;
+        }
+
+        const net = price - fee - shipping;
+        return {
+            net: net,
+            fee: fee + shipping,
+            roi: ((net / price) * 100)
+        };
+    },
     categories: {
-        standard: { ebayFee: 0.1325, poshFee: 0.20, vol: 0.05 },
-        electronics: { ebayFee: 0.08, poshFee: 0.20, vol: 0.15 },
-        collectibles: { ebayFee: 0.12, poshFee: 0.20, vol: 0.10 },
-        sneakers: { ebayFee: 0.00, poshFee: 0.20, vol: 0.08 },
-        media: { ebayFee: 0.1495, poshFee: 0.20, vol: 0.03 }
+        standard: { ebayFee: 0.136 },
+        electronics: { ebayFee: 0.08 },
+        collectibles: { ebayFee: 0.1325 },
+        sneakers: { ebayFee: 0.08 }, // 2026 eBay Sneaker Fee for most tiers
+        media: { ebayFee: 0.153 }
     }
 };
 
