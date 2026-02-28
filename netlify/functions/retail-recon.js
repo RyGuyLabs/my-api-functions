@@ -8,7 +8,14 @@ const MARKET_LOGIC = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: `Act as a resale profit calculator. Return ONLY JSON for 2026 ${platform} fees and shipping for a ${category} item priced at $${price}, costing $${cost}, weighing ${weight}lbs. Format: {"fee": number, "shipping": number, "netProfit": number, "roi": number}` }] }]
+                    contents: [{ parts: [{ text: `text: `Act as a 2026 resale auditor. Calculate EXACT profit for ${platform}. 
+Rules: 
+- Poshmark: 20% fee ($2.95 if <$15), $0 shipping.
+- eBay: 13.25% fee + $0.40, ${weight}lb shipping label cost.
+- Etsy: 6.5% + 3% + $0.45, ${weight}lb shipping.
+- StockX: 9% + 3%, $4 shipping.
+Item: ${category} at $${price}, Cost: $${cost}, Weight: ${weight}lbs. 
+Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number, "roi": number}`` }] }]
                 })
             });
             const data = await response.json();
