@@ -23,26 +23,26 @@ function rateLimit(ip) {
     return true;
 }
 
-async function generateSEO({ title, description, platform = "general" }) {
-    if (!title || !description) {
-        return { error: "Title and description required" };
-    }
+async function generateSEO({ title, description, platform }) {
+    if (!title || !description) return { error: "Title and description required" };
 
     try {
-    const apiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
-    method: "POST",
-    headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.RETAIL_RECON_KEY
-    },
-    body: JSON.stringify({ title, description, platform, action: "seo" })
-});
+        const apiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": API_KEY
+            },
+            body: JSON.stringify({ title, description, platform, action: "seo" })
+        });
 
-if (!apiResponse.ok) {
-    throw new Error(`Backend SEO API failed with status ${apiResponse.status}`);
-}
+        if (!apiResponse.ok) {
+            const text = await apiResponse.text();
+            console.error("SEO API failure:", apiResponse.status, text);
+            throw new Error("SEO API returned non-ok");
+        }
 
-const parsed = await apiResponse.json();
+        const parsed = await apiResponse.json();
 
         return {
             seoTitle: parsed.seoTitle || title,
@@ -53,7 +53,6 @@ const parsed = await apiResponse.json();
 
     } catch (err) {
         console.error("AI SEO Error:", err);
-
         return {
             seoTitle: title,
             seoDescription: description,
@@ -63,46 +62,33 @@ const parsed = await apiResponse.json();
     }
 }
 
-// ✅ Netlify requires exports.handler
 exports.handler = async function(event, context) {
-
     const jsonResponse = (status, data) => ({
         statusCode: status,
         headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // allow frontend calls
+            "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Content-Type, x-api-key",
             "Access-Control-Allow-Methods": "POST, OPTIONS"
         },
         body: JSON.stringify(data)
     });
 
-    // Handle preflight requests
-    if (event.httpMethod === "OPTIONS") {
-        return jsonResponse(200, { message: "CORS OK" });
-    }
-
+    if (event.httpMethod === "OPTIONS") return jsonResponse(200, { message: "CORS OK" });
     if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
     try {
         const reqBody = JSON.parse(event.body || "{}");
         const ip = event.headers["x-forwarded-for"] || "unknown";
-
         if (!rateLimit(ip)) return jsonResponse(429, { error: "Rate limit exceeded. Please wait." });
 
-        const { action } = reqBody;
+        const { action, title = "", description = "", platform = "general" } = reqBody;
 
-        // SEO mode
-if (action === "seo") {
-    const seoResult = await generateSEO({
-        title: reqBody.title || "",
-        description: reqBody.description || "",
-        platform: reqBody.platform || "general"
-    });
-    return jsonResponse(200, seoResult);
-}
+        if (action === "seo") {
+            const seoResult = await generateSEO({ title, description, platform });
+            return jsonResponse(200, seoResult);
+        }
 
-        // Retail Recon mode
         const { price, cost, weight, category, taxMode, marketSort, isReverseMode } = reqBody;
 
         if ([price, cost, weight].some(v => typeof v !== "number" || v < 0))
