@@ -37,7 +37,7 @@ async function generateSEO({ title, description, platform = "general" }) {
 
     try {
         const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.RETAIL_RECON_KEY}`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
