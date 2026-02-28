@@ -8,14 +8,14 @@ const MARKET_LOGIC = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: `text: `Act as a 2026 resale auditor. Calculate EXACT profit for ${platform}. 
+                    contents: [{ parts: [{ text: `Act as a 2026 resale auditor. Calculate EXACT profit for ${platform}. 
 Rules: 
 - Poshmark: 20% fee ($2.95 if <$15), $0 shipping.
 - eBay: 13.25% fee + $0.40, ${weight}lb shipping label cost.
-- Etsy: 6.5% + 3% + $0.45, ${weight}lb shipping.
+- Etsy: 6.5% + 3.1% + $0.45, ${weight}lb shipping.
 - StockX: 9% + 3%, $4 shipping.
 Item: ${category} at $${price}, Cost: $${cost}, Weight: ${weight}lbs. 
-Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number, "roi": number}`` }] }]
+Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number, "roi": number}` }] }]
                 })
             });
             const data = await response.json();
@@ -98,29 +98,26 @@ async function generateSEO({ title, description, platform = "general" }) {
     }
 }
 exports.handler = async function(event, context) {
+    const headers = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
+    };
 
     const jsonResponse = (status, data) => ({
         statusCode: status,
-        headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // <- fix: always present
-            "Access-Control-Allow-Headers": "Content-Type, x-api-key",
-            "Access-Control-Allow-Methods": "POST, OPTIONS"
-        },
+        headers: headers,
         body: JSON.stringify(data)
     });
 
-    // preflight requests
-    if (event.httpMethod === "OPTIONS") {
-        return jsonResponse(200, { message: "CORS OK" });
-    }
-
+    if (event.httpMethod === "OPTIONS") return jsonResponse(200, { message: "CORS OK" });
     if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
 
     try {
         const reqBody = JSON.parse(event.body || "{}");
         const ip = event.headers["x-forwarded-for"] || "unknown";
-        if (!rateLimit(ip)) return jsonResponse(429, { error: "Rate limit exceeded. Please wait." });
+        if (!rateLimit(ip)) return jsonResponse(429, { error: "Rate limit exceeded." });
 
         const { action, title = "", description = "", platform = "general" } = reqBody;
 
@@ -129,49 +126,38 @@ exports.handler = async function(event, context) {
             return jsonResponse(200, seoResult);
         }
 
-        // --- ARBITRAGE TOOL LOGIC ---
         if (action === "arbitrage") {
             const { price, cost, weight, category, taxMode, marketSort } = reqBody;
 
-            // Safety check for inputs
             if ([price, cost, weight].some(v => typeof v !== "number")) {
                 return jsonResponse(400, { error: "Please enter valid numbers." });
             }
 
-            // Use Promise.all to fetch dynamic data for all platforms at once
             const results = await Promise.all([
                 "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
             ].map(async (platName) => {
                 const calc = await MARKET_LOGIC.calculateDynamic(platName, price, cost, weight, category);
-                
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-                // Tax only applies to positive profit
                 const postTaxNet = calc.net > 0 ? calc.net * (1 - taxRate) : calc.net;
-                
-                const meta = {
-                    poshmark: { days: 5, risk: "Low", complexity: "Low" },
-                    ebay: { days: 3, risk: "Med", complexity: "High" },
-                    mercari: { days: 4, risk: "Med", complexity: "Low" },
-                    depop: { days: 4, risk: "Med", complexity: "Low" }
-                }[platName] || { days: 7, risk: "Low", complexity: "Med" };
 
                 return {
                     name: platName,
-                    net: postTaxNet, 
+                    net: postTaxNet,
                     fee: calc.fee,
                     roi: calc.roi,
                     postTax: postTaxNet,
-                    days: meta.days,
-                    risk: meta.risk,
-                    complexity: meta.complexity
+                    days: 3,
+                    risk: "Low",
+                    complexity: "Low"
                 };
             }));
+
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
             return jsonResponse(200, { results, topResult: results[0] });
         }
 
     } catch (err) {
         console.error("Retail Recon Error:", err);
-        return jsonResponse(500, { error: "Internal server error" });
+        return jsonResponse(500, { error: "Internal server error", details: err.message });
     }
 };
