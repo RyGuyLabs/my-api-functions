@@ -11,9 +11,13 @@ const MARKET_LOGIC = {
                     contents: [{ parts: [{ text: `Act as a 2026 resale auditor. Calculate EXACT profit for ${platform}. 
 Rules: 
 - Poshmark: 20% fee ($2.95 if <$15), $0 shipping.
-- eBay: 13.25% fee + $0.40, ${weight}lb shipping label cost.
+- eBay: 13.25% fee + $0.40, ${weight}lb shipping.
+- Mercari: 10% fee + 2.9% + $0.50, $0 shipping.
+- Depop: 10% fee + 3.3% + $0.45, $0 shipping.
 - Etsy: 6.5% + 3.1% + $0.45, ${weight}lb shipping.
 - StockX: 9% + 3%, $4 shipping.
+- OfferUp: 12.9% fee (min $1.99), $0 shipping.
+- Pinterest: 2.3% + $0.30, ${weight}lb shipping.
 Item: ${category} at $${price}, Cost: $${cost}, Weight: ${weight}lbs. 
 Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number, "roi": number}` }] }]
                 })
@@ -140,16 +144,27 @@ exports.handler = async function(event, context) {
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
                 const postTaxNet = calc.net > 0 ? calc.net * (1 - taxRate) : calc.net;
 
-                return {
-                    name: platName,
-                    net: postTaxNet,
-                    fee: calc.fee,
-                    roi: calc.roi,
-                    postTax: postTaxNet,
-                    days: 3,
-                    risk: "Low",
-                    complexity: "Low"
-                };
+                const meta = {
+    poshmark: { days: 5, risk: "Low", complexity: "Low" },
+    ebay: { days: 3, risk: "Med", complexity: "High" },
+    mercari: { days: 4, risk: "Med", complexity: "Low" },
+    depop: { days: 4, risk: "Med", complexity: "Low" },
+    stockx: { days: 2, risk: "Low", complexity: "Med" },
+    offerup: { days: 1, risk: "High", complexity: "Low" },
+    etsy: { days: 7, risk: "Low", complexity: "High" },
+    pinterest: { days: 10, risk: "Low", complexity: "Med" }
+}[platName];
+
+return {
+    name: platName,
+    net: postTaxNet,
+    fee: calc.fee,
+    roi: calc.roi,
+    postTax: postTaxNet,
+    days: meta.days,
+    risk: meta.risk,
+    complexity: meta.complexity
+};
             }));
 
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
