@@ -24,16 +24,7 @@ function rateLimit(ip) {
 }
 
 async function generateSEO({ title, description, platform = "general" }) {
-    if (!title || !description) {
-        return {
-            aiTitle: title || "",
-            aiDescription: description || "",
-            seoTitle: title || "",
-            seoDescription: description || "",
-            aiStatus: "input missing",
-            styleTags: []
-        };
-    }
+    if (!title) return { aiStatus: "input missing" };
 
     try {
         const geminiResponse = await fetch(
@@ -42,70 +33,39 @@ async function generateSEO({ title, description, platform = "general" }) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    prompt: `
-You are an expert resale marketplace SEO optimizer.
-
-Create:
-1) A high-converting listing title (under 80 characters).
-2) A keyword-rich description.
-3) 8 short style tags.
-
-Return strictly as JSON:
-{
-  "title": "...",
-  "description": "...",
-  "tags": ["tag1","tag2",...]
-}
-
-Platform: ${platform}
-Item: ${title}
-`,
-                    temperature: 0.7,
-                    candidateCount: 1,
-                    maxOutputTokens: 500
+                    contents: [{
+                        parts: [{
+                            text: `You are an expert resale marketplace SEO optimizer. 
+                            Create a high-converting listing title (under 80 chars), a keyword-rich description, and 8 style tags. 
+                            Return ONLY JSON: {"title": "...", "description": "...", "tags": ["tag1", "tag2", ...]}
+                            Platform: ${platform}
+                            Item: ${title}`
+                        }]
+                    }]
                 })
             }
         );
 
         const data = await geminiResponse.json();
-        const rawText = data.candidates?.[0]?.content?.[0]?.text || "";
+        
+        // This line dives into the specific Gemini response structure
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-        let parsed;
-        try {
-            const cleaned = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-            const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) throw new Error("No JSON found in Gemini response");
-            parsed = JSON.parse(jsonMatch[0]);
-        } catch {
-            return {
-                seoTitle: title,
-                seoDescription: description,
-                aiTitle: title,
-                aiDescription: description,
-                styleTags: [],
-                seoKeywords: "",
-                aiStatus: "parse-failed"
-            };
-        }
+        const cleaned = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(cleaned);
 
         return {
-            seoTitle: parsed.title,
-            seoDescription: parsed.description,
             aiTitle: parsed.title,
             aiDescription: parsed.description,
             styleTags: parsed.tags || [],
-            seoKeywords: (parsed.tags || []).join(", "),
             aiStatus: "online"
         };
 
-    } catch {
+    } catch (error) {
+        console.error("Gemini Error:", error);
         return {
-            seoTitle: title,
-            seoDescription: description,
-            aiTitle: title,
+            aiTitle: title, // Fallback to original
             aiDescription: description,
-            styleTags: [],
-            seoKeywords: "",
             aiStatus: "error"
         };
     }
