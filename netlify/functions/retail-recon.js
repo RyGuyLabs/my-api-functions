@@ -1,50 +1,30 @@
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
 
 const MARKET_LOGIC = {
-    calculate: (platform, price, weight, category, cost) => {
-        let fee = 0;
-        let shipping = 0;
-        const p = parseFloat(price) || 0;
-        const w = parseFloat(weight) || 0;
-        const c = parseFloat(cost) || 0;
-        const shipCost = w <= 1 ? 6.50 : w <= 5 ? 8.27 : 12.00;
-
-        switch (platform) {
-            case 'poshmark':
-                fee = p < 15 ? 2.95 : p * 0.20;
-                shipping = 0; // Buyer pays
-                break;
-            case 'ebay':
-                const rate = MARKET_LOGIC.categories[category]?.ebayFee || 0.136;
-                fee = ((p + shipCost) * rate) + 0.30;
-                shipping = shipCost; // Seller pays
-                break;
-            case 'mercari':
-                fee = (p * 0.10) + 0.50;
-                shipping = 0; // Buyer pays
-                break;
-            case 'depop':
-                fee = (p * 0.033) + 0.45;
-                shipping = 0;
-                break;
+    // This replaces the static switch-case with a dynamic AI fetch
+    calculateDynamic: async (platform, price, cost, weight, category) => {
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.RETAIL_RECON_KEY}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: `Act as a resale profit calculator. Return ONLY JSON for 2026 ${platform} fees and shipping for a ${category} item priced at $${price}, costing $${cost}, weighing ${weight}lbs. Format: {"fee": number, "shipping": number, "netProfit": number, "roi": number}` }] }]
+                })
+            });
+            const data = await response.json();
+            const raw = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+            const parsed = JSON.parse(raw);
+            return {
+                net: parsed.netProfit || 0,
+                fee: (parsed.fee + parsed.shipping) || 0,
+                roi: parsed.roi || 0
+            };
+        } catch (err) {
+            console.error("Math AI Error:", err);
+            return { net: 0, fee: 0, roi: 0 }; // Failsafe
         }
-        const payout = p - fee - shipping;
-        const netProfit = payout - c; 
-        return { 
-            net: netProfit || 0, 
-            fee: (fee + shipping) || 0, 
-            roi: c > 0 ? ((netProfit / c) * 100) : 0 
-        };
-    },
-    categories: {
-        standard: { ebayFee: 0.136 },
-        electronics: { ebayFee: 0.08 },
-        collectibles: { ebayFee: 0.1325 },
-        sneakers: { ebayFee: 0.08 },
-        media: { ebayFee: 0.153 }
     }
 };
-
 const requestLog = {};
 
 function rateLimit(ip) {
