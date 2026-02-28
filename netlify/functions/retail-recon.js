@@ -33,14 +33,19 @@ async function generateSEO({ title, description, platform = "general" }) {
     }
 
     try {
-        // Create the exact object the frontend expects
         const result = {
-            aiTitle: title, // Listing Preview title directly
-            aiDescription: `[SEO Description for ${platform}]: ${description}`, // prepend platform info
-            aiStatus: "online",
-            seoKeywords: "example, seo, product",
-            styleTags: ["seo", platform]
-        };
+    // Preview keys (required for Listing Preview section)
+    seoTitle: title,
+    seoDescription: `[SEO Description for ${platform}]: ${description}`,
+
+    // AI output keys (required for AI Title & Description section)
+    aiTitle: title,
+    aiDescription: `[SEO Description for ${platform}]: ${description}`,
+
+    aiStatus: "online",
+    seoKeywords: "example, seo, product",
+    styleTags: ["seo", platform]
+};
 
         return result;
 
