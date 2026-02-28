@@ -139,51 +139,44 @@ exports.handler = async function(event, context) {
             return jsonResponse(200, seoResult);
         }
 
-        const { price, cost, weight, category, taxMode, marketSort, isReverseMode } = reqBody;
+        // --- ARBITRAGE TOOL LOGIC ---
+        if (action === "arbitrage") {
+            const { price, cost, weight, category, taxMode, marketSort } = reqBody;
 
-        if ([price, cost, weight].some(v => typeof v !== "number" || v < 0))
-            return jsonResponse(400, { error: "Invalid numeric inputs" });
+            // Safety check for inputs
+            if ([price, cost, weight].some(v => typeof v !== "number")) {
+                return jsonResponse(400, { error: "Please enter valid numbers." });
+            }
 
-        if (price > 100000 || cost > 100000 || weight > 200)
-            return jsonResponse(400, { error: "Input exceeds allowed range" });
+            const results = [
+                "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
+            ].map(platName => {
+                const calc = MARKET_LOGIC.calculate(platName, price, weight, category);
+                let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
+                const postTaxNet = calc.net - (calc.net * taxRate);
+                
+                const meta = {
+                    poshmark: { days: 5, risk: "Low", complexity: "Low" },
+                    ebay: { days: 3, risk: "Med", complexity: "High" },
+                    mercari: { days: 4, risk: "Med", complexity: "Low" },
+                    depop: { days: 4, risk: "Med", complexity: "Low" }
+                }[platName] || { days: 7, risk: "Low", complexity: "Med" };
 
-        const results = [
-            "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
-        ].map(platName => {
-            // 1. Call our central 2026 Intelligence Engine
-            const calc = MARKET_LOGIC.calculate(platName, price, weight, category);
-            
-            // 2. Tax Logic
-            let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-            const postTaxNet = calc.net - (calc.net * taxRate);
-            
-            // 3. Metadata (Days, Risk, etc.)
-            const meta = {
-                poshmark: { days: 5, risk: "Low", complexity: "Low" },
-                ebay: { days: 3, risk: "Med", complexity: "High" },
-                mercari: { days: 4, risk: "Med", complexity: "Low" },
-                depop: { days: 4, risk: "Med", complexity: "Low" }
-            }[platName] || { days: 7, risk: "Low", complexity: "Med" };
+                return {
+                    name: platName,
+                    net: calc.net || 0,
+                    fee: calc.fee || 0,
+                    roi: calc.roi || 0,
+                    postTax: postTaxNet || 0,
+                    days: meta.days,
+                    risk: meta.risk,
+                    complexity: meta.complexity
+                };
+            });
 
-            return {
-                name: platName,
-                net: calc.net,      // Matches Frontend
-                fee: calc.fee,      // Matches Frontend
-                roi: calc.roi,      // Matches Frontend
-                postTax: postTaxNet,
-                days: meta.days,
-                risk: meta.risk,
-                complexity: meta.complexity
-            };
-        });
-
-        // 4. Final Sort Logic
-        results.sort((a, b) => {
-            if (marketSort === "roi") return b.roi - a.roi;
-            return b.net - a.net;
-        });
-
-        return jsonResponse(200, { results, topResult: results[0] });
+            results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
+            return jsonResponse(200, { results, topResult: results[0] });
+        }
 
     } catch (err) {
         console.error("Retail Recon Error:", err);
