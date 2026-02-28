@@ -23,7 +23,6 @@ function rateLimit(ip) {
     return true;
 }
 
-// line 54–72 replacement (no self-call)
 async function generateSEO({ title, description, platform = "general" }) {
     // input check
     if (!title || !description) {
@@ -31,8 +30,7 @@ async function generateSEO({ title, description, platform = "general" }) {
     }
 
     try {
-        // ❌ Removed self-call to Netlify function
-        // Provide static fallback so app works until real AI is integrated
+        // static fallback for now
         const parsed = {
             seoTitle: `[SEO] ${title}`,
             seoDescription: `[SEO Description for ${platform}]: ${description}`,
@@ -40,13 +38,19 @@ async function generateSEO({ title, description, platform = "general" }) {
             styleTags: ["seo", platform]
         };
 
-        return { ...parsed, aiStatus: "stub-online" };
+        return {
+            aiTitle: parsed.seoTitle,            // frontend expects aiTitle
+            aiDescription: parsed.seoDescription, // frontend expects aiDescription
+            seoKeywords: parsed.seoKeywords,
+            styleTags: parsed.styleTags,
+            aiStatus: "online"
+        };
 
     } catch (err) {
         console.error("AI SEO Error:", err);
         return {
-            seoTitle: title,
-            seoDescription: description,
+            aiTitle: title,
+            aiDescription: description,
             seoKeywords: "",
             styleTags: [],
             aiStatus: "offline"
