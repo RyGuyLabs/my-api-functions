@@ -25,38 +25,87 @@ function rateLimit(ip) {
 
 async function generateSEO({ title, description, platform = "general" }) {
     if (!title || !description) {
-        return { 
-            aiTitle: title || "", 
-            aiDescription: description || "", 
-            aiStatus: "input missing" 
+        return {
+            aiTitle: title || "",
+            aiDescription: description || "",
+            seoTitle: title || "",
+            seoDescription: description || "",
+            aiStatus: "input missing",
+            styleTags: []
         };
     }
 
     try {
-        const result = {
-    // Preview keys (required for Listing Preview section)
-    seoTitle: title,
-    seoDescription: `[SEO Description for ${platform}]: ${description}`,
+        const geminiResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            parts: [
+                                {
+                                    text: `
+You are an expert resale marketplace SEO optimizer.
 
-    // AI output keys (required for AI Title & Description section)
-    aiTitle: title,
-    aiDescription: `[SEO Description for ${platform}]: ${description}`,
+Create:
+1) A high-converting optimized listing title (under 80 characters).
+2) A keyword-rich but natural product description.
+3) 8 short style tags.
 
-    aiStatus: "online",
-    seoKeywords: "example, seo, product",
-    styleTags: ["seo", platform]
-};
+Platform: ${platform}
+Item: ${title}
 
-        return result;
+Return response in JSON format like this:
+{
+  "title": "...",
+  "description": "...",
+  "tags": ["tag1","tag2"]
+}
+`
+                                }
+                            ]
+                        }
+                    ]
+                })
+            }
+        );
+
+        const data = await geminiResponse.json();
+
+        const rawText =
+            data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+        // Extract JSON safely
+        const cleaned = rawText
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim();
+
+        const parsed = JSON.parse(cleaned);
+
+        return {
+            seoTitle: parsed.title,
+            seoDescription: parsed.description,
+            aiTitle: parsed.title,
+            aiDescription: parsed.description,
+            styleTags: parsed.tags || [],
+            seoKeywords: (parsed.tags || []).join(", "),
+            aiStatus: "online"
+        };
 
     } catch (err) {
-        console.error("AI SEO Error:", err);
+        console.error("Gemini SEO Error:", err);
+
         return {
+            seoTitle: title,
+            seoDescription: description,
             aiTitle: title,
             aiDescription: description,
-            aiStatus: "offline",
+            styleTags: [],
             seoKeywords: "",
-            styleTags: []
+            aiStatus: "error"
         };
     }
 }
