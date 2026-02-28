@@ -147,64 +147,40 @@ exports.handler = async function(event, context) {
         if (price > 100000 || cost > 100000 || weight > 200)
             return jsonResponse(400, { error: "Input exceeds allowed range" });
 
-        const activeFees = MARKET_LOGIC.categories[category] || MARKET_LOGIC.categories.standard;
-
-        const platforms = [
-            { name: "Poshmark", risk: "Low", baseRisk: 1, riskClass: "risk-low", feeFn: p => p < 15 ? 2.95 : p * activeFees.poshFee, shipFn: w => w > 5 ? (w - 5) * 4.5 : 0, days: 5, logic: "Buyer Pays Shipping", complexity: "Low" },
-            { name: "eBay", risk: "Med", baseRisk: 2, riskClass: "risk-med", feeFn: p => (p * activeFees.ebayFee) + 0.3, shipFn: w => w <= 1 ? 5.5 : 8.5, days: 3, logic: "Max Reach Search", complexity: "High" },
-            { name: "StockX", risk: "Low", baseRisk: 1, riskClass: "risk-low", feeFn: p => p * 0.12, shipFn: w => 0, days: 14, logic: "Authentication", complexity: "Med" },
-            { name: "OfferUp", risk: "High", baseRisk: 4, riskClass: "risk-high", feeFn: p => 0, shipFn: w => 0, days: 1, logic: "Local Cash", complexity: "High" },
-            { name: "Depop", risk: "Med", baseRisk: 2, riskClass: "risk-med", feeFn: p => (p * 0.133) + 0.45, shipFn: w => 5.49, days: 4, logic: "Gen Z Aesthetic", complexity: "Low" },
-            { name: "Etsy", risk: "Low", baseRisk: 1, riskClass: "risk-low", feeFn: p => (p * 0.065) + 0.2, shipFn: w => 6.0, days: 7, logic: "Vintage/Handmade", complexity: "High" },
-            { name: "Mercari", risk: "Med", baseRisk: 2, riskClass: "risk-med", feeFn: p => (p * 0.1) + 0.5, shipFn: w => 7.4, days: 4, logic: "Direct/Fast", complexity: "Low" },
-            { name: "Pinterest", risk: "Low", baseRisk: 1, riskClass: "risk-low", feeFn: p => 0, shipFn: w => 0, days: 30, logic: "Affiliate/Direct", complexity: "High" }
-        ];
-
-        let taxRate = 0;
-        if (taxMode === "sole") taxRate = 0.153;
-        if (taxMode === "llc") taxRate = 0.12;
-
-        const results = platforms.map(plat => {
-            let p = price;
-            let net;
-
-            if (isReverseMode) {
-                const target = price;
-                p = (target + cost + plat.shipFn(weight)) / 0.8;
-                for (let i = 0; i < 10; i++) {
-                    net = p - plat.feeFn(p) - plat.shipFn(weight) - cost;
-                    p = p + (target - net);
-                }
-            } else {
-                net = p - plat.feeFn(p) - plat.shipFn(weight) - cost;
-            }
-
-            const postTaxNet = net - net * taxRate;
-            const roi = cost > 0 ? (postTaxNet / cost) * 100 : 0;
-            const yieldPerDay = postTaxNet / plat.days;
-            const adjRisk = plat.baseRisk + activeFees.vol * 10;
+        const results = [
+            "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
+        ].map(platName => {
+            // 1. Call our central 2026 Intelligence Engine
+            const calc = MARKET_LOGIC.calculate(platName, price, weight, category);
+            
+            // 2. Tax Logic
+            let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
+            const postTaxNet = calc.net - (calc.net * taxRate);
+            
+            // 3. Metadata (Days, Risk, etc.)
+            const meta = {
+                poshmark: { days: 5, risk: "Low", complexity: "Low" },
+                ebay: { days: 3, risk: "Med", complexity: "High" },
+                mercari: { days: 4, risk: "Med", complexity: "Low" },
+                depop: { days: 4, risk: "Med", complexity: "Low" }
+            }[platName] || { days: 7, risk: "Low", complexity: "Med" };
 
             return {
-                name: plat.name,
-                risk: plat.risk,
-                riskClass: plat.riskClass,
-                logic: plat.logic,
-                complexity: plat.complexity,
-                days: plat.days,
-                calcPrice: p,
-                net,
+                name: platName,
+                net: calc.net,      // Matches Frontend
+                fee: calc.fee,      // Matches Frontend
+                roi: calc.roi,      // Matches Frontend
                 postTax: postTaxNet,
-                roi,
-                yieldPerDay,
-                adjRisk
+                days: meta.days,
+                risk: meta.risk,
+                complexity: meta.complexity
             };
         });
 
+        // 4. Final Sort Logic
         results.sort((a, b) => {
             if (marketSort === "roi") return b.roi - a.roi;
-            if (marketSort === "speed") return b.yieldPerDay - a.yieldPerDay;
-            if (marketSort === "risk") return a.adjRisk - b.adjRisk;
-            return b.postTax - a.postTax;
+            return b.net - a.net;
         });
 
         return jsonResponse(200, { results, topResult: results[0] });
