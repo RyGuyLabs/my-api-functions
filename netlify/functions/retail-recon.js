@@ -23,24 +23,33 @@ function rateLimit(ip) {
     return true;
 }
 
-async function generateSEO({ title, description, platform }) {
-    if (!title || !description) return { error: "Title and description required" };
+// line 54–72 replacement
+async function generateSEO({ title, description, platform = "general" }) {
+    if (!title || !description) {
+        return { error: "Title and description required", aiStatus: "input missing" };
+    }
 
     try {
+        if (!process.env.RETAIL_RECON_KEY) {
+            return {
+                seoTitle: title,
+                seoDescription: description,
+                seoKeywords: "",
+                styleTags: [],
+                aiStatus: "env missing"
+            };
+        }
+
         const apiResponse = await fetch("https://ryguyapi.netlify.app/.netlify/functions/retail-recon", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": API_KEY
+                "x-api-key": process.env.RETAIL_RECON_KEY
             },
             body: JSON.stringify({ title, description, platform, action: "seo" })
         });
 
-        if (!apiResponse.ok) {
-            const text = await apiResponse.text();
-            console.error("SEO API failure:", apiResponse.status, text);
-            throw new Error("SEO API returned non-ok");
-        }
+        if (!apiResponse.ok) throw new Error(`Backend SEO API failed with status ${apiResponse.status}`);
 
         const parsed = await apiResponse.json();
 
@@ -48,7 +57,8 @@ async function generateSEO({ title, description, platform }) {
             seoTitle: parsed.seoTitle || title,
             seoDescription: parsed.seoDescription || description,
             seoKeywords: parsed.seoKeywords || "",
-            styleTags: parsed.styleTags || []
+            styleTags: parsed.styleTags || [],
+            aiStatus: "online"
         };
 
     } catch (err) {
@@ -57,22 +67,28 @@ async function generateSEO({ title, description, platform }) {
             seoTitle: title,
             seoDescription: description,
             seoKeywords: "",
-            styleTags: []
+            styleTags: [],
+            aiStatus: "offline"
         };
     }
 }
-
 exports.handler = async function(event, context) {
+
     const jsonResponse = (status, data) => ({
         statusCode: status,
         headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": "*", // <- fix: always present
             "Access-Control-Allow-Headers": "Content-Type, x-api-key",
             "Access-Control-Allow-Methods": "POST, OPTIONS"
         },
         body: JSON.stringify(data)
     });
+
+    // preflight requests
+    if (event.httpMethod === "OPTIONS") {
+        return jsonResponse(200, { message: "CORS OK" });
+    }
 
     if (event.httpMethod === "OPTIONS") return jsonResponse(200, { message: "CORS OK" });
     if (event.httpMethod !== "POST") return jsonResponse(405, { error: "Method not allowed" });
