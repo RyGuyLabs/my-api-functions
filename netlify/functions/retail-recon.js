@@ -36,91 +36,45 @@ async function generateSEO({ title, description, platform = "general" }) {
     }
 
     try {
-        const geminiResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.RETAIL_RECON_KEY}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            parts: [
-                                {
-                                    text: `
+    const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [
+                    {
+                        parts: [
+                            {
+                                text: `
 You are an expert resale marketplace SEO optimizer.
 
-Create:
-1) A high-converting optimized listing title (under 80 characters).
-2) A keyword-rich but natural product description.
-3) 8 short style tags.
+Respond ONLY with valid JSON. No commentary.
+
+Format:
+{
+  "title": "optimized title under 80 chars",
+  "description": "keyword rich description",
+  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8"]
+}
 
 Platform: ${platform}
 Item: ${title}
-
-Return response in JSON format like this:
-{
-  "title": "...",
-  "description": "...",
-  "tags": ["tag1","tag2"]
-}
 `
-                                }
-                            ]
-                        }
-                    ]
-                })
-            }
-        );
+                            }
+                        ]
+                    }
+                ],
+                generationConfig: {
+                    temperature: 0.7
+                }
+            })
+        }
+    );
 
-        const data = await geminiResponse.json();
-
-        const rawText =
-            data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-       let parsed;
-
-try {
-    const cleaned = rawText
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
-
-    // Extract first JSON object from response
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
-        throw new Error("No JSON found in Gemini response");
-    }
-
-    parsed = JSON.parse(jsonMatch[0]);
-
-} catch (parseErr) {
-    console.error("Gemini Parse Error:", parseErr);
-    console.error("Raw Gemini Response:", rawText);
-
-    return {
-        seoTitle: title,
-        seoDescription: description,
-        aiTitle: title,
-        aiDescription: description,
-        styleTags: [],
-        seoKeywords: "",
-        aiStatus: "parse-failed"
-    };
-}
-
-        return {
-            seoTitle: parsed.title,
-            seoDescription: parsed.description,
-            aiTitle: parsed.title,
-            aiDescription: parsed.description,
-            styleTags: parsed.tags || [],
-            seoKeywords: (parsed.tags || []).join(", "),
-            aiStatus: "online"
-        };
-
-    } catch (err) {
-        console.error("Gemini SEO Error:", err);
+    if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        console.error("Gemini HTTP Error:", errorText);
 
         return {
             seoTitle: title,
@@ -129,9 +83,70 @@ try {
             aiDescription: description,
             styleTags: [],
             seoKeywords: "",
-            aiStatus: "error"
+            aiStatus: "gemini-http-error"
         };
     }
+
+    const data = await geminiResponse.json();
+
+    const rawText =
+        data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!rawText) {
+        console.error("Gemini returned no content:", data);
+
+        return {
+            seoTitle: title,
+            seoDescription: description,
+            aiTitle: title,
+            aiDescription: description,
+            styleTags: [],
+            seoKeywords: "",
+            aiStatus: "no-content"
+        };
+    }
+
+    // Extract JSON block safely
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+        console.error("No JSON found in:", rawText);
+
+        return {
+            seoTitle: title,
+            seoDescription: description,
+            aiTitle: title,
+            aiDescription: description,
+            styleTags: [],
+            seoKeywords: "",
+            aiStatus: "no-json"
+        };
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    return {
+        seoTitle: parsed.title || title,
+        seoDescription: parsed.description || description,
+        aiTitle: parsed.title || title,
+        aiDescription: parsed.description || description,
+        styleTags: parsed.tags || [],
+        seoKeywords: (parsed.tags || []).join(", "),
+        aiStatus: "online"
+    };
+
+} catch (err) {
+    console.error("Gemini Fatal Error:", err);
+
+    return {
+        seoTitle: title,
+        seoDescription: description,
+        aiTitle: title,
+        aiDescription: description,
+        styleTags: [],
+        seoKeywords: "",
+        aiStatus: "fatal-error"
+    };
 }
 exports.handler = async function(event, context) {
 
