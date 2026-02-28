@@ -24,36 +24,34 @@ function rateLimit(ip) {
 }
 
 async function generateSEO({ title, description, platform = "general" }) {
-    // input check
     if (!title || !description) {
-        return { error: "Title and description required", aiStatus: "input missing" };
+        return { 
+            aiTitle: title || "", 
+            aiDescription: description || "", 
+            aiStatus: "input missing" 
+        };
     }
 
     try {
-        // static fallback for now
-        const parsed = {
-            seoTitle: `[SEO] ${title}`,
-            seoDescription: `[SEO Description for ${platform}]: ${description}`,
+        // Create the exact object the frontend expects
+        const result = {
+            aiTitle: title, // Listing Preview title directly
+            aiDescription: `[SEO Description for ${platform}]: ${description}`, // prepend platform info
+            aiStatus: "online",
             seoKeywords: "example, seo, product",
             styleTags: ["seo", platform]
         };
 
-        return {
-            aiTitle: parsed.seoTitle,            // frontend expects aiTitle
-            aiDescription: parsed.seoDescription, // frontend expects aiDescription
-            seoKeywords: parsed.seoKeywords,
-            styleTags: parsed.styleTags,
-            aiStatus: "online"
-        };
+        return result;
 
     } catch (err) {
         console.error("AI SEO Error:", err);
         return {
             aiTitle: title,
             aiDescription: description,
+            aiStatus: "offline",
             seoKeywords: "",
-            styleTags: [],
-            aiStatus: "offline"
+            styleTags: []
         };
     }
 }
