@@ -7,16 +7,19 @@ const MARKET_LOGIC = {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: `Act as a 2026 resale auditor. Calculate EXACT profit for ${platform}. 
+                    contents: [{ parts: [{ text: `Act as a 2026 resale auditor. Calculate EXACT payout (Sale - Fees) for ${platform}. 
 Rules: 
-- Poshmark: 20% fee ($2.95 if <$15), $0 shipping (Buyer pays).
-- eBay: 13.25% fee + $0.40, ${weight}lb shipping label cost.
-- Mercari: 10% flat fee, $0 processing, $0 shipping (Buyer pays).
-- Depop: 0% fee, 3.3% + $0.45 processing, $0 shipping (Buyer pays).
-- Etsy: 6.5% + 3% + $0.25, $0.20 listing fee, ${weight}lb shipping.
-- StockX: 9% fee + 3% processing, $5 shipping fee.
-- OfferUp: 12.9% fee (min $1.99), $0 shipping.
-- Pinterest: 0% fee (Direct checkout), 2.3% + $0.30 processing, ${weight}lb shipping.
+- Amazon: 15% referral + $0.99 (Individual) + $0.08 surcharge.
+- Walmart: 15% commission, $0 listing.
+- Poshmark: 20% fee ($2.95 if <$15), $0 shipping.
+- eBay: 13.6% fee + $0.40, ${weight}lb shipping.
+- Mercari: 10% fee, 2.9%+$0.50 processing.
+- Vinted: 0% seller fee, $0 shipping (Buyer pays).
+- Depop: 0% fee, 3.3% + $0.45 processing.
+- Grailed: 9% fee + 3.49% processing.
+- StockX: 9% fee + 3% processing + $5 ship fee.
+- Etsy: 6.5% + 3% + $0.25 + $0.20 listing fee.
+- Pinterest/OfferUp: 0% fee (Local), 2.9%+$0.30 (if Ship).
 Item: ${category} at $${price}, Cost: $${cost}, Weight: ${weight}lbs. 
 Return ONLY JSON: {"fee": number, "shipping": number, "payout": number}` }] }]
                 })
