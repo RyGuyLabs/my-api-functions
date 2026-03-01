@@ -141,11 +141,11 @@ exports.handler = async function(event, context) {
                 const calc = await MARKET_LOGIC.calculateDynamic(platName, price, cost, weight, category);
                 
                 // 1. Subtract cost from net to get true profit
-                const trueProfit = calc.net - cost; 
+                const trueProfit = calc.payout - cost; 
                 
                 // 2. Apply tax rate to true profit
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-                const postTaxNet = trueProfit > 0 ? trueProfit * (1 - taxRate) : trueProfit;
+                const postTaxNet = trueProfit > 0 ? Math.round(trueProfit * (1 - taxRate)) : Math.round(trueProfit);
 
                 // 3. ROI: (Net Profit / Your Investment) * 100
                 const manualRoi = cost > 0 ? (postTaxNet / cost) * 100 : 0;
