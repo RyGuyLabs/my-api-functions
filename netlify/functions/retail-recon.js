@@ -153,18 +153,23 @@ exports.handler = async function(event, context) {
                 const calc = await MARKET_LOGIC.calculateDynamic(plat.id, price, cost, weight, category);
                 
                 const trueProfit = calc.payout - cost;
-                let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
-                const postTaxNet = trueProfit > 0 ? Math.round(trueProfit * (1 - taxRate)) : Math.round(trueProfit);
-                const manualRoi = cost > 0 ? (postTaxNet / cost) * 100 : 0;
+// 2026 Accurate Tax Logic: 15.3% SE Tax + 10% Base Federal Estimate
+let taxRate = 0;
+if (taxMode === "sole") taxRate = 0.253; // 15.3% SE + 10% Fed
+else if (taxMode === "llc") taxRate = 0.22; // LLCs typically estimated at 22% total
+else taxRate = 0; // Hobby / No Tax
 
-                return {
-                    name: plat.label,
-                    group: plat.group, // Vital for the new 3-tier layout
-                    net: postTaxNet,
-                    fee: calc.fee,
-                    roi: Math.round(manualRoi),
-                    postTax: postTaxNet
-                };
+const taxAmount = trueProfit > 0 ? trueProfit * taxRate : 0;
+const postTaxNet = trueProfit - taxAmount;
+
+return {
+    name: plat.label,
+    group: plat.group,
+    net: postTaxNet,
+    taxPaid: taxAmount,
+    fee: calc.fee,
+    roi: cost > 0 ? Math.round((postTaxNet / cost) * 100) : 0
+};
             }));
 
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
