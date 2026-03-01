@@ -18,7 +18,7 @@ Rules:
 - OfferUp: 12.9% fee (min $1.99), $0 shipping.
 - Pinterest: 0% fee (Direct checkout), 2.3% + $0.30 processing, ${weight}lb shipping.
 Item: ${category} at $${price}, Cost: $${cost}, Weight: ${weight}lbs. 
-Return ONLY JSON: {"fee": number, "shipping": number, "netProfit": number}` }] }]
+Return ONLY JSON: {"fee": number, "shipping": number, "payout": number}` }] }]
                 })
             });
             const data = await response.json();
