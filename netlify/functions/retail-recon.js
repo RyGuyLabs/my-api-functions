@@ -25,8 +25,8 @@ Return ONLY JSON: {"fee": number, "shipping": number, "payout": number}` }] }]
             const raw = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
             const parsed = JSON.parse(raw);
             return {
-                net: parsed.netProfit || 0,
-                fee: (parsed.fee + parsed.shipping) || 0
+            payout: parsed.payout || 0,
+            fee: (parsed.fee + parsed.shipping) || 0
             };
         } catch (err) {
             console.error("Math AI Error:", err);
