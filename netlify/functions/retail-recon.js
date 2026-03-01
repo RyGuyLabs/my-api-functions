@@ -134,49 +134,39 @@ exports.handler = async function(event, context) {
         if (action === "arbitrage") {
             const { price, cost, weight, category, taxMode, marketSort } = reqBody;
 
-            if ([price, cost, weight].some(v => typeof v !== "number")) {
-                return jsonResponse(400, { error: "Please enter valid numbers." });
-            }
+            const platforms = [
+                { id: "amazon", group: "High-Volume", label: "Amazon" },
+                { id: "walmart", group: "High-Volume", label: "Walmart" },
+                { id: "ebay", group: "Social Marketplace", label: "eBay" },
+                { id: "poshmark", group: "Social Marketplace", label: "Poshmark" },
+                { id: "mercari", group: "Social Marketplace", label: "Mercari" },
+                { id: "vinted", group: "Social Marketplace", label: "Vinted" },
+                { id: "depop", group: "Social Marketplace", label: "Depop" },
+                { id: "grailed", group: "Specialized/Niche", label: "Grailed" },
+                { id: "stockx", group: "Specialized/Niche", label: "StockX" },
+                { id: "etsy", group: "Specialized/Niche", label: "Etsy" },
+                { id: "offerup", group: "Local/Direct", label: "OfferUp" },
+                { id: "pinterest", group: "Local/Direct", label: "Pinterest" }
+            ];
 
-            const results = await Promise.all([
-                "poshmark", "ebay", "mercari", "depop", "stockx", "offerup", "etsy", "pinterest"
-            ].map(async (platName) => {
-                const calc = await MARKET_LOGIC.calculateDynamic(platName, price, cost, weight, category);
+            const results = await Promise.all(platforms.map(async (plat) => {
+                const calc = await MARKET_LOGIC.calculateDynamic(plat.id, price, cost, weight, category);
                 
-                // 1. Subtract cost from net to get true profit
-                const trueProfit = calc.payout - cost; 
-                
-                // 2. Apply tax rate to true profit
+                const trueProfit = calc.payout - cost;
                 let taxRate = taxMode === "sole" ? 0.153 : taxMode === "llc" ? 0.12 : 0;
                 const postTaxNet = trueProfit > 0 ? Math.round(trueProfit * (1 - taxRate)) : Math.round(trueProfit);
-
-                // 3. ROI: (Net Profit / Your Investment) * 100
                 const manualRoi = cost > 0 ? (postTaxNet / cost) * 100 : 0;
 
-                const meta = {
-                    poshmark: { days: 5, risk: "Low", complexity: "Low" },
-                    ebay: { days: 3, risk: "Med", complexity: "High" },
-                    mercari: { days: 4, risk: "Med", complexity: "Low" },
-                    depop: { days: 4, risk: "Med", complexity: "Low" },
-                    stockx: { days: 2, risk: "Low", complexity: "Med" },
-                    offerup: { days: 1, risk: "High", complexity: "Low" },
-                    etsy: { days: 7, risk: "Low", complexity: "High" },
-                    pinterest: { days: 10, risk: "Low", complexity: "Med" }
-                }[platName];
-
                 return {
-                    name: platName,
+                    name: plat.label,
+                    group: plat.group, // Vital for the new 3-tier layout
                     net: postTaxNet,
                     fee: calc.fee,
                     roi: Math.round(manualRoi),
-                    postTax: postTaxNet,
-                    days: meta.days,
-                    risk: meta.risk,
-                    complexity: meta.complexity
+                    postTax: postTaxNet
                 };
             }));
 
-            // Sort results based on the manual calculations
             results.sort((a, b) => (marketSort === "roi") ? b.roi - a.roi : b.net - a.net);
             return jsonResponse(200, { results, topResult: results[0] });
         }
