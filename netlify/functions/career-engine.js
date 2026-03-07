@@ -1,7 +1,3 @@
-/**
- * RyGuyLabs - Career Alignment Engine
- * Version 2.7 - Final Routing & Logic Restoration
- */
 const fetch = require('node-fetch');
 
 exports.handler = async (event, context) => {
