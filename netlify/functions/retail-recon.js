@@ -1,3 +1,4 @@
+
 const API_KEY = process.env.RETAIL_RECON_KEY || "";
 
 const MARKET_LOGIC = {
@@ -80,10 +81,7 @@ async function generateSEO({ title, description, platform = "general" }) {
             throw new Error(data.error?.message || "AI returned empty response");
         }
 
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        if (!rawText) {
-    throw new Error("AI returned empty response");
-}
+        const rawText = data.candidates[0].content.parts[0].text;
         const cleaned = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
         const parsed = JSON.parse(cleaned);
 
