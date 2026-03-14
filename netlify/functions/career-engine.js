@@ -47,7 +47,25 @@ if (isRateLimited(ip)) {
 }
 
     try {
-        const { hobbies, skills, talents, country } = JSON.parse(event.body);
+        const rawData = JSON.parse(event.body || "{}");
+
+let hobbies = (rawData.hobbies || "").trim();
+let skills = (rawData.skills || "").trim();
+let talents = (rawData.talents || "").trim();
+let country = (rawData.country || "").trim();
+
+// Input size limit
+const MAX_INPUT_LENGTH = 2000;
+if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
+    return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({
+            error: "Input too large",
+            message: `Please limit your hobbies, skills, and talents to a combined ${MAX_INPUT_LENGTH} characters.`
+        })
+    };
+}
         const apiKey = process.env.FIRST_API_KEY;
 
         if (!apiKey) {
@@ -66,8 +84,7 @@ if (isRateLimited(ip)) {
                 parts: [{ 
                     text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
                     PRIME DIRECTIVE: Help users overcome social anxiety and fear to achieve high-performance dreams. 
-                    SCHEDULE RULES: Entirely task-oriented. Money and progress are primary; sleep is secondary. No wind-down time.
-
+                    SCHEDULE RULES: Prioritize meaningful progress while maintaining balance and healthy routines.
                     USER DATA:
                     Hobbies: ${hobbies}
                     Skills: ${skills}
