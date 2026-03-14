@@ -23,7 +23,7 @@ exports.handler = async (event, context) => {
         }
 
         // Switching back to v1beta with the most compatible model string
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{ 
