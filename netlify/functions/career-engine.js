@@ -1,3 +1,22 @@
+const requestLog = new Map();
+const RATE_LIMIT = 10;
+const WINDOW_MS = 60 * 1000;
+
+function isRateLimited(ip) {
+    const now = Date.now();
+
+    if (!requestLog.has(ip)) {
+        requestLog.set(ip, []);
+    }
+
+    const timestamps = requestLog.get(ip).filter(ts => now - ts < WINDOW_MS);
+
+    timestamps.push(now);
+    requestLog.set(ip, timestamps);
+
+    return timestamps.length > RATE_LIMIT;
+}
+
 exports.handler = async (event, context) => {
     const headers = {
         "Access-Control-Allow-Origin": "*",
