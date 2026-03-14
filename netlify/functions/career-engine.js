@@ -115,6 +115,9 @@ if (isRateLimited(ip)) {
         }
 
         let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!rawContent) {
+    throw new Error("AI returned empty response");
+    }
         
         // Extract JSON block even if the AI adds markdown backticks
         const start = rawContent.indexOf('{');
