@@ -29,6 +29,22 @@ exports.handler = async (event, context) => {
         return { statusCode: 200, headers, body: "OK" };
     }
 
+    const ip =
+    event.headers["x-forwarded-for"] ||
+    event.headers["client-ip"] ||
+    "unknown";
+
+if (isRateLimited(ip)) {
+    return {
+        statusCode: 429,
+        headers,
+        body: JSON.stringify({
+            error: "Rate Limit Exceeded",
+            message: "Too many requests. Please wait a moment."
+        })
+    };
+}
+
     try {
         const { hobbies, skills, talents, country } = JSON.parse(event.body);
         const apiKey = process.env.FIRST_API_KEY;
