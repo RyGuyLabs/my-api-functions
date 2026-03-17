@@ -22,8 +22,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { message, history, persona, careerPath } = event.body ? JSON.parse(event.body) : {};
-    if (!persona || typeof persona !== "string") {
+const { message, history, persona, careerPath, industry } = event.body ? JSON.parse(event.body) : {};    if (!persona || typeof persona !== "string") {
   return {
     statusCode: 400,
     headers: {
