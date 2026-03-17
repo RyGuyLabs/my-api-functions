@@ -166,7 +166,7 @@ ${JSON.stringify(safeHistory)}
     generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
   })
 });
-
+clearTimeout(timeout);
     if (!response.ok) {
   throw new Error(`API Error: ${response.status}`);
 }
