@@ -21,6 +21,19 @@ exports.handler = async (event, context) => {
 };
   }
 
+  const origin = event.headers.origin || event.headers.Origin;
+
+if (origin !== "https://www.ryguylabs.com") {
+  return {
+    statusCode: 403,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+    },
+    body: JSON.stringify({ error: "Forbidden" })
+  };
+}
+
   try {
 const { message, history, persona, careerPath, industry } = event.body ? JSON.parse(event.body) : {};
     
@@ -100,6 +113,11 @@ REALISM RULES:
 - Reference realistic hiring or business concerns (ROI, competence, risk, performance).
 - Occasionally interrupt or redirect weak responses.
 - Do not sound robotic or scripted — vary tone naturally.
+
+ESCALATION SYSTEM:
+- If the user shows repeated weakness (hesitation, apologizing, lack of clarity), increase pressure and skepticism.
+- If the user improves, shift to sharper, more advanced challenges instead of basic criticism.
+- Do not stay at one intensity level — adapt dynamically based on performance.
 
 YOUR MISSION:
 1. If IS_FIRST_TURN is true:
