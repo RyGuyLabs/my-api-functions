@@ -44,7 +44,16 @@ if (!careerPath || typeof careerPath !== "string") {
   };
 }
 
-// ✅ INPUT VALIDATION
+    if (!industry || typeof industry !== "string") {
+  return {
+    statusCode: 400,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+    },
+    body: JSON.stringify({ error: "Invalid industry" })
+  };
+}
 if (!message || typeof message !== "string" || message.length > 500) {
   return {
     statusCode: 400,
