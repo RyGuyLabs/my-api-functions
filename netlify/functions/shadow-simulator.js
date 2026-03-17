@@ -148,8 +148,9 @@ const data = JSON.parse(jsonString);
     personaResponse: data.personaResponse || "No response generated.",
     anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
     tacticalCorrection: data.tacticalCorrection || "No correction provided.",
-    stressLevel: data.stressLevel || "Medium"
-  })
+    stressLevel: data.stressLevel || "Medium",
+    careerTitle: data.careerTitle || careerPath
+})
 };
 
   } catch (error) {
