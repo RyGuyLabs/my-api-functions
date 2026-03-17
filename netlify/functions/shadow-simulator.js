@@ -22,14 +22,41 @@ exports.handler = async (event, context) => {
 
   try {
     const { message, history, persona, careerPath } = event.body ? JSON.parse(event.body) : {};
+
+// ✅ INPUT VALIDATION
+if (!message || typeof message !== "string" || message.length > 500) {
+  return {
+    statusCode: 400,
+    headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+    body: JSON.stringify({ error: "Invalid message input" })
+  };
+}
+
+if (!Array.isArray(history)) {
+  return {
+    statusCode: 400,
+    headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+    body: JSON.stringify({ error: "Invalid history format" })
+  };
+}
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
-    const systemPrompt = `You are the "Shadow Execution Simulator."
+const safeHistory = history.slice(-20);
+
+const systemPrompt = `You are the "Shadow Execution Simulator."
     The user is training to overcome social anxiety and weak communication to enter the career path: ${careerPath}.
    
-    YOUR PERSONA: You are a ${persona}. You are busy, skeptical, and unimpressed. You do not have time for "fluff" or "anxiety."
-   
+YOUR PERSONA: You are a ${persona}.
+
+STRICT BEHAVIOR RULES:
+- You are impatient, dominant, and high-status.
+- You challenge weak answers immediately.
+- You interrupt vague or hesitant communication.
+- You do NOT encourage — you pressure.
+- Keep responses concise, sharp, and realistic.
+- Never break character.
+
     YOUR MISSION:
     1. Respond as this persona would, being firm and demanding.
     2. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing).
@@ -47,7 +74,17 @@ exports.handler = async (event, context) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `User says: "${message}". Context: ${JSON.stringify(history)}` }] }],
+        contents: [{
+  parts: [{
+    text: `
+CURRENT MESSAGE:
+"${message}"
+
+CONVERSATION HISTORY:
+${JSON.stringify(safeHistory)}
+`
+  }]
+}],
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: { responseMimeType: "application/json", temperature: 0.9 }
       })
@@ -55,21 +92,36 @@ exports.handler = async (event, context) => {
 
     const result = await response.json();
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
-    const data = JSON.parse(result.candidates[0].content.parts[0].text);
+    let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+if (!rawText) throw new Error("Empty AI response");
+
+// ✅ SAFE JSON EXTRACTION
+const start = rawText.indexOf('{');
+const end = rawText.lastIndexOf('}');
+if (start === -1 || end === -1) throw new Error("Invalid AI format");
+
+const jsonString = rawText.substring(start, end + 1);
+const data = JSON.parse(jsonString);
 
     return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-      body: JSON.stringify(data)
-    };
+  statusCode: 200,
+  headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+  body: JSON.stringify({
+    personaResponse: data.personaResponse || "No response generated.",
+    anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
+    tacticalCorrection: data.tacticalCorrection || "No correction provided.",
+    stressLevel: data.stressLevel || "Medium"
+  })
+};
 
   } catch (error) {
     return {
       statusCode: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
+     headers: {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+},
       body: JSON.stringify({ error: error.message })
     };
   }
