@@ -21,8 +21,8 @@ exports.handler = async (event, context) => {
 };
   }
 
-  const origin = event.headers.origin || event.headers.Origin;
-
+const origin = event.headers?.origin || event.headers?.Origin || "";
+  
 if (origin !== "https://www.ryguylabs.com") {
   return {
     statusCode: 403,
