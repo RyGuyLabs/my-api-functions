@@ -167,28 +167,6 @@ ${JSON.stringify(safeHistory)}
   })
 });
 
-clearTimeout(timeout);
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-  parts: [{
-    text: `
-IS_FIRST_TURN: ${safeHistory.length === 0}
-
-CURRENT MESSAGE:
-"${message}"
-
-CONVERSATION HISTORY:
-${JSON.stringify(safeHistory)}
-`
-  }]
-}],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
-      })
-    });
-
     if (!response.ok) {
   throw new Error(`API Error: ${response.status}`);
 }
