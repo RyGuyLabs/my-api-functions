@@ -15,19 +15,46 @@ exports.handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return {
   statusCode: 405,
-  headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+  headers: {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+},
   body: "Method Not Allowed"
 };
   }
 
   try {
     const { message, history, persona, careerPath } = event.body ? JSON.parse(event.body) : {};
+    if (!persona || typeof persona !== "string") {
+  return {
+    statusCode: 400,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+    },
+    body: JSON.stringify({ error: "Invalid persona" })
+  };
+}
+
+if (!careerPath || typeof careerPath !== "string") {
+  return {
+    statusCode: 400,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+    },
+    body: JSON.stringify({ error: "Invalid career path" })
+  };
+}
 
 // ✅ INPUT VALIDATION
 if (!message || typeof message !== "string" || message.length > 500) {
   return {
     statusCode: 400,
-    headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+    headers: {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+},
     body: JSON.stringify({ error: "Invalid message input" })
   };
 }
@@ -35,15 +62,18 @@ if (!message || typeof message !== "string" || message.length > 500) {
 if (!Array.isArray(history)) {
   return {
     statusCode: 400,
-    headers: { "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+    headers: {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+},
     body: JSON.stringify({ error: "Invalid history format" })
   };
 }
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
-const safeHistory = history.slice(-20);
-
+const safeHistory = (history || []).slice(-20);
+    
 const systemPrompt = `You are the "Shadow Execution Simulator."
     The user is training to overcome social anxiety and weak communication to enter the career path: ${careerPath}.
    
