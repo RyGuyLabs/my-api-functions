@@ -123,7 +123,7 @@ Return EXACTLY this structure:
     "Step 4: Scaling, specialization, or income growth step"
   ],
   "reasoning": "A confident, motivating explanation tying their traits directly to success in this career",
-  "searchKeywords": ["5-8 highly relevant job search keywords"]
+  "searchKeywords": ["5-8 highly relevant job search keywords INCLUDING the user's location when applicable (e.g., 'Software Engineer Florida', 'Remote Sales Jobs USA')"]
 }
 
 QUALITY STANDARD:
