@@ -123,7 +123,33 @@ Return ONLY JSON:
     "careerTitle": "${careerPath}"
 }`;
     
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+    const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 10000);
+
+const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  signal: controller.signal,
+  body: JSON.stringify({
+    contents: [{
+      parts: [{
+        text: `
+IS_FIRST_TURN: ${safeHistory.length === 0}
+
+CURRENT MESSAGE:
+"${message}"
+
+CONVERSATION HISTORY:
+${JSON.stringify(safeHistory)}
+`
+      }]
+    }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
+  })
+});
+
+clearTimeout(timeout);
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -145,7 +171,9 @@ ${JSON.stringify(safeHistory)}
       })
     });
 
-    const result = await response.json();
+    if (!response.ok) {
+  throw new Error(`API Error: ${response.status}`);
+}
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
     let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
@@ -156,8 +184,18 @@ const end = rawText.lastIndexOf('}');
 if (start === -1 || end === -1) throw new Error("Invalid AI format");
 
 const jsonString = rawText.substring(start, end + 1);
-const data = JSON.parse(jsonString);
-
+let data;
+try {
+  data = JSON.parse(jsonString);
+} catch (e) {
+  data = {
+    personaResponse: "Response processing error. Try again.",
+    anxietyAnalysis: "Unable to analyze response.",
+    tacticalCorrection: "Retry with a clearer, more direct statement.",
+    stressLevel: "Medium",
+    careerTitle: careerPath
+  };
+}
     return {
   statusCode: 200,
   headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
