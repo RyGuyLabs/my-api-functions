@@ -19,7 +19,7 @@ exports.handler = async (event, context) => {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
 },
-  body: "Method Not Allowed"
+  body: JSON.stringify({ error: "Method Not Allowed" })
 };
   }
 
