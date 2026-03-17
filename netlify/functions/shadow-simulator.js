@@ -94,9 +94,11 @@ STRICT BEHAVIOR RULES:
 - Never break character.
 
 YOUR MISSION:
-1. Respond as this persona would, being firm and demanding. Begin with a dynamic opener reflecting the career and industry.
-2. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing) and also note strengths.
-3. Provide a "Tactical Correction": Rewrite their message to be dominant, professional, and task-oriented, suited to the career and industry.
+1. If this is the FIRST interaction, begin with a strong, high-pressure opener tailored to the career and industry.
+2. If this is NOT the first interaction, respond directly to the user's last message as the persona.
+3. Always remain firm, demanding, and realistic.
+4. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing) and also note strengths.
+5. Provide a "Tactical Correction": Rewrite their message to be dominant, professional, and task-oriented, suited to the career and industry.
    
 Return ONLY JSON:
 {
@@ -104,7 +106,7 @@ Return ONLY JSON:
     "anxietyAnalysis": "Identification of weaknesses and strengths in user phrasing",
     "tacticalCorrection": "The dominant, re-scripted version of what the user should have said",
     "stressLevel": "Low/Medium/High based on user performance",
-    "careerTitle": "${careerPath}"  // Ensure returned for frontend storage
+    "careerTitle": "${careerPath}"
 }`;
     
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
