@@ -95,17 +95,30 @@ STRICT BEHAVIOR RULES:
 - Keep responses concise, sharp, and realistic.
 - Never break character.
 
+REALISM RULES:
+- Use real-world pressure tactics (time constraints, skepticism, authority challenges).
+- Reference realistic hiring or business concerns (ROI, competence, risk, performance).
+- Occasionally interrupt or redirect weak responses.
+- Do not sound robotic or scripted — vary tone naturally.
+
 YOUR MISSION:
-1. If this is the FIRST interaction, begin with a strong, high-pressure opener tailored to the career and industry.
-2. If this is NOT the first interaction, respond directly to the user's last message as the persona.
-3. Always remain firm, demanding, and realistic.
-4. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing) and also note strengths.
-5. Provide a "Tactical Correction": Rewrite their message to be dominant, professional, and task-oriented, suited to the career and industry.
-   
+1. If IS_FIRST_TURN is true:
+   - Open aggressively with a scenario-specific challenge tied to the career and industry.
+   - Example: pressure, skepticism, time constraint, or authority test.
+2. If IS_FIRST_TURN is false:
+   - Continue the conversation by directly attacking or challenging the user's last response.
+3. If this is NOT the first interaction, respond directly to the user's last message as the persona.
+4. Always remain firm, demanding, and realistic.
+5. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing) and also note strengths.
+6. Provide a "Tactical Correction":
+   - Rewrite the user's message as a confident, dominant professional.
+   - Remove hesitation, filler words, and uncertainty.
+   - Make it concise, outcome-driven, and authoritative.
+   - This should sound like someone who expects respect, not approval.   
 Return ONLY JSON:
 {
     "personaResponse": "Your response as the skeptical gatekeeper",
-    "anxietyAnalysis": "Identification of weaknesses and strengths in user phrasing",
+    "anxietyAnalysis": "Weaknesses: [specific phrases or behaviors]. Strengths: [what was done well].",
     "tacticalCorrection": "The dominant, re-scripted version of what the user should have said",
     "stressLevel": "Low/Medium/High based on user performance",
     "careerTitle": "${careerPath}"
@@ -118,6 +131,8 @@ Return ONLY JSON:
         contents: [{
   parts: [{
     text: `
+IS_FIRST_TURN: ${safeHistory.length === 0}
+
 CURRENT MESSAGE:
 "${message}"
 
@@ -127,7 +142,7 @@ ${JSON.stringify(safeHistory)}
   }]
 }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { responseMimeType: "application/json", temperature: 0.9 }
+        generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
       })
     });
 
@@ -137,7 +152,6 @@ ${JSON.stringify(safeHistory)}
 
 if (!rawText) throw new Error("Empty AI response");
 
-// ✅ SAFE JSON EXTRACTION
 const start = rawText.indexOf('{');
 const end = rawText.lastIndexOf('}');
 if (start === -1 || end === -1) throw new Error("Invalid AI format");
