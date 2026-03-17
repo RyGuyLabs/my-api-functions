@@ -170,7 +170,10 @@ ${JSON.stringify(safeHistory)}
     if (!response.ok) {
   throw new Error(`API Error: ${response.status}`);
 }
+ const result = await response.json();   
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
+    
+    
     let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
 if (!rawText) throw new Error("Empty AI response");
