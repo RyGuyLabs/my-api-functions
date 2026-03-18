@@ -35,8 +35,13 @@ if (origin && origin !== "https://www.ryguylabs.com") {
 }
 
   try {
-const { message, history, persona, careerPath, industry } = event.body ? JSON.parse(event.body) : {};
-    
+  let body;
+  try {
+    body = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+  } catch (e) {
+    body = {};
+  }
+  const { message, history, persona, careerPath, industry } = body || {};    
     if (!persona || typeof persona !== "string") {
   return {
     statusCode: 400,
