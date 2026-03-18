@@ -172,7 +172,12 @@ ${JSON.stringify(safeHistory)}
 } finally {
   clearTimeout(timeout);
 }
- const result = await response.json();   
+ let result;
+try {
+  result = await response.json();
+} catch (e) {
+  throw new Error("Invalid JSON response from AI API");
+}   
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
     
     
