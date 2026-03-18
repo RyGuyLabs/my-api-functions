@@ -23,7 +23,7 @@ exports.handler = async (event, context) => {
 
 const origin = event.headers?.origin || event.headers?.Origin || "";
   
-if (origin !== "https://www.ryguylabs.com") {
+if (origin && origin !== "https://www.ryguylabs.com") {
   return {
     statusCode: 403,
     headers: {
