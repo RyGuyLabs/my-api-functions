@@ -144,14 +144,17 @@ Return ONLY JSON:
     const controller = new AbortController();
 const timeout = setTimeout(() => controller.abort(), 10000);
 
-const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  signal: controller.signal,
-  body: JSON.stringify({
-    contents: [{
-      parts: [{
-        text: `
+let response;
+
+try {
+  response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
+    body: JSON.stringify({
+      contents: [{
+        parts: [{
+          text: `
 IS_FIRST_TURN: ${safeHistory.length === 0}
 
 CURRENT MESSAGE:
@@ -160,15 +163,14 @@ CURRENT MESSAGE:
 CONVERSATION HISTORY:
 ${JSON.stringify(safeHistory)}
 `
-      }]
-    }],
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
-  })
-});
-clearTimeout(timeout);
-    if (!response.ok) {
-  throw new Error(`API Error: ${response.status}`);
+        }]
+      }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
+    })
+  });
+} finally {
+  clearTimeout(timeout);
 }
  const result = await response.json();   
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
