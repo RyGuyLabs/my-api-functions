@@ -98,7 +98,7 @@ if (!Array.isArray(history)) {
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
-const safeHistory = (history || []).slice(-20);
+  const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
     
 const systemPrompt = `You are the "Shadow Execution Simulator."
 The user is training to overcome social anxiety and weak communication to enter the career path: ${careerPath} in the ${industry} industry.
