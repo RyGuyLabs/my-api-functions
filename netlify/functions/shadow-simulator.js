@@ -1,3 +1,4 @@
+const fetch = require('node-fetch'); 
 exports.handler = async (event, context) => {
   if (event.httpMethod === "OPTIONS") {
     return {
