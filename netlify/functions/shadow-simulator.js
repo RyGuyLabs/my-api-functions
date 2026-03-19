@@ -45,7 +45,10 @@ exports.handler = async (event, context) => {
     if (!persona || typeof persona !== "string") {
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        },
         body: JSON.stringify({ error: "Invalid persona" })
       };
     }
@@ -53,7 +56,10 @@ exports.handler = async (event, context) => {
     if (!careerPath || typeof careerPath !== "string") {
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        },
         body: JSON.stringify({ error: "Invalid career path" })
       };
     }
@@ -61,7 +67,10 @@ exports.handler = async (event, context) => {
     if (!industry || typeof industry !== "string") {
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        },
         body: JSON.stringify({ error: "Invalid industry" })
       };
     }
@@ -114,60 +123,102 @@ ESCALATION SYSTEM:
 YOUR MISSION:
 1. If IS_FIRST_TURN is true:
    - Open aggressively with a scenario-specific challenge tied to the career and industry.
+   - Example: pressure, skepticism, time constraint, or authority test.
 2. If IS_FIRST_TURN is false:
    - Continue the conversation by directly attacking or challenging the user's last response.
-3. Return ONLY JSON:
+3. Always remain firm, demanding, and realistic.
+4. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing) and also note strengths.
+5. Provide a "Tactical Correction":
+   - Rewrite the user's message as a confident, dominant professional.
+   - Remove hesitation, filler words, and uncertainty.
+   - Make it concise, outcome-driven, and authoritative.
+   - This should sound like someone who expects respect, not approval.   
+Return ONLY JSON:
 {
     "personaResponse": "Your response as the skeptical gatekeeper",
-    "anxietyAnalysis": "Weaknesses: [specific phrases]. Strengths: [what was done well].",
-    "tacticalCorrection": "The dominant version of what the user should have said",
-    "stressLevel": "Low/Medium/High",
+    "anxietyAnalysis": "Weaknesses: [specific phrases or behaviors]. Strengths: [what was done well].",
+    "tacticalCorrection": "The dominant, re-scripted version of what the user should have said",
+    "stressLevel": "Low/Medium/High based on user performance",
     "careerTitle": "${careerPath}"
 }`;
     
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `SYSTEM_INSTRUCTION: ${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE: "${message}"\nCONVERSATION HISTORY: ${JSON.stringify(safeHistory)}` }]
-          }
-        ],
-        generationConfig: { 
-          responseMimeType: "application/json", 
-          temperature: 0.8 
-        },
-        safetySettings: [
-          { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
-          { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
-          { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
-          { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
-        ]
-      })
-    });
+    let response;
 
-    const result = await response.json();
+    try {
+      const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `
+IS_FIRST_TURN: ${safeHistory.length === 0}
+CURRENT MESSAGE:
+"${message}"
+CONVERSATION HISTORY:
+${JSON.stringify(safeHistory)}
+`
+            }]
+          }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
+          safetySettings: [
+            { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+            { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+          ]
+        })
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    let result;
+    try {
+      result = await response.json();
+    } catch (e) {
+      throw new Error("Invalid JSON response from AI API");
+    }   
+
+    if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
     
-    // Check for specific API error messages
-    if (result.error) throw new Error(`Google API Error: ${result.error.message}`);
-    if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned from Google AI");
-    
-    let rawText = result.candidates[0].content.parts[0].text || "";
+    let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    if (!rawText) throw new Error("Empty AI response");
+
     const start = rawText.indexOf('{');
     const end = rawText.lastIndexOf('}');
-    const data = JSON.parse(rawText.substring(start, end + 1).replace(/```json/g, "").replace(/```/g, "").trim());
+    if (start === -1 || end === -1) throw new Error("Invalid AI format");
+
+    const jsonString = rawText.substring(start, end + 1);
+    let data;
+    try {
+        const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+        data = JSON.parse(cleanJson);
+    } catch (e) {
+        console.error("JSON Parse Error:", e);
+        data = {
+            personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
+            anxietyAnalysis: "Neural link formatting error. No tactical data available.",
+            tacticalCorrection: "Re-initialize and speak with more authority.",
+            stressLevel: "High",
+            careerTitle: careerPath
+        };
+    }
 
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
       body: JSON.stringify({
-        personaResponse: data.personaResponse || "The gatekeeper is silent.",
-        anxietyAnalysis: data.anxietyAnalysis || "No analysis.",
-        tacticalCorrection: data.tacticalCorrection || "No correction.",
+        personaResponse: data.personaResponse || "No response generated.",
+        anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
+        tacticalCorrection: data.tacticalCorrection || "No correction provided.",
         stressLevel: data.stressLevel || "Medium",
         careerTitle: data.careerTitle || careerPath
       })
@@ -176,7 +227,10 @@ YOUR MISSION:
   } catch (error) {
     return {
       statusCode: 500,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+      },
       body: JSON.stringify({ error: error.message })
     };
   }
