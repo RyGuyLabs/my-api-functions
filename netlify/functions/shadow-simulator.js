@@ -91,8 +91,8 @@ exports.handler = async (event, context) => {
       };
     }
 
-    const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) throw new Error("Missing FIRST_API_KEY");
+    const apiKey = process.env.SHADOW_SIM_KEY;
+    if (!apiKey) throw new Error("Missing SHADOW_SIM_KEY");
 
     const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
     
