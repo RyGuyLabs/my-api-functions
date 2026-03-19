@@ -89,16 +89,6 @@ if (!message || typeof message !== "string") {
         body: JSON.stringify({ error: "Invalid history format" })
       };
     }
-if (!Array.isArray(history)) {
-  return {
-    statusCode: 400,
-    headers: {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-},
-    body: JSON.stringify({ error: "Invalid history format" })
-  };
-}
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
