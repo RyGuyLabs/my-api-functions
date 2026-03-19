@@ -35,13 +35,12 @@ if (origin && origin !== "https://www.ryguylabs.com") {
 }
 
   try {
-  let body;
-  try {
-    body = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
-  } catch (e) {
-    body = {};
-  }
-  const { message, history, persona, careerPath, industry } = body || {};    
+const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
+const message = body.message || "";
+const history = Array.isArray(body.history) ? body.history : [];
+const persona = body.persona || "Aggressive CEO";
+const careerPath = body.careerPath || "Professional";
+const industry = body.industry || "General";    
     if (!persona || typeof persona !== "string") {
   return {
     statusCode: 400,
