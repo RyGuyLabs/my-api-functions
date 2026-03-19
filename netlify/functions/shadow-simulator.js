@@ -74,7 +74,13 @@ if (!careerPath || typeof careerPath !== "string") {
     body: JSON.stringify({ error: "Invalid industry" })
   };
 }
-if (!message || typeof message !== "string" || message.length > 500) {
+if (!message || typeof message !== "string") {
+  return {
+    statusCode: 400,
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+    body: JSON.stringify({ error: "Invalid message input" })
+  };
+}
   return {
     statusCode: 400,
     headers: {
