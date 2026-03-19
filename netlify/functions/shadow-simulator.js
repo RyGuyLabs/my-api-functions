@@ -1,80 +1,81 @@
-const fetch = require('node-fetch'); 
 exports.handler = async (event, context) => {
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
       headers: {
-  "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-},
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+      },
     };
   }
 
   if (event.httpMethod !== "POST") {
     return {
-  statusCode: 405,
-  headers: {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-},
-  body: JSON.stringify({ error: "Method Not Allowed" })
-};
+      statusCode: 405,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+      },
+      body: JSON.stringify({ error: "Method Not Allowed" })
+    };
   }
 
-const origin = event.headers?.origin || event.headers?.Origin || "";
+  const origin = event.headers?.origin || event.headers?.Origin || "";
   
-if (origin && origin !== "https://www.ryguylabs.com") {
-  return {
-    statusCode: 403,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-    },
-    body: JSON.stringify({ error: "Forbidden" })
-  };
-}
+  if (origin && origin !== "https://www.ryguylabs.com") {
+    return {
+      statusCode: 403,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+      },
+      body: JSON.stringify({ error: "Forbidden" })
+    };
+  }
 
   try {
-const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
-const message = body.message || "";
-const history = Array.isArray(body.history) ? body.history : [];
-const persona = body.persona || "Aggressive CEO";
-const careerPath = body.careerPath || "Professional";
-const industry = body.industry || "General";    
-    if (!persona || typeof persona !== "string") {
-  return {
-    statusCode: 400,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-    },
-    body: JSON.stringify({ error: "Invalid persona" })
-  };
-}
+    const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
+    const message = body.message || "";
+    const history = Array.isArray(body.history) ? body.history : [];
+    const persona = body.persona || "Aggressive CEO";
+    const careerPath = body.careerPath || "Professional";
+    const industry = body.industry || "General";    
 
-if (!careerPath || typeof careerPath !== "string") {
-  return {
-    statusCode: 400,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-    },
-    body: JSON.stringify({ error: "Invalid career path" })
-  };
-}
+    if (!persona || typeof persona !== "string") {
+      return {
+        statusCode: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        },
+        body: JSON.stringify({ error: "Invalid persona" })
+      };
+    }
+
+    if (!careerPath || typeof careerPath !== "string") {
+      return {
+        statusCode: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        },
+        body: JSON.stringify({ error: "Invalid career path" })
+      };
+    }
 
     if (!industry || typeof industry !== "string") {
-  return {
-    statusCode: 400,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-    },
-    body: JSON.stringify({ error: "Invalid industry" })
-  };
-}
-if (!message || typeof message !== "string") {
+      return {
+        statusCode: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        },
+        body: JSON.stringify({ error: "Invalid industry" })
+      };
+    }
+
+    if (!message || typeof message !== "string") {
       return {
         statusCode: 400,
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
@@ -93,9 +94,9 @@ if (!message || typeof message !== "string") {
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing FIRST_API_KEY");
 
-  const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
+    const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
     
-const systemPrompt = `You are the "Shadow Execution Simulator."
+    const systemPrompt = `You are the "Shadow Execution Simulator."
 The user is training to overcome social anxiety and weak communication to enter the career path: ${careerPath} in the ${industry} industry.
 
 YOUR PERSONA: You are a ${persona}.
@@ -142,88 +143,88 @@ Return ONLY JSON:
 }`;
     
     const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
-let response;
+    let response;
 
-try {
-  const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
-response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: controller.signal,
-    body: JSON.stringify({
-      contents: [{
-        parts: [{
-          text: `
+    try {
+      const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `
 IS_FIRST_TURN: ${safeHistory.length === 0}
-
 CURRENT MESSAGE:
 "${message}"
-
 CONVERSATION HISTORY:
 ${JSON.stringify(safeHistory)}
 `
-        }]
-      }],
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
-    })
-  });
-} finally {
-  clearTimeout(timeout);
-}
- let result;
-try {
-  result = await response.json();
-} catch (e) {
-  throw new Error("Invalid JSON response from AI API");
-}   
+            }]
+          }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
+        })
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    let result;
+    try {
+      result = await response.json();
+    } catch (e) {
+      throw new Error("Invalid JSON response from AI API");
+    }   
+
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
-    
     
     let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-if (!rawText) throw new Error("Empty AI response");
+    if (!rawText) throw new Error("Empty AI response");
 
-const start = rawText.indexOf('{');
-const end = rawText.lastIndexOf('}');
-if (start === -1 || end === -1) throw new Error("Invalid AI format");
+    const start = rawText.indexOf('{');
+    const end = rawText.lastIndexOf('}');
+    if (start === -1 || end === -1) throw new Error("Invalid AI format");
 
-const jsonString = rawText.substring(start, end + 1);
-let data;
-try {
-    const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
-    data = JSON.parse(cleanJson);
-} catch (e) {
-    console.error("JSON Parse Error:", e);
-    data = {
-        personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
-        anxietyAnalysis: "Neural link formatting error. No tactical data available.",
-        tacticalCorrection: "Re-initialize and speak with more authority.",
-        stressLevel: "High",
-        careerTitle: careerPath
-    };
-}
+    const jsonString = rawText.substring(start, end + 1);
+    let data;
+    try {
+        const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+        data = JSON.parse(cleanJson);
+    } catch (e) {
+        console.error("JSON Parse Error:", e);
+        data = {
+            personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
+            anxietyAnalysis: "Neural link formatting error. No tactical data available.",
+            tacticalCorrection: "Re-initialize and speak with more authority.",
+            stressLevel: "High",
+            careerTitle: careerPath
+        };
+    }
+
     return {
-  statusCode: 200,
-  headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-  body: JSON.stringify({
-    personaResponse: data.personaResponse || "No response generated.",
-    anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
-    tacticalCorrection: data.tacticalCorrection || "No correction provided.",
-    stressLevel: data.stressLevel || "Medium",
-    careerTitle: data.careerTitle || careerPath
-})
-};
+      statusCode: 200,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+      body: JSON.stringify({
+        personaResponse: data.personaResponse || "No response generated.",
+        anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
+        tacticalCorrection: data.tacticalCorrection || "No correction provided.",
+        stressLevel: data.stressLevel || "Medium",
+        careerTitle: data.careerTitle || careerPath
+      })
+    };
 
   } catch (error) {
     return {
       statusCode: 500,
-     headers: {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-},
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+      },
       body: JSON.stringify({ error: error.message })
     };
   }
