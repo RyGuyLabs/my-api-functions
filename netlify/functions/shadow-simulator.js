@@ -75,22 +75,20 @@ if (!careerPath || typeof careerPath !== "string") {
   };
 }
 if (!message || typeof message !== "string") {
-  return {
-    statusCode: 400,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
-    body: JSON.stringify({ error: "Invalid message input" })
-  };
-}
-  return {
-    statusCode: 400,
-    headers: {
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-},
-    body: JSON.stringify({ error: "Invalid message input" })
-  };
-}
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        body: JSON.stringify({ error: "Invalid message input" })
+      };
+    }
 
+    if (!Array.isArray(history)) {
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        body: JSON.stringify({ error: "Invalid history format" })
+      };
+    }
 if (!Array.isArray(history)) {
   return {
     statusCode: 400,
