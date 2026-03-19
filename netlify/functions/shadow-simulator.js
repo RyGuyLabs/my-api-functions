@@ -204,15 +204,17 @@ if (start === -1 || end === -1) throw new Error("Invalid AI format");
 const jsonString = rawText.substring(start, end + 1);
 let data;
 try {
-  data = JSON.parse(jsonString);
+    const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+    data = JSON.parse(cleanJson);
 } catch (e) {
-  data = {
-    personaResponse: "Response processing error. Try again.",
-    anxietyAnalysis: "Unable to analyze response.",
-    tacticalCorrection: "Retry with a clearer, more direct statement.",
-    stressLevel: "Medium",
-    careerTitle: careerPath
-  };
+    console.error("JSON Parse Error:", e);
+    data = {
+        personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
+        anxietyAnalysis: "Neural link formatting error. No tactical data available.",
+        tacticalCorrection: "Re-initialize and speak with more authority.",
+        stressLevel: "High",
+        careerTitle: careerPath
+    };
 }
     return {
   statusCode: 200,
