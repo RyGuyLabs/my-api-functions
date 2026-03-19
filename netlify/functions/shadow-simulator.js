@@ -125,7 +125,7 @@ YOUR MISSION:
    - Open aggressively with a scenario-specific challenge tied to the career and industry.
    - Example: pressure, skepticism, time constraint, or authority test.
 2. If IS_FIRST_TURN is false:
-   - Continue the conversation by directly attacking or challenging the user's last response.
+   - Continue the conversation by directly challenging the user's last response.
 3. Always remain firm, demanding, and realistic.
 4. Analyze the user's message for "Anxiety Markers" (over-apologizing, "just," "I think," "sorry," hesitant phrasing) and also note strengths.
 5. Provide a "Tactical Correction":
@@ -154,20 +154,13 @@ Return ONLY JSON:
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `
-IS_FIRST_TURN: ${safeHistory.length === 0}
-CURRENT MESSAGE:
-"${message}"
-CONVERSATION HISTORY:
-${JSON.stringify(safeHistory)}
-`
-            }]
-          }],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${message}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
+            }
+          ],
           generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
-          // THESE ARE THE ONLY LINES I HAVE ADDED TO YOUR ORIGINAL CODE
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
             { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
