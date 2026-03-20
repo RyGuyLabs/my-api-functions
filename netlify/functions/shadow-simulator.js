@@ -1,39 +1,43 @@
 exports.handler = async (event, context) => {
+  // 1. DYNAMIC ORIGIN CHECK (Handles www vs non-www)
+  const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
+  const requestOrigin = event.headers?.origin || event.headers?.Origin;
+  const accessControlOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+
+  const headers = {
+    "Access-Control-Allow-Origin": accessControlOrigin,
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json"
+  };
+
+  // 2. PREFLIGHT HANDSHAKE
   if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers };
+  }
+
+  // 3. METHOD VALIDATION
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
+  }
+
+  try {
+    // --- YOUR AI LOGIC GOES HERE ---
+    
+    // 4. THE SUCCESS RETURN (MUST INCLUDE HEADERS)
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-      },
+      headers, 
+      body: JSON.stringify(responseData) 
     };
-  }
-
-  if (event.httpMethod !== "POST") {
+  } catch (error) {
     return {
-      statusCode: 405,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-      },
-      body: JSON.stringify({ error: "Method Not Allowed" })
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: error.message })
     };
   }
-
-  const origin = event.headers?.origin || event.headers?.Origin || "";
-  
-  if (origin && origin !== "https://www.ryguylabs.com") {
-    return {
-      statusCode: 403,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-      },
-      body: JSON.stringify({ error: "Forbidden" })
-    };
-  }
-
+};
   try {
     const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
     const message = body.message || "";
