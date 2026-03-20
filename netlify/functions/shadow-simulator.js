@@ -129,7 +129,7 @@ YOUR MISSION:
 3. Analyze the message for "Anxiety Markers" (hesitation, filler words) and strengths.
 4. Provide a "Tactical Correction":
    - Re-script the user's message into a high-authority, executive-grade statement.
-   - Ensure it sounds outcome-driven and authoritative.`;   
+   - Ensure it sounds outcome-driven and authoritative.  
 Return ONLY JSON:
 {
     "personaResponse": "Your response as the skeptical gatekeeper",
