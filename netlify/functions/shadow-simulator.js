@@ -34,10 +34,7 @@ exports.handler = async (event, context) => {
     if (!persona || typeof persona !== "string") {
       return {
         statusCode: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-        },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
         body: JSON.stringify({ error: "Invalid persona" })
       };
     }
@@ -45,10 +42,7 @@ exports.handler = async (event, context) => {
     if (!careerPath || typeof careerPath !== "string") {
       return {
         statusCode: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-        },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
         body: JSON.stringify({ error: "Invalid career path" })
       };
     }
@@ -56,10 +50,7 @@ exports.handler = async (event, context) => {
     if (!industry || typeof industry !== "string") {
       return {
         statusCode: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
-        },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
         body: JSON.stringify({ error: "Invalid industry" })
       };
     }
@@ -67,7 +58,7 @@ exports.handler = async (event, context) => {
     if (!message || typeof message !== "string") {
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
         body: JSON.stringify({ error: "Invalid message input" })
       };
     }
@@ -75,7 +66,7 @@ exports.handler = async (event, context) => {
     if (!Array.isArray(history)) {
       return {
         statusCode: 400,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
         body: JSON.stringify({ error: "Invalid history format" })
       };
     }
@@ -84,19 +75,20 @@ exports.handler = async (event, context) => {
     if (!apiKey) throw new Error("Missing SHADOW_SIM_KEY");
 
     const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
-    // 1️⃣ FIRST-TURN MESSAGE FALLBACK
-const defaultMessages = [
-  "Let's begin the interview scenario.",
-  "You have 30 seconds to justify your strategy.",
-  "Pretend I'm your skeptical CEO. Start now.",
-  "Open with your strongest business case.",
-  "Convince me why you're the best fit for this role."
-];
-
-// If message is empty on first turn, pick a default
-const userMessage = message || (safeHistory.length === 0 ? defaultMessages[Math.floor(Math.random() * defaultMessages.length)] : "");
     
-    const systemPrompt = `You are the "Shadow Execution Simulator."
+    // 1️⃣ FIRST-TURN MESSAGE FALLBACK
+    const defaultMessages = [
+      "Let's begin the interview scenario.",
+      "You have 30 seconds to justify your strategy.",
+      "Pretend I'm your skeptical CEO. Start now.",
+      "Open with your strongest business case.",
+      "Convince me why you're the best fit for this role."
+    ];
+
+    // If message is empty on first turn, pick a default
+    const userMessage = message || (safeHistory.length === 0 ? defaultMessages[Math.floor(Math.random() * defaultMessages.length)] : "");
+    
+    const systemPrompt = `You are the "Shadow Execution Simulator" by RyGuyLabs.
 The user is training to overcome social anxiety and professional hesitation for the career path: ${careerPath} in the ${industry} industry.
 
 YOUR PERSONA: You are a ${persona} (Skeptical, High-Status, Time-Poor).
@@ -141,22 +133,22 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     let response;
 
     try {
-const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-response = await fetch(apiUrl, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  signal: controller.signal,
-  body: JSON.stringify({
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${userMessage}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
-      }
-    ],
-    generationConfig: { 
-      temperature: 0.7,
-      responseMimeType: "application/json" // Note: camelCase is required for 2026 API
-    },
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${userMessage}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
+            }
+          ],
+          generationConfig: { 
+            temperature: 0.7,
+            responseMimeType: "application/json" // Note: camelCase is required for 2026 API
+          },
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
             { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
@@ -177,20 +169,21 @@ response = await fetch(apiUrl, {
     }
 
     if (result.promptFeedback) {
-  console.error("BLOCKED RESPONSE:", JSON.stringify(result.promptFeedback, null, 2));
-  throw new Error("Prompt blocked by Gemini");
-}
+      console.error("BLOCKED RESPONSE:", JSON.stringify(result.promptFeedback, null, 2));
+      throw new Error("Prompt blocked by Gemini");
+    }
 
-if (result.error) {
-  console.error("FULL GEMINI ERROR:", JSON.stringify(result, null, 2));
-  throw new Error(result.error.message);
-}
+    if (result.error) {
+      console.error("FULL GEMINI ERROR:", JSON.stringify(result, null, 2));
+      throw new Error(result.error.message);
+    }
 
-if (!result.candidates || !result.candidates[0]) {
-  console.error("FULL GEMINI RESPONSE:", JSON.stringify(result, null, 2));
-  throw new Error("No candidates returned");
-}
-    let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!result.candidates || !result.candidates[0]) {
+      console.error("FULL GEMINI RESPONSE:", JSON.stringify(result, null, 2));
+      throw new Error("No candidates returned");
+    }
+
+    let rawText = result.candidates[0].content.parts[0].text || "";
 
     if (!rawText) throw new Error("Empty AI response");
 
@@ -217,7 +210,7 @@ if (!result.candidates || !result.candidates[0]) {
 
     return {
       statusCode: 200,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://www.ryguylabs.com" },
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
       body: JSON.stringify({
         personaResponse: data.personaResponse || "No response generated.",
         anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
@@ -228,11 +221,12 @@ if (!result.candidates || !result.candidates[0]) {
     };
 
   } catch (error) {
+    console.error("Backend Error:", error.message);
     return {
       statusCode: 500,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com"
+        "Access-Control-Allow-Origin": accessControlOrigin
       },
       body: JSON.stringify({ error: error.message })
     };
