@@ -141,22 +141,22 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     let response;
 
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${userMessage}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
-            }
-          ],
-          generationConfig: { 
-  temperature: 0.7,
-  response_mime_type: "application/json"
-},
+const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+response = await fetch(apiUrl, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  signal: controller.signal,
+  body: JSON.stringify({
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${userMessage}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
+      }
+    ],
+    generationConfig: { 
+      temperature: 0.7,
+      responseMimeType: "application/json" // Note: camelCase is required for 2026 API
+    },
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
             { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
