@@ -21,10 +21,8 @@ exports.handler = async (event, context) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
 
-  try {
-    // --- YOUR AI LOGIC GOES HERE ---
-    
-    // 4. THE SUCCESS RETURN (MUST INCLUDE HEADERS)
+  try {    
+    // 4. THE SUCCESS RETURN 
     return {
       statusCode: 200,
       headers, 
