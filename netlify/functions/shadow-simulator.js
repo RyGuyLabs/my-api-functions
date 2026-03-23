@@ -169,6 +169,11 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
   throw new Error("Prompt blocked by Gemini");
 }
 
+if (result.error) {
+  console.error("FULL GEMINI ERROR:", JSON.stringify(result, null, 2));
+  throw new Error(result.error.message);
+}
+
 if (!result.candidates || !result.candidates[0]) {
   console.error("FULL GEMINI RESPONSE:", JSON.stringify(result, null, 2));
   throw new Error("No candidates returned");
