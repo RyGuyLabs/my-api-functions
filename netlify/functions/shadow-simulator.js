@@ -154,7 +154,8 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
             }
           ],
           generationConfig: { 
-  temperature: 0.7
+  temperature: 0.7,
+  response_mime_type: "application/json"
 },
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
