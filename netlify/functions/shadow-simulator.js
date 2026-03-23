@@ -143,8 +143,7 @@ Return ONLY JSON:
             }
           ],
           generationConfig: { 
-  temperature: 0.7,
-  responseMimeType: "application/json"
+  temperature: 0.7
 },
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
