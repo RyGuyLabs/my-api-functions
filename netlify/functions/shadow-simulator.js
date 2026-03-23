@@ -142,7 +142,7 @@ Return ONLY JSON:
               parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${message}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
             }
           ],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
+          generationConfig: { temperature: 0.7 },
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
             { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
