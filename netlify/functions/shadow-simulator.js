@@ -84,6 +84,17 @@ exports.handler = async (event, context) => {
     if (!apiKey) throw new Error("Missing SHADOW_SIM_KEY");
 
     const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
+    // 1️⃣ FIRST-TURN MESSAGE FALLBACK
+const defaultMessages = [
+  "Let's begin the interview scenario.",
+  "You have 30 seconds to justify your strategy.",
+  "Pretend I'm your skeptical CEO. Start now.",
+  "Open with your strongest business case.",
+  "Convince me why you're the best fit for this role."
+];
+
+// If message is empty on first turn, pick a default
+const userMessage = message || (safeHistory.length === 0 ? defaultMessages[Math.floor(Math.random() * defaultMessages.length)] : "");
     
     const systemPrompt = `You are the "Shadow Execution Simulator."
 The user is training to overcome social anxiety and professional hesitation for the career path: ${careerPath} in the ${industry} industry.
