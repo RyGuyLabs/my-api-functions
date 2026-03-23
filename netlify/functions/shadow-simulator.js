@@ -142,7 +142,10 @@ Return ONLY JSON:
               parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${message}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
             }
           ],
-          generationConfig: { temperature: 0.7 },
+          generationConfig: { 
+  temperature: 0.7,
+  responseMimeType: "application/json"
+},
           safetySettings: [
             { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
             { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
@@ -162,11 +165,15 @@ Return ONLY JSON:
       throw new Error("Invalid JSON response from AI API");
     }
 
-    if (!result.candidates || !result.candidates[0]) {
+    if (result.promptFeedback) {
+  console.error("BLOCKED RESPONSE:", JSON.stringify(result.promptFeedback, null, 2));
+  throw new Error("Prompt blocked by Gemini");
+}
+
+if (!result.candidates || !result.candidates[0]) {
   console.error("FULL GEMINI RESPONSE:", JSON.stringify(result, null, 2));
   throw new Error("No candidates returned");
 }
-
     let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!rawText) throw new Error("Empty AI response");
