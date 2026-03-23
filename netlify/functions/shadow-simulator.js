@@ -131,25 +131,25 @@ Return ONLY JSON:
     try {
       const apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
       response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${message}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
-            }
-          ],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
-          safetySettings: [
-            { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
-            { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
-            { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
-            { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
-          ]
-        })
-      });
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  signal: controller.signal,
+  body: JSON.stringify({
+    contents: [
+      {
+        role: "user",
+        text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${message}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}`
+      }
+    ],
+    generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
+    safetySettings: [
+      { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+      { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+      { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+      { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+    ]
+  })
+});
     } finally {
       clearTimeout(timeout);
     }
