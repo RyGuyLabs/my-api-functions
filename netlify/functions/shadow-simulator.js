@@ -21,22 +21,9 @@ exports.handler = async (event, context) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
 
-  try {    
-    // 4. THE SUCCESS RETURN 
-    return {
-      statusCode: 200,
-      headers, 
-      body: JSON.stringify(responseData) 
-    };
-  } catch (error) {
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: error.message })
-    };
-  }
-};
+  // ✅ FIX: start try block in correct place
   try {
+
     const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
     const message = body.message || "";
     const history = Array.isArray(body.history) ? body.history : [];
@@ -136,7 +123,7 @@ Return ONLY JSON:
     "stressLevel": "Low/Medium/High based on user performance",
     "careerTitle": "${careerPath}"
 }`;
-    
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
@@ -173,10 +160,10 @@ Return ONLY JSON:
       result = await response.json();
     } catch (e) {
       throw new Error("Invalid JSON response from AI API");
-    }   
+    }
 
     if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
-    
+
     let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!rawText) throw new Error("Empty AI response");
@@ -187,18 +174,19 @@ Return ONLY JSON:
 
     const jsonString = rawText.substring(start, end + 1);
     let data;
+
     try {
-        const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
-        data = JSON.parse(cleanJson);
+      const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
+      data = JSON.parse(cleanJson);
     } catch (e) {
-        console.error("JSON Parse Error:", e);
-        data = {
-            personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
-            anxietyAnalysis: "Neural link formatting error. No tactical data available.",
-            tacticalCorrection: "Re-initialize and speak with more authority.",
-            stressLevel: "High",
-            careerTitle: careerPath
-        };
+      console.error("JSON Parse Error:", e);
+      data = {
+        personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
+        anxietyAnalysis: "Neural link formatting error. No tactical data available.",
+        tacticalCorrection: "Re-initialize and speak with more authority.",
+        stressLevel: "High",
+        careerTitle: careerPath
+      };
     }
 
     return {
