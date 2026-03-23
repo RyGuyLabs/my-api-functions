@@ -115,7 +115,7 @@ YOUR MISSION:
 4. Provide a "Tactical Correction":
    - Re-script the user's message into a high-authority, executive-grade statement.
    - Ensure it sounds outcome-driven and authoritative.  
-Return ONLY JSON:
+Return a VALID JSON object. Do NOT include markdown, backticks, or any extra text. Output must start with { and end with }.
 {
     "personaResponse": "Your response as the skeptical gatekeeper",
     "anxietyAnalysis": "Weaknesses: [specific phrases or behaviors]. Strengths: [what was done well].",
