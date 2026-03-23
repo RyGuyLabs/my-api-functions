@@ -150,7 +150,7 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
           contents: [
             {
               role: "user",
-              parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${message}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
+              parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nIS_FIRST_TURN: ${safeHistory.length === 0}\nCURRENT MESSAGE:\n"${userMessage}"\nCONVERSATION HISTORY:\n${JSON.stringify(safeHistory)}` }]
             }
           ],
           generationConfig: { 
