@@ -21,7 +21,6 @@ exports.handler = async (event, context) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
 
-  // ✅ FIX: start try block in correct place
   try {
 
     const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
