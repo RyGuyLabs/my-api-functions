@@ -24,6 +24,11 @@ exports.handler = async (event, context) => {
   // ✅ FIX: start try block in correct place
   try {
 
+    // 🛡️ PRODUCTION SAFEGUARD: Payload Size Limit
+    if (event.body && event.body.length > 15000) {
+      return { statusCode: 413, headers, body: JSON.stringify({ error: "Request entity too large." }) };
+    }
+
     const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
     const message = body.message || "";
     const history = Array.isArray(body.history) ? body.history : [];
@@ -146,7 +151,7 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
             }
           ],
           generationConfig: { 
-            temperature: 0.7,
+            temperature: 0.8,
             responseMimeType: "application/json" // Note: camelCase is required for 2026 API
           },
           safetySettings: [
@@ -169,17 +174,17 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     }
 
     if (result.promptFeedback) {
-      console.error("BLOCKED RESPONSE:", JSON.stringify(result.promptFeedback, null, 2));
+      console.error("BLOCKED RESPONSE:", result.promptFeedback.blockReason); // 🛡️ SECURE LOG
       throw new Error("Prompt blocked by Gemini");
     }
 
     if (result.error) {
-      console.error("FULL GEMINI ERROR:", JSON.stringify(result, null, 2));
+      console.error("Gemini API Error:", result.error.message); // 🛡️ SECURE LOG
       throw new Error(result.error.message);
     }
 
     if (!result.candidates || !result.candidates[0]) {
-      console.error("FULL GEMINI RESPONSE:", JSON.stringify(result, null, 2));
+      console.error("AI Error: No candidates returned"); // 🛡️ SECURE LOG
       throw new Error("No candidates returned");
     }
 
@@ -221,14 +226,14 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     };
 
   } catch (error) {
-    console.error("Backend Error:", error.message);
+    console.error("Backend Error:", error.message); // 🛡️ SECURE LOG
     return {
       statusCode: 500,
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": accessControlOrigin
       },
-      body: JSON.stringify({ error: error.message })
+      body: JSON.stringify({ error: "Service temporarily unavailable. Re-establish link." })
     };
   }
 };
