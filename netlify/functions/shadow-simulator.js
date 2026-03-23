@@ -162,7 +162,10 @@ Return ONLY JSON:
       throw new Error("Invalid JSON response from AI API");
     }
 
-    if (!result.candidates || !result.candidates[0]) throw new Error("No candidates returned");
+    if (!result.candidates || !result.candidates[0]) {
+  console.error("FULL GEMINI RESPONSE:", JSON.stringify(result, null, 2));
+  throw new Error("No candidates returned");
+}
 
     let rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
