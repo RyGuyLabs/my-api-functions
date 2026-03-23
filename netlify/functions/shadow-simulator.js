@@ -1,11 +1,5 @@
-const fetch = require('node-fetch');
-
-/**
- * RyGuyLabs Production Interview Simulator Backend
- * Handles dynamic personas, industry-specific logic, and anxiety-marker analysis.
- */
 exports.handler = async (event, context) => {
-  // 1. Production-Grade CORS & Security Headers
+  // 1. DYNAMIC CORS HEADERS
   const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
   const requestOrigin = event.headers?.origin || event.headers?.Origin;
   const accessControlOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
@@ -14,114 +8,88 @@ exports.handler = async (event, context) => {
     "Access-Control-Allow-Origin": accessControlOrigin,
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json",
-    "X-Content-Type-Options": "nosniff"
+    "Content-Type": "application/json"
   };
 
-  // Handle Preflight Handshake
+  // 2. PREFLIGHT HANDSHAKE
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers };
 
-  // Validate POST Method
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
-  }
-
   try {
-    // 2. Data Extraction & Default Fail-safes
-    const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
-    
-    const {
-      message = "",
-      history = [],
-      interviewerType = "Senior Recruiter", // CEO, HR, Technical Lead, etc.
-      targetRole = "Professional",
+    const body = JSON.parse(event.body || "{}");
+    const { 
+      message, 
+      history = [], 
+      targetRole = "Professional", 
       industry = "General Business",
-      companyCulture = "High-Performance"
+      interviewerType = "Senior Manager" 
     } = body;
 
+    // Safety: Block Profanity/Vulgarity
+    const vulgarityFilter = /\b(fuck|shit|asshole|bitch|piss|cunt)\b/i;
+    if (vulgarityFilter.test(message)) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Input contains restricted language. Please maintain professional standards." })
+      };
+    }
+
     const apiKey = process.env.SHADOW_SIM_KEY;
-    if (!apiKey) throw new Error("Backend Configuration Error: Missing API Key.");
+    if (!apiKey) throw new Error("SHADOW_SIM_KEY is missing in Netlify environment variables.");
 
-    // 3. The "Shadow Execution" System Prompt
-    // This is the core logic that ensures "Tactical Resonance"
-    const systemPrompt = `You are a Professional Interview Simulator.
-CURRENT ROLE: ${interviewerType}
-INDUSTRY: ${industry}
-TARGET ROLE: ${targetRole}
-CULTURE: ${companyCulture}
+    // 3. THE "DUAL-TRACK" SYSTEM PROMPT
+    const systemPrompt = `You are an Interview Simulator.
+    CONTEXT: Interviewing a candidate for ${targetRole} in the ${industry} industry.
+    YOUR PERSONA: A ${interviewerType} who is professional, observant, and evaluative.
 
-MISSION: 
-Conduct a realistic interview. You are evaluating the candidate's fit, technical competence, and executive presence.
+    MISSION:
+    1. Reply as the interviewer. Keep it realistic and industry-specific.
+    2. Analyze the candidate's last message for "Anxiety Markers" (hedging, filler words, weak phrasing).
+    
+    REQUIRED JSON OUTPUT:
+    {
+      "interviewerReply": "Your next interview question/comment",
+      "tacticalResonance": {
+        "strength": "Cite exact phrasing used and why it worked.",
+        "weakness": "Cite exact phrasing that showed hesitation or low authority.",
+        "improvement": "Exactly how to rephrase that specific weakness for maximum impact."
+      },
+      "stressLevel": "1-10"
+    }`;
 
-TACTICAL RESONANCE PROTOCOL:
-Analyze the user's message for "Anxiety Markers" (hesitation, filler words, over-explaining, or lack of eye-contact cues in text).
-After every turn, you must provide a psychological and tactical breakdown.
-
-STRICT OUTPUT FORMAT (Return ONLY JSON):
-{
-  "interviewerResponse": "Your next question or statement in character as the ${interviewerType}.",
-  "tacticalResonance": {
-    "userAnalysis": "A breakdown of the user's last response, highlighting specific anxiety markers or verbal stumbles.",
-    "strength": "The most effective part of their communication.",
-    "weakness": "The specific area where they showed hesitation or low authority.",
-    "correction": "A high-authority, rescripted version of what the user should have said to sound dominant and prepared."
-  },
-  "stressLevel": "1-10",
-  "interviewStatus": "Ongoing/Success/Fail"
-}`;
-
-    // 4. API Execution with Gemini 1.5 Flash
+    // 4. API CALL (Using Global Fetch)
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const apiResponse = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{
           role: "user",
-          parts: [{ 
-            text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\n` +
-                  `IS_FIRST_TURN: ${history.length === 0}\n` +
-                  `USER_MESSAGE: "${message}"\n` +
-                  `CHAT_HISTORY: ${JSON.stringify(history.slice(-10))}`
-          }]
+          parts: [{ text: `SYSTEM_INSTRUCTIONS:\n${systemPrompt}\n\nUSER_MESSAGE: "${message}"\nCHAT_HISTORY: ${JSON.stringify(history.slice(-10))}` }]
         }],
-        generationConfig: { 
-          responseMimeType: "application/json", 
-          temperature: 0.75,
-          topP: 0.95
-        }
+        generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
       })
     });
 
-    if (!response.ok) throw new Error(`External API Failure: ${response.status}`);
-
-    const result = await response.json();
-    const rawText = result.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const result = await apiResponse.json();
+    const rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
     
-    // Safety check to ensure valid JSON extraction
-    const jsonStart = rawText.indexOf('{');
-    const jsonEnd = rawText.lastIndexOf('}');
-    if (jsonStart === -1) throw new Error("AI failed to return structured data.");
-    
-    const responseData = JSON.parse(rawText.substring(jsonStart, jsonEnd + 1));
+    // Safety Parse
+    const cleanData = JSON.parse(rawContent.substring(rawContent.indexOf('{'), rawContent.lastIndexOf('}') + 1));
 
-    // 5. Success Return
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify(responseData)
+      body: JSON.stringify(cleanData)
     };
 
   } catch (error) {
-    console.error("RyGuyLabs Production Error:", error.message);
+    console.error("Simulation Error:", error.message);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ 
-        error: "Simulation Interrupted",
-        details: error.message 
-      })
+      body: JSON.stringify({ error: "Simulation Interrupted: Check backend logs." })
     };
   }
 };
