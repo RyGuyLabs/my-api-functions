@@ -135,7 +135,6 @@ Analyze this market:
     });
 
     let result;
-    let result;
 
 try {
   result = await Promise.race([
