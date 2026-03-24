@@ -135,14 +135,43 @@ Analyze this market:
     });
 
     let result;
-    try {
-      result = await Promise.race([
-        resultPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 10000))
-      ]);
-    } catch (err) {
-      throw new Error(`AI request failed: ${err.message}`);
-    }
+    let result;
+
+try {
+  result = await Promise.race([
+    resultPromise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 7000))
+  ]);
+} catch (err) {
+  console.error("AI TIMEOUT OR FAILURE:", err.message);
+
+  // ✅ SAFE FALLBACK (THIS IS THE KEY FIX)
+  const fallback = {
+    verdict: "MARKET UNCLEAR",
+    roi: "N/A",
+    matrix: [
+      { task: "Basic Market Research", value: "$0–$25/hr" }
+    ],
+    logistics: [
+      "Live data could not load in time",
+      "Try a more specific career input"
+    ],
+    risks: [
+      "Analysis may be incomplete due to timeout"
+    ],
+    steps: [
+      "Retry analysis",
+      "Refine your search (example: 'B2B SaaS Copywriter')"
+    ],
+    comparisons: []
+  };
+
+  return {
+    statusCode: 200,
+    headers: responseHeaders,
+    body: JSON.stringify(fallback)
+  };
+}
 
     const rawText = result.response.text().trim();
 
