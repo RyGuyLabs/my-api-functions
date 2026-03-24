@@ -55,7 +55,6 @@ exports.handler = async (event) => {
   const windowMs = 60 * 1000;
   const maxRequests = 10;
 
-  // In-memory rate limiting (note: not safe for multi-instance production)
   if (!rateLimitStore.has(ip)) {
     rateLimitStore.set(ip, { count: 1, start: now });
   } else {
@@ -125,16 +124,21 @@ Analyze this market:
 "${asset}"
 `;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const result = await model.generateContent({
+    // ❌ Remove signal from SDK call; use Promise.race for timeout
+    const resultPromise = model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7 },
-      signal: controller.signal
+      generationConfig: { temperature: 0.7 }
     });
 
-    clearTimeout(timeout);
+    let result;
+    try {
+      result = await Promise.race([
+        resultPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 10000))
+      ]);
+    } catch (err) {
+      throw new Error(`AI request failed: ${err.message}`);
+    }
 
     const rawText = result.response.text().trim();
 
