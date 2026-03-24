@@ -1,4 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const rateLimitStore = new Map();
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
