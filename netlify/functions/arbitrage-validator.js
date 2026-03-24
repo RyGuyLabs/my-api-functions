@@ -47,11 +47,7 @@ exports.handler = async (event) => {
     ? requestOrigin
     : allowedOrigins[0];
 
-  // ✅ RATE LIMIT INSERTED HERE
-  const ip =
-    event.headers["x-forwarded-for"] ||
-    event.headers["client-ip"] ||
-    "unknown";
+  const ip = (event.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
 
   const now = Date.now();
   const windowMs = 60 * 1000;
