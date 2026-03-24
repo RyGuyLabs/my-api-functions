@@ -91,8 +91,18 @@ Schema:
 Analyze this market:
 "${asset}"
 `;
-    const result = await model.generateContent(prompt);
-    const rawText = result.response.text().trim();
+   const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 10000);
+
+const result = await model.generateContent({
+  contents: [{ role: "user", parts: [{ text: prompt }] }],
+  generationConfig: { temperature: 0.7 },
+  signal: controller.signal
+});
+
+clearTimeout(timeout);
+
+const rawText = result.response.text().trim();
 
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     const extracted = jsonMatch ? jsonMatch[0] : rawText;
