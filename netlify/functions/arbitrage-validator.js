@@ -47,6 +47,36 @@ exports.handler = async (event) => {
     ? requestOrigin
     : allowedOrigins[0];
 
+  // ✅ RATE LIMIT INSERTED HERE
+  const ip =
+    event.headers["x-forwarded-for"] ||
+    event.headers["client-ip"] ||
+    "unknown";
+
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxRequests = 10;
+
+  if (!rateLimitStore.has(ip)) {
+    rateLimitStore.set(ip, { count: 1, start: now });
+  } else {
+    const data = rateLimitStore.get(ip);
+
+    if (now - data.start < windowMs) {
+      data.count++;
+
+      if (data.count > maxRequests) {
+        return {
+          statusCode: 429,
+          headers,
+          body: JSON.stringify({ error: "Too many requests. Slow down." })
+        };
+      }
+    } else {
+      rateLimitStore.set(ip, { count: 1, start: now });
+    }
+  }
+
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers, body: "" };
   }
