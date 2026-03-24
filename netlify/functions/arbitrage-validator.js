@@ -71,7 +71,7 @@ exports.handler = async (event) => {
       model: "gemini-1.5-flash"
     });
 
-    const prompt = `
+ const prompt = `
 You are a market arbitrage engine.
 
 Respond with VALID JSON ONLY.
@@ -91,7 +91,6 @@ Schema:
 Analyze this market:
 "${asset}"
 `;
-
     const result = await model.generateContent(prompt);
     const rawText = result.response.text().trim();
 
