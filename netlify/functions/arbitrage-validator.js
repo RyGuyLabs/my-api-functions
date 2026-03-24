@@ -138,9 +138,9 @@ Analyze this market:
 
 try {
   result = await Promise.race([
-    resultPromise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 7000))
-  ]);
+  resultPromise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
+]);
 } catch (err) {
   console.error("AI TIMEOUT OR FAILURE:", err.message);
 
