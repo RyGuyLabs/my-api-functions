@@ -107,15 +107,40 @@ clearTimeout(timeout);
 
 const rawText = result.response.text().trim();
 
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    const extracted = jsonMatch ? jsonMatch[0] : rawText;
-
     let parsed;
-    try {
-      parsed = JSON.parse(extracted);
-    } catch {
-      throw new Error("Model returned invalid JSON");
+
+try {
+  // First attempt: direct parse
+  parsed = JSON.parse(rawText);
+
+} catch (err1) {
+  try {
+    // Second attempt: extract first valid JSON object only
+    const firstBrace = rawText.indexOf("{");
+    const lastBrace = rawText.lastIndexOf("}");
+
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      const sliced = rawText.substring(firstBrace, lastBrace + 1);
+      parsed = JSON.parse(sliced);
+    } else {
+      throw new Error("No JSON structure found");
     }
+
+  } catch (err2) {
+    console.error("PARSE FAILURE:", rawText);
+
+    // FINAL FALLBACK (never break frontend)
+    parsed = {
+      verdict: "UNREADABLE RESPONSE",
+      roi: "N/A",
+      matrix: [],
+      logistics: [],
+      risks: ["Model returned malformed JSON"],
+      steps: ["Retry request", "Simplify input"],
+      comparisons: []
+    };
+  }
+}
 
     let safe = validateJSON(parsed);
 
