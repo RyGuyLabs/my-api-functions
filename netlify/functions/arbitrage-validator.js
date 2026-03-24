@@ -43,7 +43,9 @@ exports.handler = async (event) => {
   const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
   const requestOrigin = event.headers?.origin || event.headers?.Origin;
 
-  headers["Access-Control-Allow-Origin"] = allowedOrigins.includes(requestOrigin)
+  // Clone headers per request to avoid mutating the global headers object
+  const responseHeaders = { ...headers };
+  responseHeaders["Access-Control-Allow-Origin"] = allowedOrigins.includes(requestOrigin)
     ? requestOrigin
     : allowedOrigins[0];
 
@@ -53,6 +55,7 @@ exports.handler = async (event) => {
   const windowMs = 60 * 1000;
   const maxRequests = 10;
 
+  // In-memory rate limiting (note: not safe for multi-instance production)
   if (!rateLimitStore.has(ip)) {
     rateLimitStore.set(ip, { count: 1, start: now });
   } else {
@@ -64,7 +67,7 @@ exports.handler = async (event) => {
       if (data.count > maxRequests) {
         return {
           statusCode: 429,
-          headers,
+          headers: responseHeaders,
           body: JSON.stringify({ error: "Too many requests. Slow down." })
         };
       }
@@ -74,13 +77,13 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: "" };
+    return { statusCode: 200, headers: responseHeaders, body: "" };
   }
 
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
-      headers,
+      headers: { ...responseHeaders, Allow: "POST, OPTIONS" },
       body: JSON.stringify({ error: "Method Not Allowed" })
     };
   }
@@ -101,7 +104,7 @@ exports.handler = async (event) => {
       model: "gemini-1.5-flash"
     });
 
- const prompt = `
+    const prompt = `
 You are a market arbitrage engine.
 
 Respond with VALID JSON ONLY.
@@ -121,53 +124,54 @@ Schema:
 Analyze this market:
 "${asset}"
 `;
-   const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 10000);
 
-const result = await model.generateContent({
-  contents: [{ role: "user", parts: [{ text: prompt }] }],
-  generationConfig: { temperature: 0.7 },
-  signal: controller.signal
-});
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
-clearTimeout(timeout);
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7 },
+      signal: controller.signal
+    });
 
-const rawText = result.response.text().trim();
+    clearTimeout(timeout);
+
+    const rawText = result.response.text().trim();
 
     let parsed;
 
-try {
-  // First attempt: direct parse
-  parsed = JSON.parse(rawText);
+    try {
+      // First attempt: direct parse
+      parsed = JSON.parse(rawText);
 
-} catch (err1) {
-  try {
-    // Second attempt: extract first valid JSON object only
-    const firstBrace = rawText.indexOf("{");
-    const lastBrace = rawText.lastIndexOf("}");
+    } catch (err1) {
+      try {
+        // Second attempt: extract first valid JSON object only
+        const firstBrace = rawText.indexOf("{");
+        const lastBrace = rawText.lastIndexOf("}");
 
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      const sliced = rawText.substring(firstBrace, lastBrace + 1);
-      parsed = JSON.parse(sliced);
-    } else {
-      throw new Error("No JSON structure found");
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          const sliced = rawText.substring(firstBrace, lastBrace + 1);
+          parsed = JSON.parse(sliced);
+        } else {
+          throw new Error("No JSON structure found");
+        }
+
+      } catch (err2) {
+        console.error("PARSE FAILURE:", rawText);
+
+        // FINAL FALLBACK (never break frontend)
+        parsed = {
+          verdict: "UNREADABLE RESPONSE",
+          roi: "N/A",
+          matrix: [],
+          logistics: [],
+          risks: ["Model returned malformed JSON"],
+          steps: ["Retry request", "Simplify input"],
+          comparisons: []
+        };
+      }
     }
-
-  } catch (err2) {
-    console.error("PARSE FAILURE:", rawText);
-
-    // FINAL FALLBACK (never break frontend)
-    parsed = {
-      verdict: "UNREADABLE RESPONSE",
-      roi: "N/A",
-      matrix: [],
-      logistics: [],
-      risks: ["Model returned malformed JSON"],
-      steps: ["Retry request", "Simplify input"],
-      comparisons: []
-    };
-  }
-}
 
     let safe = validateJSON(parsed);
 
@@ -177,7 +181,7 @@ try {
 
     return {
       statusCode: 200,
-      headers,
+      headers: responseHeaders,
       body: JSON.stringify(safe)
     };
 
@@ -185,7 +189,7 @@ try {
     console.error(err);
     return {
       statusCode: 500,
-      headers,
+      headers: responseHeaders,
       body: JSON.stringify({
         verdict: "ANALYSIS FAILED",
         roi: "N/A",
