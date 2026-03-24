@@ -1,12 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
-const requestOrigin = event.headers?.origin || event.headers?.Origin;
-
 const headers = {
-  "Access-Control-Allow-Origin": allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0],
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, x-user-tier",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
