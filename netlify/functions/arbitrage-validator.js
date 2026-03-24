@@ -102,21 +102,27 @@ exports.handler = async (event) => {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
-You are a market arbitrage engine.
+You are a simple, clear market analysis engine.
 
-Respond with VALID JSON ONLY.
-No markdown, no commentary, no backticks.
+Respond with VALID JSON ONLY. No extra text.
+
+Use plain, easy-to-understand language. Avoid jargon.
 
 Schema:
 {
-  "verdict": "string",
-  "roi": "string",
-  "matrix": [{"task":"string","value":"string"}],
-  "logistics": ["string"],
-  "risks": ["string"],
-  "steps": ["string"],
-  "comparisons": [{"market":"string","roi":"string","delta":"string"}]
+  "verdict": "short, clear conclusion (1 sentence)",
+  "roi": "estimated $/hour range",
+  "matrix": [{"task":"simple task name","value":"$/hr"}],
+  "logistics": ["simple practical insight"],
+  "risks": ["clear risk"],
+  "steps": ["very actionable step"],
+  "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}]
 }
+
+Guidelines:
+- Keep sentences short and readable (8th grade level)
+- Be practical, not theoretical
+- Focus on how someone can actually make money
 
 Analyze this market:
 "${asset}"
