@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const rateLimitStore = new Map();
 
 const headers = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
   "Access-Control-Allow-Headers": "Content-Type, x-user-tier",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
