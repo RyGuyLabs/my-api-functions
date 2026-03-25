@@ -115,7 +115,9 @@ Schema:
   "matrix": [{"task":"simple task name","value":"$/hr"}],
   "logistics": ["simple practical insight"],
   "risks": ["clear risk"],
-  "steps": ["very actionable step"],
+  "steps": [
+  { "text": "very actionable step", "category": "Research" }
+]
   "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}]
 }
 
