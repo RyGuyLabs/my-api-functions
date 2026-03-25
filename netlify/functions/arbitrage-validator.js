@@ -11,7 +11,7 @@ const headers = {
 function normalizeResponse(raw) {
   return {
     verdict: String(raw.verdict || "INSUFFICIENT SIGNAL"),
-    roi: String(raw.roi || "$0.00"),
+    roi: String(raw.roi || "N/A"),
     matrix: Array.isArray(raw.matrix) ? raw.matrix : [],
     logistics: Array.isArray(raw.logistics) ? raw.logistics : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],
@@ -20,6 +20,7 @@ function normalizeResponse(raw) {
   };
 }
 
+// Strict AI JSON validation
 function validateJSON(raw) {
   const safe = normalizeResponse(raw);
 
@@ -30,15 +31,8 @@ function validateJSON(raw) {
 
   safe.comparisons = safe.comparisons.map(c => ({
     market: String(c.market || "Unknown Market"),
-    roi: String(c.roi || "$0.00"),
+    roi: String(c.roi || "N/A"),
     delta: String(c.delta || "0%")
-  }));
-
-  safe.steps = safe.steps.map(s => ({
-    text: String(s.text || "Unknown step"),
-    category: ["Research","Outreach","Delivery","Setup"].includes(s.category)
-      ? s.category
-      : "Other"
   }));
 
   return safe;
@@ -49,6 +43,7 @@ exports.handler = async (event) => {
   const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
   const requestOrigin = event.headers?.origin || event.headers?.Origin;
 
+  // Clone headers per request to avoid mutating the global headers object
   const responseHeaders = { ...headers };
   responseHeaders["Access-Control-Allow-Origin"] = allowedOrigins.includes(requestOrigin)
     ? requestOrigin
@@ -64,8 +59,10 @@ exports.handler = async (event) => {
     rateLimitStore.set(ip, { count: 1, start: now });
   } else {
     const data = rateLimitStore.get(ip);
+
     if (now - data.start < windowMs) {
       data.count++;
+
       if (data.count > maxRequests) {
         return {
           statusCode: 429,
@@ -118,9 +115,7 @@ Schema:
   "matrix": [{"task":"simple task name","value":"$/hr"}],
   "logistics": ["simple practical insight"],
   "risks": ["clear risk"],
-  "steps": [
-    { "text": "very actionable step", "category": "Research" }
-  ],
+  "steps": ["very actionable step"],
   "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}]
 }
 
@@ -133,72 +128,82 @@ Analyze this market:
 "${asset}"
 `;
 
+    // ❌ Remove signal from SDK call; use Promise.race for timeout
     const resultPromise = model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7 }
     });
 
     let result;
-    try {
-      result = await Promise.race([
-        resultPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
-      ]);
-    } catch (err) {
-      console.error("AI TIMEOUT OR FAILURE:", err.message);
 
-      // ✅ FULLY SAFE FALLBACK
-      const fallback = {
-        verdict: "MARKET UNCLEAR",
-        roi: "$0–$25/hr",
-        matrix: [{ task: "Basic Market Research", value: "$0–$25/hr" }],
-        logistics: [
-          "Live data could not load in time",
-          "Try a more specific career input"
-        ],
-        risks: ["Analysis may be incomplete due to timeout"],
-        steps: [
-          { text: "Retry analysis", category: "Other" },
-          { text: "Refine your search (example: 'B2B SaaS Copywriter')", category: "Other" }
-        ],
-        comparisons: [
-          { market: "Sample Market", roi: "$0.00", delta: "0%" }
-        ]
-      };
+try {
+  result = await Promise.race([
+  resultPromise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
+]);
+} catch (err) {
+  console.error("AI TIMEOUT OR FAILURE:", err.message);
 
-      return {
-        statusCode: 200,
-        headers: responseHeaders,
-        body: JSON.stringify(fallback)
-      };
-    }
+  // ✅ SAFE FALLBACK (THIS IS THE KEY FIX)
+  const fallback = {
+    verdict: "MARKET UNCLEAR",
+    roi: "N/A",
+    matrix: [
+      { task: "Basic Market Research", value: "$0–$25/hr" }
+    ],
+    logistics: [
+      "Live data could not load in time",
+      "Try a more specific career input"
+    ],
+    risks: [
+      "Analysis may be incomplete due to timeout"
+    ],
+    steps: [
+      "Retry analysis",
+      "Refine your search (example: 'B2B SaaS Copywriter')"
+    ],
+    comparisons: []
+  };
+
+  return {
+    statusCode: 200,
+    headers: responseHeaders,
+    body: JSON.stringify(fallback)
+  };
+}
 
     const rawText = result.response.text().trim();
 
     let parsed;
+
     try {
+      // First attempt: direct parse
       parsed = JSON.parse(rawText);
+
     } catch (err1) {
       try {
+        // Second attempt: extract first valid JSON object only
         const firstBrace = rawText.indexOf("{");
         const lastBrace = rawText.lastIndexOf("}");
+
         if (firstBrace !== -1 && lastBrace !== -1) {
-          parsed = JSON.parse(rawText.substring(firstBrace, lastBrace + 1));
+          const sliced = rawText.substring(firstBrace, lastBrace + 1);
+          parsed = JSON.parse(sliced);
         } else {
           throw new Error("No JSON structure found");
         }
+
       } catch (err2) {
         console.error("PARSE FAILURE:", rawText);
+
+        // FINAL FALLBACK (never break frontend)
         parsed = {
           verdict: "UNREADABLE RESPONSE",
-          roi: "$0.00",
+          roi: "N/A",
           matrix: [],
           logistics: [],
           risks: ["Model returned malformed JSON"],
-          steps: [
-            { text: "Retry request", category: "Other" },
-            { text: "Simplify input", category: "Other" }
-          ],
+          steps: ["Retry request", "Simplify input"],
           comparisons: []
         };
       }
@@ -223,14 +228,11 @@ Analyze this market:
       headers: responseHeaders,
       body: JSON.stringify({
         verdict: "ANALYSIS FAILED",
-        roi: "$0.00",
+        roi: "N/A",
         matrix: [],
         logistics: [],
         risks: ["Model instability or malformed output"],
-        steps: [
-          { text: "Retry request", category: "Other" },
-          { text: "Simplify input", category: "Other" }
-        ],
+        steps: ["Retry request", "Refine market input"],
         comparisons: []
       })
     };
