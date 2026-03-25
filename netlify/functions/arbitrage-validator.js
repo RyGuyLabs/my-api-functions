@@ -213,6 +213,13 @@ try {
 
     let safe = validateJSON(parsed);
 
+safe.steps = safe.steps.map(s => ({
+  text: String(s.text || "Unknown step"),
+  category: ["Research","Outreach","Delivery","Setup"].includes(s.category)
+    ? s.category
+    : "Other"
+}));
+
     if (tier === "free") {
       safe.comparisons = safe.comparisons.slice(0, 1);
     }
