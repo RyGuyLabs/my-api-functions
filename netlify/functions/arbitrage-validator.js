@@ -161,9 +161,9 @@ try {
       "Analysis may be incomplete due to timeout"
     ],
     steps: [
-      "Retry analysis",
-      "Refine your search (example: 'B2B SaaS Copywriter')"
-    ],
+  { text: "Retry analysis", category: "Other" },
+  { text: "Refine your search (example: 'B2B SaaS Copywriter')", category: "Other" }
+]
     comparisons: []
   };
 
@@ -241,7 +241,10 @@ safe.steps = safe.steps.map(s => ({
         matrix: [],
         logistics: [],
         risks: ["Model instability or malformed output"],
-        steps: ["Retry request", "Refine market input"],
+        steps: [
+  { text: "Retry request", category: "Other" },
+  { text: "Simplify input", category: "Other" }
+],
         comparisons: []
       })
     };
