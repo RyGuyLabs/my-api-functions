@@ -205,7 +205,10 @@ try {
           matrix: [],
           logistics: [],
           risks: ["Model returned malformed JSON"],
-          steps: ["Retry request", "Simplify input"],
+          steps: [
+  { text: "Retry request", category: "Other" },
+  { text: "Simplify input", category: "Other" }
+],
           comparisons: []
         };
       }
