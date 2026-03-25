@@ -163,7 +163,7 @@ try {
     steps: [
   { text: "Retry analysis", category: "Other" },
   { text: "Refine your search (example: 'B2B SaaS Copywriter')", category: "Other" }
-]
+],
     comparisons: []
   };
 
