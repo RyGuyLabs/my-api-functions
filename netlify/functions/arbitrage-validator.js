@@ -153,26 +153,18 @@ try {
 } catch (err) {
   console.error("AI TIMEOUT OR FAILURE:", err.message);
 
-  // ✅ SAFE FALLBACK (THIS IS THE KEY FIX)
-  const fallback = {
-    verdict: "MARKET UNCLEAR",
-    roi: "N/A",
-    matrix: [
-      { task: "Basic Market Research", value: "$0–$25/hr" }
-    ],
-    logistics: [
-      "Live data could not load in time",
-      "Try a more specific career input"
-    ],
-    risks: [
-      "Analysis may be incomplete due to timeout"
-    ],
-    steps: [
-      "Retry analysis",
-      "Refine your search (example: 'B2B SaaS Copywriter')"
-    ],
-    comparisons: []
-  };
+ const fallback = {
+  verdict: "MARKET UNCLEAR",
+  roi: "N/A",
+  matrix: [{ task: "Basic Market Research", value: "$0–$25/hr" }],
+  logistics: ["Live data could not load in time", "Try a more specific market input"],
+  risks: ["Analysis may be incomplete due to timeout"],
+  steps: ["Retry analysis", "Refine your search (example: 'B2B SaaS Copywriter')"],
+  comparisons: [],
+  insights: [
+    { type: "Note", text: "AI timed out, no insights available." }
+  ]
+};
 
   return {
     statusCode: 200,
