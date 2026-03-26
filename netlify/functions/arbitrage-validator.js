@@ -220,10 +220,6 @@ try {
 
     let safe = validateJSON(parsed);
 
-    if (tier === "free") {
-      safe.comparisons = safe.comparisons.slice(0, 1);
-    }
-
     return {
       statusCode: 200,
       headers: responseHeaders,
