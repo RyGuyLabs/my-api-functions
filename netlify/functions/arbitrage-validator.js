@@ -132,6 +132,13 @@ Guidelines:
 - Focus on earning potential
 - Avoid vague language like 'good potential' or 'depends'
 
+Verdict Rules:
+- MUST start with PURSUE, CAUTION, or AVOID
+- MUST be punchy and specific (no fluff)
+- MUST include a real constraint, advantage, or condition
+- DO NOT say 'good potential' or anything vague
+- Think like a trader making a fast decision
+
 Analyze this market:
 "${asset}"
 `;
