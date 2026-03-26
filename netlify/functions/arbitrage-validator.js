@@ -110,7 +110,7 @@ Use plain, easy-to-understand language. Avoid jargon.
 
 Schema:
 {
-  "verdict": "short, clear conclusion (1 sentence)",
+  "verdict": "Start with PURSUE, CAUTION, or AVOID in all caps, followed by a colon and a specific reason",
   "roi": "estimated $/hour range",
   "matrix": [{"task":"simple task name","value":"$/hr"}],
   "logistics": ["simple practical insight"],
@@ -120,9 +120,15 @@ Schema:
 }
 
 Guidelines:
-- Keep sentences short and readable (8th grade level)
+- Keep sentences short and readable (12th grade level)
 - Be practical, not theoretical
 - Focus on how someone can actually make money
+
+Verdict Rules:
+- MUST begin with PURSUE, CAUTION, or AVOID
+- Be decisive (no neutral language)
+- Include a specific condition, constraint, or advantage
+- Avoid vague phrases like "good potential" or "depends"
 
 Analyze this market:
 "${asset}"
