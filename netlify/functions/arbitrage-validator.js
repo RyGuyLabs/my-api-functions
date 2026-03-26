@@ -100,9 +100,6 @@ exports.handler = async (event) => {
     const { asset } = JSON.parse(event.body);
     if (!asset) throw new Error("Missing asset");
 
-    // Removed free-tier logic entirely
-    // const tier = event.headers["x-user-tier"] || "free";
-
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing API key");
 
