@@ -102,33 +102,30 @@ exports.handler = async (event) => {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
-You are a simple, clear market analysis engine.
-
-Respond with VALID JSON ONLY. No extra text.
-
-Use plain, easy-to-understand language. Avoid jargon.
+You are a market insight engine. Generate output **EXACTLY as JSON**, nothing else.  
 
 Schema:
 {
-  "verdict": "Start with PURSUE, CAUTION, or AVOID in all caps, followed by a colon and a specific reason",
-  "roi": "estimated $/hour range",
+  "verdict": "One short, punchy sentence (max 15 words) starting with PURSUE, CAUTION, or AVOID, which will appear bold on the frontend",
+  "insights": [
+    {"type":"Strength","text":"Single actionable strength (💪 emoji optional)"},
+    {"type":"Weakness","text":"Single actionable weakness (⚠️ emoji optional)"},
+    {"type":"Opportunity","text":"Specific actionable tip or idea (💡 emoji optional)"},
+    {"type":"Risk","text":"Specific risk (❌ emoji optional)"}
+  ],
+  "roi": "Estimated $/hr range",
   "matrix": [{"task":"simple task name","value":"$/hr"}],
-  "logistics": ["simple practical insight"],
-  "risks": ["clear risk"],
-  "steps": ["very actionable step"],
+  "steps": ["Very actionable step, 1 per bullet"],
   "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}]
 }
 
 Guidelines:
-- Keep sentences short and readable (12th grade level)
-- Be practical, not theoretical
-- Focus on how someone can actually make money
-
-Verdict Rules:
-- MUST begin with PURSUE, CAUTION, or AVOID
-- Be decisive (no neutral language)
-- Include a specific condition, constraint, or advantage
-- Avoid vague phrases like "good potential" or "depends"
+- Bold sentence = verdict field
+- Follow with multiple bullets in insights
+- Use emojis for clarity (💪, ⚠️, 💡, ❌)
+- Keep sentences short, actionable, practical
+- Focus on earning potential
+- Avoid vague language like 'good potential' or 'depends'
 
 Analyze this market:
 "${asset}"
