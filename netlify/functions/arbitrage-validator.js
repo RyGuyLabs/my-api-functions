@@ -35,6 +35,11 @@ function validateJSON(raw) {
     delta: String(c.delta || "0%")
   }));
 
+    safe.insights = Array.isArray(raw.insights) ? raw.insights.map(i => ({
+    type: String(i.type || "Note"),
+    text: String(i.text || "")
+  })) : [];
+
   return safe;
 }
 
