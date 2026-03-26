@@ -3,7 +3,7 @@ const rateLimitStore = new Map();
 
 const headers = {
   "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-  "Access-Control-Allow-Headers": "Content-Type, x-user-tier",
+  "Access-Control-Allow-Headers": "Content-Type", // removed x-user-tier since no free tier
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
 };
@@ -17,7 +17,7 @@ function normalizeResponse(raw) {
     risks: Array.isArray(raw.risks) ? raw.risks : [],
     steps: Array.isArray(raw.steps) ? raw.steps : [],
     comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : [],
-    insights: Array.isArray(raw.insights) ? raw.insights : [] // ✅ add default empty array
+    insights: Array.isArray(raw.insights) ? raw.insights : [] // ✅ keep default empty array
   };
 }
 
@@ -36,10 +36,11 @@ function validateJSON(raw) {
     delta: String(c.delta || "0%")
   }));
 
-    safe.insights = Array.isArray(raw.insights) ? raw.insights.map(i => ({
+  // ✅ Use safe.insights instead of raw.insights to prevent breaking output
+  safe.insights = safe.insights.slice(0, 4).map(i => ({
     type: String(i.type || "Note"),
     text: String(i.text || "")
-  })) : [];
+  }));
 
   return safe;
 }
@@ -99,7 +100,8 @@ exports.handler = async (event) => {
     const { asset } = JSON.parse(event.body);
     if (!asset) throw new Error("Missing asset");
 
-    const tier = event.headers["x-user-tier"] || "free";
+    // Removed free-tier logic entirely
+    // const tier = event.headers["x-user-tier"] || "free";
 
     const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) throw new Error("Missing API key");
@@ -137,7 +139,6 @@ Analyze this market:
 "${asset}"
 `;
 
-    // ❌ Remove signal from SDK call; use Promise.race for timeout
     const resultPromise = model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.7 }
@@ -145,45 +146,42 @@ Analyze this market:
 
     let result;
 
-try {
-  result = await Promise.race([
-  resultPromise,
-  new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
-]);
-} catch (err) {
-  console.error("AI TIMEOUT OR FAILURE:", err.message);
+    try {
+      result = await Promise.race([
+        resultPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
+      ]);
+    } catch (err) {
+      console.error("AI TIMEOUT OR FAILURE:", err.message);
 
- const fallback = {
-  verdict: "MARKET UNCLEAR",
-  roi: "N/A",
-  matrix: [{ task: "Basic Market Research", value: "$0–$25/hr" }],
-  logistics: ["Live data could not load in time", "Try a more specific market input"],
-  risks: ["Analysis may be incomplete due to timeout"],
-  steps: ["Retry analysis", "Refine your search (example: 'B2B SaaS Copywriter')"],
-  comparisons: [],
-  insights: [
-    { type: "Note", text: "AI timed out, no insights available." }
-  ]
-};
+      const fallback = {
+        verdict: "MARKET UNCLEAR",
+        roi: "N/A",
+        matrix: [{ task: "Basic Market Research", value: "$0–$25/hr" }],
+        logistics: ["Live data could not load in time", "Try a more specific market input"],
+        risks: ["Analysis may be incomplete due to timeout"],
+        steps: ["Retry analysis", "Refine your search (example: 'B2B SaaS Copywriter')"],
+        comparisons: [],
+        insights: [
+          { type: "Note", text: "AI timed out, no insights available." }
+        ]
+      };
 
-  return {
-    statusCode: 200,
-    headers: responseHeaders,
-    body: JSON.stringify(fallback)
-  };
-}
+      return {
+        statusCode: 200,
+        headers: responseHeaders,
+        body: JSON.stringify(fallback)
+      };
+    }
 
     const rawText = result.response.text().trim();
 
     let parsed;
 
     try {
-      // First attempt: direct parse
       parsed = JSON.parse(rawText);
-
     } catch (err1) {
       try {
-        // Second attempt: extract first valid JSON object only
         const firstBrace = rawText.indexOf("{");
         const lastBrace = rawText.lastIndexOf("}");
 
@@ -193,11 +191,9 @@ try {
         } else {
           throw new Error("No JSON structure found");
         }
-
       } catch (err2) {
         console.error("PARSE FAILURE:", rawText);
 
-        // FINAL FALLBACK (never break frontend)
         parsed = {
           verdict: "UNREADABLE RESPONSE",
           roi: "N/A",
@@ -205,12 +201,13 @@ try {
           logistics: [],
           risks: ["Model returned malformed JSON"],
           steps: ["Retry request", "Simplify input"],
-          comparisons: []
+          comparisons: [],
+          insights: [{ type: "Note", text: "No insights could be extracted." }]
         };
       }
     }
 
-    let safe = validateJSON(parsed);
+    const safe = validateJSON(parsed);
 
     return {
       statusCode: 200,
@@ -230,7 +227,8 @@ try {
         logistics: [],
         risks: ["Model instability or malformed output"],
         steps: ["Retry request", "Refine market input"],
-        comparisons: []
+        comparisons: [],
+        insights: [{ type: "Note", text: "Server failed to process insights." }]
       })
     };
   }
