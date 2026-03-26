@@ -16,7 +16,8 @@ function normalizeResponse(raw) {
     logistics: Array.isArray(raw.logistics) ? raw.logistics : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],
     steps: Array.isArray(raw.steps) ? raw.steps : [],
-    comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : []
+    comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : [],
+    insights: Array.isArray(raw.insights) ? raw.insights : [] // ✅ add default empty array
   };
 }
 
