@@ -128,6 +128,12 @@ Schema:
   "matrix": [{"task":"simple task name","value":"$/hr"}],
   "steps": ["Very actionable step, 1 per bullet"],
   "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}]
+  "exploits": [
+  "Specific monetization angle",
+  "Underserved niche to target",
+  "Pricing arbitrage opportunity",
+  "Distribution or acquisition hack"
+]
 }
 
 Guidelines:
