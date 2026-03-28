@@ -36,8 +36,7 @@ function validateJSON(raw) {
     delta: String(c.delta || "0%")
   }));
 
-  // ✅ Use safe.insights instead of raw.insights to prevent breaking output
-  safe.insights = safe.insights.slice(0, 4).map(i => ({
+  safe.insights = safe.insights.slice(0, 8).map(i => ({
     type: String(i.type || "Note"),
     text: String(i.text || "")
   }));
