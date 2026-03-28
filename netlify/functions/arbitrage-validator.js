@@ -38,6 +38,7 @@ function validateJSON(raw) {
   }));
 
   safe.insights = safe.insights.slice(0, 8).map(i => ({
+  safe.exploits = safe.exploits.slice(0, 5).map(e => String(e));
     type: String(i.type || "Note"),
     text: String(i.text || "")
   }));
