@@ -17,7 +17,8 @@ function normalizeResponse(raw) {
     risks: Array.isArray(raw.risks) ? raw.risks : [],
     steps: Array.isArray(raw.steps) ? raw.steps : [],
     comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : [],
-    insights: Array.isArray(raw.insights) ? raw.insights : [] // ✅ keep default empty array
+    insights: Array.isArray(raw.insights) ? raw.insights : [],
+    exploits: Array.isArray(raw.exploits) ? raw.exploits : []
   };
 }
 
