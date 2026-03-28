@@ -113,11 +113,16 @@ Schema:
 {
   "verdict": "Start with PURSUE, CAUTION, or AVOID. Then a blunt, high-stakes reason (max 12 words). No fluff.",
   "insights": [
-    {"type":"Strength","text":"Single actionable strength (💪 emoji optional)"},
-    {"type":"Weakness","text":"Single actionable weakness (⚠️ emoji optional)"},
-    {"type":"Opportunity","text":"Specific actionable tip or idea (💡 emoji optional)"},
-    {"type":"Risk","text":"Specific risk (❌ emoji optional)"}
-  ],
+  {"type":"Strength","text":"Single actionable strength"},
+  {"type":"Weakness","text":"Single actionable weakness"},
+
+  {"type":"Opportunity","text":"Exploit: pricing gap, niche, or arbitrage angle"},
+  {"type":"Opportunity","text":"Exploit: underserved segment or buyer type"},
+  {"type":"Opportunity","text":"Exploit: faster acquisition channel or tactic"},
+  {"type":"Opportunity","text":"Exploit: productized service or packaging angle"},
+
+  {"type":"Risk","text":"Specific risk"}
+],
   "roi": "Estimated $/hr range",
   "matrix": [{"task":"simple task name","value":"$/hr"}],
   "steps": ["Very actionable step, 1 per bullet"],
