@@ -139,6 +139,13 @@ Guidelines:
 - Every line should feel like a decision trigger
 - Avoid generic phrases completely
 
+Opportunity rules:
+- Must be directly monetizable within 24–72 hours
+- Must describe a gap, inefficiency, or arbitrage angle
+- Avoid vague advice — every opportunity should imply a SELLABLE action
+- Think: "How does someone make money from this immediately?"
+- Prioritize pricing gaps, speed advantages, niche specialization, or distribution hacks
+
 Examples of GOOD:
 "Charge $150+/hr by specializing in SaaS onboarding flows"
 "Entry-level saturated; skip unless you have niche proof"
