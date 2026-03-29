@@ -10,12 +10,12 @@ const headers = {
 
 function normalizeResponse(raw) {
   return {
-    verdict: String(raw.verdict || "INSUFFICIENT SIGNAL"),
-    roi: String(raw.roi || "N/A"),
-    matrix: Array.isArray(raw.matrix) ? raw.matrix : [],
+    verdict: String(raw.verdict || "NO SIGNAL"),
+    roi: String(raw.roi || "$0"),
+    matrix: Array.isArray(raw.matrix) ? raw.matrix : [{ task: "No data", value: "$0" }],
     logistics: Array.isArray(raw.logistics) ? raw.logistics : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],
-    steps: Array.isArray(raw.steps) ? raw.steps : [],
+    steps: Array.isArray(raw.steps) ? raw.steps : ["Retry with more specific input"],
     comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : [],
     insights: Array.isArray(raw.insights) ? raw.insights : [],
     exploits: Array.isArray(raw.exploits) ? raw.exploits : []
