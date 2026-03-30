@@ -279,8 +279,10 @@ function extractBaseROI(roiStr) {
 
 const baseROI = extractBaseROI(safe.roi);
 
-// Estimate realistic daily opportunity window
-let opportunityMultiplier = 2; // default: 2 hours/day
+let opportunityMultiplier = Math.min(
+  5,
+  1 + safe.exploits.length * 0.5 + safe.comparisons.length * 0.3
+);
 
 if (safe.exploits.length >= 3) opportunityMultiplier = 3;
 if (safe.comparisons.length >= 3) opportunityMultiplier += 1;
