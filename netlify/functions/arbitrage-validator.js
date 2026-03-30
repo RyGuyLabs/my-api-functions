@@ -127,8 +127,17 @@ Schema:
   "roi": "Estimated $/hr range",
   "matrix": [{"task":"simple task name","value":"$/hr"}],
   "steps": ["Very actionable step, 1 per bullet"],
-  "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}]
-  "exploits": [
+  "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}],
+"exploits": [
+  "Specific monetization angle",
+  "Underserved niche to target",
+  "Pricing arbitrage opportunity",
+  "Distribution or acquisition hack"
+],
+"firstMoves": [
+  "3 aggressive, immediate money-making actions (under 30 minutes each)"
+],
+"costOfInaction": "Dollar-based loss per day and month if ignored"
   "Specific monetization angle",
   "Underserved niche to target",
   "Pricing arbitrage opportunity",
@@ -146,6 +155,10 @@ Guidelines:
 - Focus on money, leverage, or risk ONLY
 - Every line should feel like a decision trigger
 - Avoid generic phrases completely
+- firstMoves MUST be tactical, fast, and revenue-focused
+- Each firstMove must be executable immediately (no prep, no learning phase)
+- costOfInaction MUST include real dollar estimates per day and month
+- Tie costOfInaction to missed deals, pricing gaps, or demand inefficiencies
 
 Opportunity rules:
 - Must be directly monetizable within 24–72 hours
