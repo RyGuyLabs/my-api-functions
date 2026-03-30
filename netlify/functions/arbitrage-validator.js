@@ -264,6 +264,32 @@ if (!Array.isArray(parsed.firstMoves)) parsed.firstMoves = [];
 if (typeof parsed.costOfInaction !== "string") parsed.costOfInaction = "";
     const safe = validateJSON(parsed);
 
+    // 🔒 SMART HARDENING (guarantee usable output)
+
+// Ensure firstMoves always exists
+if (!safe.firstMoves || safe.firstMoves.length === 0) {
+  safe.firstMoves = [
+    `Find 3 buyers in ${asset} market`,
+    `Identify 1 pricing gap competitors miss`,
+    `Send 1 direct monetizable offer`
+  ];
+}
+
+// Ensure costOfInaction always exists
+if (!safe.costOfInaction || safe.costOfInaction.length < 5) {
+
+  let hourly = 0;
+
+  const match = String(safe.roi).match(/[\d.]+/);
+  if (match) hourly = parseFloat(match[0]);
+
+  if (!hourly || isNaN(hourly)) hourly = 25;
+
+  const daily = Math.round(hourly * 2);
+  const monthly = Math.round(daily * 30);
+
+  safe.costOfInaction = `~$${daily}/day (~$${monthly}/month) missed by inaction`;
+}
     // 🔹 SMART FIRST MOVES (ONLY IF AI OUTPUT IS WEAK)
 
 function generateFirstMoves(safe) {
