@@ -57,9 +57,9 @@ exports.handler = async (event) => {
 
   // Clone headers per request to avoid mutating the global headers object
   const responseHeaders = { ...headers };
-  responseHeaders["Access-Control-Allow-Origin"] = allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0];
+if (allowedOrigins.includes(requestOrigin)) {
+  responseHeaders["Access-Control-Allow-Origin"] = requestOrigin;
+}
 
   const ip = (event.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
 
