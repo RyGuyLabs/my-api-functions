@@ -276,6 +276,37 @@ if (!Array.isArray(parsed.firstMoves)) parsed.firstMoves = [];
 if (typeof parsed.costOfInaction !== "string") parsed.costOfInaction = "";
     const safe = validateJSON(parsed);
 
+    // 🔢 HARD NUMERIC ENGINE (authoritative math layer)
+
+function extractNumber(str) {
+  if (!str) return 0;
+  const match = String(str).match(/[\d.]+/g);
+  return match ? parseFloat(match[0]) : 0;
+}
+
+// Base ROI (use first number in range)
+let baseROI = extractNumber(safe.roi);
+
+// Fallback if AI is weak
+if (!baseROI || baseROI < 10) {
+  const matrixValues = safe.matrix.map(m => extractNumber(m.value));
+  if (matrixValues.length) {
+    baseROI = Math.max(...matrixValues);
+  }
+}
+
+// Estimate daily opportunity (conservative execution model)
+const hoursPerDay = 2.5; // realistic for user
+const conversionRate = 0.2; // 20% of actions produce $
+const dailyValue = baseROI * hoursPerDay * conversionRate;
+
+// Monthly projection
+const monthlyValue = dailyValue * 30;
+
+// Inject HARD values (override AI fluff)
+safe.roi = `$${baseROI.toFixed(0)}/hr`;
+safe.costOfInaction = `$${dailyValue.toFixed(0)}/day (~$${monthlyValue.toFixed(0)}/month lost)`;
+
     // 🔒 SMART HARDENING (guarantee usable output)
 
 // Ensure firstMoves always exists
