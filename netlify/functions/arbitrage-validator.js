@@ -52,6 +52,17 @@ function validateJSON(raw) {
 
 exports.handler = async (event) => {
 
+if (event.httpMethod === "OPTIONS") {
+  return {
+    statusCode: 200,
+    headers: {
+      ...headers,
+      "Access-Control-Allow-Origin": event.headers.origin || event.headers.Origin
+    },
+    body: ""
+  };
+}
+  
   const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
   const requestOrigin = event.headers?.origin || event.headers?.Origin;
 
