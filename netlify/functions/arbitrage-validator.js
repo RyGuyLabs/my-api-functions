@@ -98,10 +98,6 @@ if (allowedOrigins.includes(requestOrigin)) {
     }
   }
 
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers: responseHeaders, body: "" };
-  }
-
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,
