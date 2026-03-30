@@ -259,6 +259,65 @@ if (!parsed || typeof parsed !== "object") parsed = {};
 if (!Array.isArray(parsed.firstMoves)) parsed.firstMoves = [];
 if (typeof parsed.costOfInaction !== "string") parsed.costOfInaction = "";
     const safe = validateJSON(parsed);
+
+    // 🔹 SMART FIRST MOVES (ONLY IF AI OUTPUT IS WEAK)
+
+function generateFirstMoves(safe) {
+  const moves = [];
+
+  const topTasks = (safe.matrix || []).slice(0, 3);
+  const topExploits = (safe.exploits || []).slice(0, 2);
+  const opportunities = (safe.insights || [])
+    .filter(i => i.type === "Opportunity")
+    .map(i => i.text)
+    .slice(0, 2);
+
+  // 🔹 Task-driven actions
+  topTasks.forEach(t => {
+    if (!t.task) return;
+
+    const txt = t.task.toLowerCase();
+
+    if (txt.includes("copy") || txt.includes("content")) {
+      moves.push(`Find 3 weak examples of ${t.task} and rewrite one for profit`);
+    } else if (txt.includes("design")) {
+      moves.push(`Audit 3 competitors and improve one ${t.task} visually`);
+    } else if (txt.includes("audit") || txt.includes("analysis")) {
+      moves.push(`Run 3 quick audits and identify 1 monetizable gap`);
+    } else {
+      moves.push(`Offer quick-turn ${t.task} service to 3 prospects`);
+    }
+  });
+
+  // 🔹 Exploit-driven actions
+  topExploits.forEach(e => {
+    if (!e) return;
+    moves.push(`Act on: ${e}`);
+  });
+
+  // 🔹 Opportunity-driven actions
+  opportunities.forEach(o => {
+    if (!o) return;
+    moves.push(`Capitalize on: ${o}`);
+  });
+
+  // Clean + limit
+  return moves
+    .map(m => String(m).trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+// 🔹 OVERRIDE LOGIC
+if (!safe.firstMoves || safe.firstMoves.length < 2) {
+  const generated = generateFirstMoves(safe);
+
+  if (generated.length) {
+    safe.firstMoves = generated;
+  } else {
+    safe.firstMoves = ["No actionable steps generated. Re-run scan."];
+  }
+}
     // 🔹 SMART COST OF INACTION (OVERRIDES AI IF WE CAN CALCULATE)
 
 function extractBaseROI(roiStr) {
