@@ -254,6 +254,10 @@ Analyze this market:
       }
     }
 
+if (!parsed || typeof parsed !== "object") parsed = {};
+
+if (!Array.isArray(parsed.firstMoves)) parsed.firstMoves = [];
+if (typeof parsed.costOfInaction !== "string") parsed.costOfInaction = "";
     const safe = validateJSON(parsed);
 
     return {
