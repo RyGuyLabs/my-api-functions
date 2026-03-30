@@ -418,7 +418,8 @@ function extractBaseROI(roiStr) {
   return nums[0];
 }
 
-const baseROI = extractBaseROI(safe.roi);
+// 🔹 FIXED: renamed variable to avoid duplicate declaration
+const baseROI2 = extractBaseROI(safe.roi);
 
 let opportunityMultiplier = Math.min(
   5,
@@ -429,8 +430,8 @@ if (safe.exploits.length >= 3) opportunityMultiplier = 3;
 if (safe.comparisons.length >= 3) opportunityMultiplier += 1;
 
 // Calculate losses
-if (baseROI > 0) {
-  const dailyLoss = baseROI * opportunityMultiplier;
+if (baseROI2 > 0) {
+  const dailyLoss = baseROI2 * opportunityMultiplier;
   const monthlyLoss = dailyLoss * 30;
 
   safe.costOfInaction = `$${dailyLoss.toFixed(0)}/day (~$${monthlyLoss.toFixed(0)}/month) in missed opportunity based on current market gaps`;
