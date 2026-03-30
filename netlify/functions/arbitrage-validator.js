@@ -227,10 +227,22 @@ Analyze this market:
 
     const rawText = result.response.text().trim();
 
+    let cleaned = rawText
+  .replace(/```json/g, '')
+  .replace(/```/g, '')
+  .trim();
+
+// force JSON extraction if model adds noise
+const firstBrace = cleaned.indexOf("{");
+const lastBrace = cleaned.lastIndexOf("}");
+
+if (firstBrace !== -1 && lastBrace !== -1) {
+  cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+}
     let parsed;
 
     try {
-      parsed = JSON.parse(rawText);
+      parsed = JSON.parse(cleaned);
     } catch (err1) {
       try {
         const firstBrace = rawText.indexOf("{");
