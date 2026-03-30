@@ -18,7 +18,9 @@ function normalizeResponse(raw) {
     steps: Array.isArray(raw.steps) ? raw.steps : ["Retry with more specific input"],
     comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : [],
     insights: Array.isArray(raw.insights) ? raw.insights : [],
-    exploits: Array.isArray(raw.exploits) ? raw.exploits : []
+    exploits: Array.isArray(raw.exploits) ? raw.exploits : [],
+    firstMoves: Array.isArray(raw.firstMoves) ? raw.firstMoves : [],
+    costOfInaction: String(raw.costOfInaction || "")
   };
 }
 
@@ -42,6 +44,8 @@ function validateJSON(raw) {
   }));
 
   safe.exploits = safe.exploits.slice(0, 5).map(e => String(e));
+  safe.firstMoves = safe.firstMoves.slice(0, 3).map(m => String(m));
+  safe.costOfInaction = String(safe.costOfInaction || "");
 
   return safe;
 }
@@ -138,11 +142,6 @@ Schema:
   "3 aggressive, immediate money-making actions (under 30 minutes each)"
 ],
 "costOfInaction": "Dollar-based loss per day and month if ignored"
-  "Specific monetization angle",
-  "Underserved niche to target",
-  "Pricing arbitrage opportunity",
-  "Distribution or acquisition hack"
-]
 }
 
 Guidelines:
