@@ -259,6 +259,39 @@ if (!parsed || typeof parsed !== "object") parsed = {};
 if (!Array.isArray(parsed.firstMoves)) parsed.firstMoves = [];
 if (typeof parsed.costOfInaction !== "string") parsed.costOfInaction = "";
     const safe = validateJSON(parsed);
+    // 🔹 SMART COST OF INACTION (OVERRIDES AI IF WE CAN CALCULATE)
+
+function extractBaseROI(roiStr) {
+  if (!roiStr) return 0;
+  const matches = String(roiStr).match(/[\d.]+/g);
+  if (!matches) return 0;
+
+  const nums = matches.map(n => parseFloat(n)).filter(n => !isNaN(n));
+  if (!nums.length) return 0;
+
+  // If range → average it
+  if (nums.length >= 2) {
+    return (nums[0] + nums[1]) / 2;
+  }
+
+  return nums[0];
+}
+
+const baseROI = extractBaseROI(safe.roi);
+
+// Estimate realistic daily opportunity window
+let opportunityMultiplier = 2; // default: 2 hours/day
+
+if (safe.exploits.length >= 3) opportunityMultiplier = 3;
+if (safe.comparisons.length >= 3) opportunityMultiplier += 1;
+
+// Calculate losses
+if (baseROI > 0) {
+  const dailyLoss = baseROI * opportunityMultiplier;
+  const monthlyLoss = dailyLoss * 30;
+
+  safe.costOfInaction = `$${dailyLoss.toFixed(0)}/day (~$${monthlyLoss.toFixed(0)}/month) in missed opportunity based on current market gaps`;
+}
 
     return {
       statusCode: 200,
