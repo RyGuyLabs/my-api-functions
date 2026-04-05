@@ -114,22 +114,24 @@ Return EXACTLY this structure:
 
 {
   "careerTitle": "Specific, real-world job title (not vague)",
-  "alignmentScore": number (0-100 based on strength of fit),
-  "earningPotential": "Clear earning range or description (e.g., '$60k-$120k/year' or 'High income potential')",
+  "alignmentScore": number (0-100 based on strength of fit, considering trait alignment, market demand, and accessibility of entry),
+  "earningPotential": "Realistic earning progression including entry-level and mid-level range (e.g., '$55k-$75k entry-level, scaling to $90k-$120k with experience')",
   "attainmentPlan": [
-    "Step 1: Clear first action (immediate and practical)",
-    "Step 2: Skill-building or certification path",
-    "Step 3: Real-world application (job, freelance, project)",
-    "Step 4: Scaling, specialization, or income growth step"
-  ],
-  "reasoning": "A confident, motivating explanation tying their traits directly to success in this career",
-  "searchKeywords": ["5-8 highly relevant job search keywords INCLUDING the user's location when applicable (e.g., 'Software Engineer Florida', 'Remote Sales Jobs USA')"]
+  "Step 1: Immediate action that can be completed within 24–48 hours with no prerequisites (must result in a tangible output)",
+  "Step 2: Specific skill-building or certification path with a clear outcome",
+  "Step 3: Real-world application (job application, freelance work, or project with proof of work)",
+  "Step 4: Scaling, specialization, or income growth step with a clear advancement outcome"
+],
+  "reasoning": "A confident, motivating explanation that directly references at least two of the user's inputs (hobbies, skills, or talents) and clearly explains why those traits translate to success in this career (no hedging language like 'might' or 'could')",
+  "searchKeywords": ["5-8 highly relevant job search keywords INCLUDING the user's location when applicable, with at least 2 optimized for immediate application intent (e.g., 'Entry Level Software Engineer Florida', 'Hiring Remote Sales Jobs USA')"]
 }
 
 QUALITY STANDARD:
-- Steps must be specific and executable (no vague advice).
-- Reasoning must feel personalized and insightful, not generic.
-- Keywords must be optimized for job platforms like LinkedIn/Indeed.
+- Steps must be specific, executable, and produce tangible outcomes (no vague advice).
+- Step 1 must be achievable within 24–48 hours with no prerequisites.
+- Reasoning must feel personalized, reference user inputs directly, and avoid generic language.
+- Keywords must be optimized for job platforms like LinkedIn/Indeed and include actionable search intent.
+- All fields must logically align (career, salary, steps, and reasoning must not contradict each other).
 - Output should feel like it came from a top-tier career strategist.
 
 FINAL RULE:
@@ -138,7 +140,7 @@ Return ONLY the JSON object. No extra text.`
             }],
             generationConfig: {
                 temperature: 0.8,
-                // response_mime_type is omitted to ensure maximum compatibility across API versions
+                response_mime_type: "application/json"
             }
         };
 
