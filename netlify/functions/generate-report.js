@@ -89,7 +89,6 @@ exports.handler = async (event, context) => {
                 required: ["report_text", "keywords"]
             }
         },
-        tools: [{ "google_search": {} }],
         safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" }
