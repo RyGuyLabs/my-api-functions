@@ -1,69 +1,66 @@
 const CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com", // <-- FIX: Specify the exact allowed origin
-    "Access-Control-Allow-Methods": "POST, OPTIONS", // Allow POST and the preflight OPTIONS
+    "Access-Control-Allow-Origin": "https://www.ryguylabs.com", // Only allow your exact domain
+    "Access-Control-Allow-Methods": "POST, OPTIONS", // Allow POST and preflight OPTIONS
     "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400" // Cache preflight for 24 hours
 };
 
-// This function acts as a secure proxy to the Gemini API,
-// keeping the API key hidden in Netlify environment variables.
-// The client passes 'query' and 'taskMode', and this serverless function
-// handles the authentication and dynamic prompt construction.
+// Secure proxy to Gemini API, hides API key, handles query + taskMode
 exports.handler = async (event, context) => {
 
-    // 1. Handle Preflight OPTIONS request (REQUIRED for CORS)
+    // --- 1. Handle Preflight OPTIONS request ---
     if (event.httpMethod === 'OPTIONS') {
         return {
-            statusCode: 204, // 204 No Content for a successful preflight
+            statusCode: 204,
             headers: CORS_HEADERS,
-            body: "",
+            body: ""
         };
     }
 
-    // 2. Get the API Key from Netlify Environment Variables
-    const apiKey = process.env.FIRST_API_KEY; 
-
+    // --- 2. Retrieve API Key from Environment ---
+    const apiKey = process.env.FIRST_API_KEY;
     if (!apiKey) {
         return {
             statusCode: 500,
-            headers: CORS_HEADERS, // Include headers even on server error
-            body: JSON.stringify({ message: "Server configuration error: FIRST_API_KEY environment variable is not set." }),
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Server misconfiguration: FIRST_API_KEY not set." })
         };
     }
 
+    // --- 3. Enforce POST method ---
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Method Not Allowed" }),
+            body: JSON.stringify({ message: "Method Not Allowed" })
         };
     }
 
+    // --- 4. Parse JSON body safely ---
     let body;
     try {
         body = JSON.parse(event.body);
-    } catch (e) {
+    } catch (err) {
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Invalid JSON body provided." }),
+            body: JSON.stringify({ message: "Invalid JSON body." })
         };
     }
 
     const { query, taskMode } = body;
-
     if (!query) {
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Missing required field: query." }),
+            body: JSON.stringify({ message: "Missing required field: query." })
         };
     }
 
-    // --- 3. Dynamic Model Configuration based on taskMode ---
+    // --- 5. Dynamic model & prompt configuration ---
     let systemPrompt = "";
-    let temperature = 0.2; 
-    // FIX: Changed model from 'gemini-pro' (unsupported) to 'gemini-2.5-flash' (current and supported)
-    const model = "gemini-2.5-flash";
+    let temperature = 0.2;
+    const model = "gemini-2.5-flash"; // Supported production model
 
     switch (taskMode) {
         case 'summary':
@@ -74,106 +71,82 @@ exports.handler = async (event, context) => {
             systemPrompt = "You are a creative strategist. Generate multiple, diverse, and innovative ideas or solutions for the user's query. Use an encouraging and expansive tone.";
             temperature = 0.9;
             break;
-        case 'report': // Default case
+        case 'report':
         default:
             systemPrompt = "You are a concise, insightful data analyst providing grounded reports based on the latest available information.";
             temperature = 0.2;
             break;
     }
-    // ---------------------------------------------------------
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
         contents: [{ parts: [{ text: query }] }],
-        // CRITICAL: Enabling Google Search grounding
-        tools: [{ "google_search": {} }],
-        systemInstruction: {
-            parts: [{ text: systemPrompt }]
-        },
-        generationConfig: {
-            temperature: temperature,
-        }
+        tools: [{ "google_search": {} }], // Enable Google Search grounding
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { temperature }
     };
-    
-    // --- 4. Call the Gemini API with Internal Retry Logic ---
+
+    // --- 6. Gemini API call with retry ---
     const maxRetries = 5;
     let response;
 
     for (let i = 0; i < maxRetries; i++) {
         try {
-            // Using native global fetch()
             response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
-            // If we get an OK or an error that isn't a rate limit, stop retrying
-            if (response.ok || response.status !== 429) {
-                break; 
-            }
+            if (response.ok || response.status !== 429) break; // Stop retry on success or non-rate-limit error
 
-            // Handle rate limiting (429)
+            // Exponential backoff + jitter
             const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            console.warn(`Gemini API rate limit hit. Retrying in ${delay}ms...`);
+            console.warn(`Gemini API rate-limited. Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
-            
-        } catch (error) {
-            // Log network error and continue to retry if not last attempt
-            console.error(`Attempt ${i + 1} failed (Network Error):`, error.message);
-            if (i === maxRetries - 1) {
-                throw new Error("Gemini API call failed after multiple retries due to persistent network issues.");
-            }
+
+        } catch (err) {
+            console.error(`Attempt ${i + 1} failed (network error):`, err.message);
+            if (i === maxRetries - 1) throw new Error("Persistent network issues; Gemini API call failed after retries.");
             const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
-    
+
     if (!response || !response.ok) {
-        // Handle final failure response from the Gemini API
         const errorBody = await response.json().catch(() => ({}));
         const status = response ? response.status : 503;
         const message = errorBody.error?.message || "Internal server error during API call.";
-        
         return {
             statusCode: status,
-            headers: CORS_HEADERS, // Include headers on failure
-            body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` }),
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` })
         };
     }
 
-    // --- 5. Process the successful Gemini Response ---
+    // --- 7. Process Gemini response ---
     const result = await response.json();
     const candidate = result.candidates?.[0];
 
     if (candidate && candidate.content?.parts?.[0]?.text) {
         const text = candidate.content.parts[0].text;
-        
-        // Extract grounding sources
-        let sources = [];
-        const groundingMetadata = candidate.groundingMetadata;
-        if (groundingMetadata && groundingMetadata.groundingAttributions) {
-            sources = groundingMetadata.groundingAttributions
-                .map(attribution => ({
-                    uri: attribution.web?.uri,
-                    title: attribution.web?.title,
-                }))
-                .filter(source => source.uri && source.title); 
-        }
 
-        // Return the clean, structured data to the frontend
+        // Extract grounding sources safely
+        const sources = candidate.groundingMetadata?.groundingAttributions
+            ?.map(attr => ({ uri: attr.web?.uri, title: attr.web?.title }))
+            ?.filter(src => src.uri && src.title) || [];
+
         return {
             statusCode: 200,
-            headers: CORS_HEADERS, // <-- FIX: Include CORS headers on success
-            body: JSON.stringify({ text, sources }),
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ text, sources })
         };
-
     } else {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." }),
+            body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." })
         };
     }
 };
