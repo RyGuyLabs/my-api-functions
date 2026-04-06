@@ -28,6 +28,7 @@ exports.handler = async (event, context) => {
         };
     }
 
+    // 3️⃣ Parse body
     let body;
     try {
         body = JSON.parse(event.body);
@@ -40,7 +41,6 @@ exports.handler = async (event, context) => {
     }
 
     const { query, taskMode, outputLevel = 'default', language = 'en', history = [] } = body;
-
     if (!query) {
         return {
             statusCode: 400,
@@ -49,7 +49,7 @@ exports.handler = async (event, context) => {
         };
     }
 
-    // 3️⃣ System prompt & temperature
+    // 4️⃣ System prompt & temperature
     const model = "gemini-2.5-flash";
     let systemPromptBase = "", temperature = 0.2;
 
@@ -84,16 +84,22 @@ exports.handler = async (event, context) => {
             break;
     }
 
-    // ✅ FIXED PROMPT (NO JSON DEMAND)
+    // ✅ Updated prompt for clean, structured output
     const systemPrompt = `${systemPromptBase}${levelModifier}
 Respond in ${language}.
-Structure your response clearly with:
-1. A main report section
-2. A list of key concepts or keywords
-3. Supporting insights where relevant
+Structure your response with:
+- TITLE
+- MAIN REPORT (use clear paragraphs)
+- KEY INSIGHTS (highlight main concepts)
+- CONCLUSION
+
+Formatting rules:
+- No markdown (* or **)
+- Use clear paragraphs
+- Add spacing between sections
 `;
 
-    // 4️⃣ Build contents array (history + current query)
+    // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
         parts: [{ text: msg.text }]
@@ -107,22 +113,17 @@ Structure your response clearly with:
     const payload = {
         contents,
         systemInstruction: { parts: [{ text: systemPrompt }] },
-
-        // ✅ FIX: REMOVED JSON MODE
         generationConfig: {
             temperature
         },
-
-        // ✅ KEEP THIS (critical for your product)
         tools: [{ "google_search": {} }],
-
         safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" }
         ]
     };
 
-    // 5️⃣ API Call (unchanged)
+    // 6️⃣ Call Gemini API
     const maxRetries = 5;
     let response;
     const controller = new AbortController();
@@ -141,21 +142,12 @@ Structure your response clearly with:
             );
 
             if (response.ok || response.status !== 429) break;
-
-            await new Promise(r =>
-                setTimeout(r, Math.pow(2, i) * 1000 + Math.random() * 1000)
-            );
+            await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000 + Math.random() * 1000));
 
         } catch (err) {
-            console.error(`[${new Date().toISOString()}] RequestID=${context.awsRequestId} | Attempt ${i + 1} failed:`, err.message);
-
-            if (i === maxRetries - 1) {
-                throw new Error("Gemini API call failed after multiple retries.");
-            }
-
-            await new Promise(r =>
-                setTimeout(r, Math.pow(2, i) * 1000 + Math.random() * 1000)
-            );
+            console.error(`[${new Date().toISOString()}] RequestID=${context.awsRequestId} | Attempt ${i+1} failed:`, err.message);
+            if (i === maxRetries - 1) throw new Error("Gemini API call failed after multiple retries.");
+            await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000 + Math.random() * 1000));
         }
     }
 
@@ -175,25 +167,27 @@ Structure your response clearly with:
         };
     }
 
-    // 6️⃣ Process response (SAFE)
+    // 7️⃣ Process Gemini response
     const result = await response.json();
     const candidate = result.candidates?.[0];
-
     if (candidate && candidate.content?.parts?.[0]?.text) {
-        const text = candidate.content.parts[0].text;
+        const rawText = candidate.content.parts[0].text;
+
+        // ✅ CLEAN AND FORMAT TEXT
+        const cleanedText = rawText
+            .replace(/\*\*/g, '')
+            .replace(/\*/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
 
         return {
             statusCode: 200,
             headers: CORS_HEADERS,
             body: JSON.stringify({
-                report_text: text,
-                keywords: [],
+                report_text: cleanedText,
+                keywords: [], // can add keyword extraction later
                 sources: [],
-                meta: {
-                    taskMode,
-                    outputLevel,
-                    timestamp: new Date().toISOString()
-                }
+                meta: { taskMode, outputLevel, timestamp: new Date().toISOString() }
             })
         };
     }
