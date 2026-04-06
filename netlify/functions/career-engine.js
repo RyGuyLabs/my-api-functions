@@ -1,4 +1,25 @@
 const requestLog = new Map();
+function analyzeTraits(hobbies, skills, talents) {
+    const text = (hobbies + " " + skills + " " + talents).toLowerCase();
+
+    return {
+        analytical: /(analyz|data|research|problem|logic|math)/.test(text),
+        creative: /(design|art|write|music|content|creative)/.test(text),
+        interpersonal: /(talk|help|teach|communicat|sales|lead)/.test(text),
+        technical: /(code|tech|software|engineer|develop)/.test(text),
+        physical: /(build|hands|outdoor|fitness|labor)/.test(text)
+    };
+}
+
+function scoreProfile(signals) {
+    let score = 0;
+    if (signals.analytical) score += 20;
+    if (signals.creative) score += 20;
+    if (signals.interpersonal) score += 20;
+    if (signals.technical) score += 20;
+    if (signals.physical) score += 20;
+    return score;
+}
 const RATE_LIMIT = 10;
 const WINDOW_MS = 60 * 1000;
 
@@ -53,6 +74,8 @@ let hobbies = (rawData.hobbies || "").trim();
 let skills = (rawData.skills || "").trim();
 let talents = (rawData.talents || "").trim();
 let country = (rawData.country || "").trim();
+const traitSignals = analyzeTraits(hobbies, skills, talents);
+const baseScore = scoreProfile(traitSignals);
 
 // Input size limit
 const MAX_INPUT_LENGTH = 2000;
