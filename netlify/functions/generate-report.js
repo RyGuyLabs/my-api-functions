@@ -64,7 +64,7 @@ exports.handler = async (event, context) => {
         author: idx % 2 === 0 ? "user" : "assistant",
         parts: [{ text: msg.text }]
     }));
-    contents.push({ author: "user", parts: [{ text: query }] });
+    contents.push({ role: "user", parts: [{ text: query }] });
 
     const payload = {
         contents,
