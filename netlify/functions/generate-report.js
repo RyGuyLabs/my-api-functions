@@ -1,93 +1,108 @@
 const CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com", // Only allow your exact domain
-    "Access-Control-Allow-Methods": "POST, OPTIONS", // Allow POST and preflight OPTIONS
+    "Access-Control-Allow-Origin": "https://www.ryguylabs.com", 
+    "Access-Control-Allow-Methods": "POST, OPTIONS", 
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Max-Age": "86400" // Cache preflight for 24 hours
 };
 
-// Secure proxy to Gemini API, hides API key, handles query + taskMode
 exports.handler = async (event, context) => {
 
-    // --- 1. Handle Preflight OPTIONS request ---
+    // 1️⃣ Handle Preflight OPTIONS request
     if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 204,
-            headers: CORS_HEADERS,
-            body: ""
-        };
+        return { statusCode: 204, headers: CORS_HEADERS, body: "" };
     }
 
-    // --- 2. Retrieve API Key from Environment ---
-    const apiKey = process.env.FIRST_API_KEY;
+    // 2️⃣ Get API Key from environment variables
+    const apiKey = process.env.FIRST_API_KEY; 
     if (!apiKey) {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Server misconfiguration: FIRST_API_KEY not set." })
+            body: JSON.stringify({ message: "Server configuration error: FIRST_API_KEY environment variable is not set." }),
         };
     }
 
-    // --- 3. Enforce POST method ---
     if (event.httpMethod !== 'POST') {
         return {
             statusCode: 405,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Method Not Allowed" })
+            body: JSON.stringify({ message: "Method Not Allowed" }),
         };
     }
 
-    // --- 4. Parse JSON body safely ---
     let body;
     try {
         body = JSON.parse(event.body);
-    } catch (err) {
+    } catch (e) {
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Invalid JSON body." })
+            body: JSON.stringify({ message: "Invalid JSON body provided." }),
         };
     }
 
-    const { query, taskMode } = body;
+    const { query, taskMode, outputLevel = 'default' } = body;
+
     if (!query) {
         return {
             statusCode: 400,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Missing required field: query." })
+            body: JSON.stringify({ message: "Missing required field: query." }),
         };
     }
 
-    // --- 5. Dynamic model & prompt configuration ---
-    let systemPrompt = "";
-    let temperature = 0.2;
-    const model = "gemini-2.5-flash"; // Supported production model
+    // 3️⃣ Dynamic Model Configuration (taskMode + outputLevel)
+    let systemPromptBase = "";
+    let temperature = 0.2; 
+    const model = "gemini-2.5-flash";
 
     switch (taskMode) {
         case 'summary':
-            systemPrompt = "You are a senior executive assistant. Summarize the user's query into 3-5 high-impact, bulleted key points for a leadership audience. Be succinct and professional.";
+            systemPromptBase = "Summarize the user's query into 3-5 high-impact, bulleted key points for a leadership audience. Be succinct and professional.";
             temperature = 0.1;
             break;
         case 'brainstorm':
-            systemPrompt = "You are a creative strategist. Generate multiple, diverse, and innovative ideas or solutions for the user's query. Use an encouraging and expansive tone.";
+            systemPromptBase = "Generate multiple, diverse, and innovative ideas or solutions for the user's query. Use an encouraging and expansive tone.";
             temperature = 0.9;
             break;
         case 'report':
         default:
-            systemPrompt = "You are a concise, insightful data analyst providing grounded reports based on the latest available information.";
+            systemPromptBase = "Provide a concise, insightful report based on the latest information.";
             temperature = 0.2;
             break;
     }
+
+    let levelModifier = "";
+    switch(outputLevel) {
+        case 'simplified':
+            levelModifier = " Use simple, clear language that anyone can understand. Provide examples if helpful.";
+            break;
+        case 'collegiate':
+            levelModifier = " Use language suitable for college students; include relevant concepts and moderate technical depth.";
+            break;
+        case 'professional':
+            levelModifier = " Use advanced, professional, or academic language appropriate for experts or doctoral-level audiences.";
+            break;
+        case 'default':
+        default:
+            levelModifier = ""; 
+            break;
+    }
+
+    const systemPrompt = `${systemPromptBase}${levelModifier}`;
+
+    // Logging for monitoring
+    console.info(`[Gemini Request] ${new Date().toISOString()} | taskMode: ${taskMode} | outputLevel: ${outputLevel} | query length: ${query.length}`);
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
         contents: [{ parts: [{ text: query }] }],
-        tools: [{ "google_search": {} }], // Enable Google Search grounding
+        tools: [{ "google_search": {} }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { temperature }
+        generationConfig: { temperature: temperature }
     };
 
-    // --- 6. Gemini API call with retry ---
+    // 4️⃣ Call Gemini API with Retry Logic
     const maxRetries = 5;
     let response;
 
@@ -99,16 +114,15 @@ exports.handler = async (event, context) => {
                 body: JSON.stringify(payload)
             });
 
-            if (response.ok || response.status !== 429) break; // Stop retry on success or non-rate-limit error
+            if (response.ok || response.status !== 429) break;
 
-            // Exponential backoff + jitter
             const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            console.warn(`Gemini API rate-limited. Retrying in ${delay}ms...`);
+            console.warn(`Gemini API rate limit hit. Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
 
         } catch (err) {
-            console.error(`Attempt ${i + 1} failed (network error):`, err.message);
-            if (i === maxRetries - 1) throw new Error("Persistent network issues; Gemini API call failed after retries.");
+            console.error(`Attempt ${i + 1} failed (Network Error):`, err.message);
+            if (i === maxRetries - 1) throw new Error("Gemini API call failed after multiple retries.");
             const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
             await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -118,35 +132,45 @@ exports.handler = async (event, context) => {
         const errorBody = await response.json().catch(() => ({}));
         const status = response ? response.status : 503;
         const message = errorBody.error?.message || "Internal server error during API call.";
+        console.error(`[Gemini Error] ${new Date().toISOString()} | Status: ${status} | Message: ${message}`);
         return {
             statusCode: status,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` })
+            body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` }),
         };
     }
 
-    // --- 7. Process Gemini response ---
+    // 5️⃣ Process successful response
     const result = await response.json();
     const candidate = result.candidates?.[0];
 
     if (candidate && candidate.content?.parts?.[0]?.text) {
         const text = candidate.content.parts[0].text;
 
-        // Extract grounding sources safely
-        const sources = candidate.groundingMetadata?.groundingAttributions
-            ?.map(attr => ({ uri: attr.web?.uri, title: attr.web?.title }))
-            ?.filter(src => src.uri && src.title) || [];
+        // Extract grounding sources
+        let sources = [];
+        const groundingMetadata = candidate.groundingMetadata;
+        if (groundingMetadata?.groundingAttributions) {
+            sources = groundingMetadata.groundingAttributions
+                .map(attr => ({ uri: attr.web?.uri, title: attr.web?.title }))
+                .filter(s => s.uri && s.title);
+        }
 
         return {
             statusCode: 200,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ text, sources })
+            body: JSON.stringify({
+                text,
+                sources,
+                meta: { taskMode, outputLevel, timestamp: new Date().toISOString() }
+            }),
         };
+
     } else {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." })
+            body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." }),
         };
     }
 };
