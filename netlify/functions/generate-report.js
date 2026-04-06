@@ -125,7 +125,7 @@ exports.handler = async (event, context) => {
         const status = response ? response.status : 503;
         const message = errorBody.error?.message || "Internal error during API call.";
         console.error(`[${new Date().toISOString()}] RequestID=${context.awsRequestId} | Status: ${status} | Message: ${message}`);
-        return { statusCode: status, headers: CORS_HEADERS, body: JSON.stringify({ message: `Gemini API Call Failed: ${message}` }) };
+        return { statusCode: status, headers: CORS_HEADERS, body: JSON.stringify({ message: `RyGuy API Call Failed: ${message}` }) };
     }
 
     // 6️⃣ Process Gemini response
@@ -148,7 +148,7 @@ exports.handler = async (event, context) => {
         return {
             statusCode: 500,
             headers: CORS_HEADERS,
-            body: JSON.stringify({ message: "Gemini API returned empty or unparseable content." })
+            body: JSON.stringify({ message: "RyGuy API returned empty or unparseable content." })
         };
     }
 };
