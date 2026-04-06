@@ -1,8 +1,3 @@
-// Removed: const fetch = require('node-fetch'); 
-// Node.js environments (like Netlify functions) now support native 'fetch' globally.
-
-// Define CORS headers once for use in all responses (success and error)
-// This explicitly allows requests from your frontend domain.
 const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "https://www.ryguylabs.com", // <-- FIX: Specify the exact allowed origin
     "Access-Control-Allow-Methods": "POST, OPTIONS", // Allow POST and the preflight OPTIONS
