@@ -60,9 +60,9 @@ exports.handler = async (event, context) => {
     const systemPrompt = `${systemPromptBase}${levelModifier} Respond in ${language}. Return JSON with keys: 'report_text', 'keywords', 'sources'.`;
 
     // 4️⃣ Build contents array (history + current query)
-    const contents = history.map((msg, idx) => ({
-        author: idx % 2 === 0 ? "user" : "assistant",
-        parts: [{ text: msg.text }]
+    const contents = history.map((msg) => ({
+    role: msg.role === 'user' ? 'user' : 'model',
+    parts: [{ text: msg.text }]
     }));
     contents.push({ role: "user", parts: [{ text: query }] });
 
