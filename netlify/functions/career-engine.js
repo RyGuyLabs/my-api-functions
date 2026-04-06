@@ -124,6 +124,17 @@ Skills: ${skills}
 Talents: ${talents}
 Location: ${country}
 
+PRE-ANALYZED TRAIT SIGNALS:
+${JSON.stringify(traitSignals)}
+
+BASE PROFILE STRENGTH SCORE:
+${baseScore}/100
+
+INSTRUCTION:
+- You MUST incorporate these trait signals into your reasoning and career selection.
+- Alignment score MUST reflect both the user input and these signals.
+- You MUST explicitly reference at least one of these signals (analytical, creative, interpersonal, technical, physical) in the reasoning.
+
 ANALYSIS INSTRUCTIONS:
 1. Identify patterns across hobbies, skills, and talents.
 2. Infer strengths (analytical, creative, interpersonal, technical, etc.).
