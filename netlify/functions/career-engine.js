@@ -124,16 +124,20 @@ Skills: ${skills}
 Talents: ${talents}
 Location: ${country}
 
+SYSTEM PRE-ANALYSIS:
+Trait Signals: ${JSON.stringify(traitSignals)}
+Base Profile Score: ${baseScore}/100
+
+SYSTEM RULES (HARD CONSTRAINTS):
+- You MUST use the provided trait signals in your decision making
+- You MUST reflect these signals in the alignmentScore
+- You MUST reference at least one trait signal (analytical, creative, interpersonal, technical, physical) in the reasoning
+
 PRE-ANALYZED TRAIT SIGNALS:
 ${JSON.stringify(traitSignals)}
 
 BASE PROFILE STRENGTH SCORE:
 ${baseScore}/100
-
-INSTRUCTION:
-- You MUST incorporate these trait signals into your reasoning and career selection.
-- Alignment score MUST reflect both the user input and these signals.
-- You MUST explicitly reference at least one of these signals (analytical, creative, interpersonal, technical, physical) in the reasoning.
 
 ANALYSIS INSTRUCTIONS:
 1. Identify patterns across hobbies, skills, and talents.
