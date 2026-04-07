@@ -54,21 +54,22 @@ exports.handler = async (event, context) => {
     let systemPromptBase = "", temperature = 0.2;
 
     switch (taskMode) {
-        case 'summary':
-            systemPromptBase = "Summarize the user's query into 3-5 high-impact bullet points for a leadership audience.";
-            temperature = 0.1;
-            break;
-        case 'brainstorm':
-            systemPromptBase = "Generate multiple diverse and innovative ideas for the user's query.";
-            temperature = 0.9;
-            break;
-        case 'report':
-        default:
-            systemPromptBase = "Provide a clear, structured, and insightful report based on the latest available information.";
-            temperature = 0.2;
-            break;
-    }
+    case 'summary':
+        systemPromptBase = "Summarize the topic into concise, high-impact bullet points. Focus only on key takeaways. Avoid long explanations.";
+        temperature = 0.1;
+        break;
 
+    case 'brainstorm':
+        systemPromptBase = "Generate creative, unconventional, and diverse ideas. Push beyond obvious answers. Include unique angles and opportunities.";
+        temperature = 0.9;
+        break;
+
+    case 'report':
+    default:
+        systemPromptBase = "Create a structured report with clearly labeled sections: Summary, Key Insights, and Recommendations. Be analytical and well-organized.";
+        temperature = 0.2;
+        break;
+}
     let levelModifier = "";
     switch (outputLevel) {
         case 'simplified':
@@ -84,7 +85,6 @@ exports.handler = async (event, context) => {
             break;
     }
 
-    // ✅ Updated prompt for clean, structured output
     const systemPrompt = `${systemPromptBase}${levelModifier}
 Respond in ${language}.
 Structure your response with:
