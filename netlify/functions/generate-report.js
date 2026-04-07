@@ -124,10 +124,10 @@ Formatting rules:
     };
 
     // 6️⃣ Call Gemini API
-    const maxRetries = 5;
+    const maxRetries = 2;
     let response;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 25000);
 
     for (let i = 0; i < maxRetries; i++) {
         try {
