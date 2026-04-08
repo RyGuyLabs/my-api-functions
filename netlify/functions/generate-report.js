@@ -4,6 +4,26 @@ const CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
+function safetyCheck(query) {
+    const blockedTerms = ['sex', 'drugs', 'violence']; // add more as needed
+    if (blockedTerms.some(term => query.toLowerCase().includes(term))) {
+        return false;
+    }
+    return true;
+}
+
+function queryProcessor(query, history) {
+    const normalized = query.trim().toLowerCase();
+    const intent = normalized.includes('resume') ? 'careerAdvice' : 'general';
+    return { normalized, intent };
+}
+
+function formatResults(rawText, taskMode, outputLevel) {
+    // Currently minimal: just return cleaned text
+    // Can be replaced later with scoring, ranking, or structuring
+    return rawText;
+}
+
 exports.handler = async (event, context) => {
     // 1️⃣ Preflight OPTIONS
     if (event.httpMethod === 'OPTIONS') {
@@ -41,6 +61,7 @@ exports.handler = async (event, context) => {
     }
 
     const { query, taskMode, outputLevel = 'default', language = 'en', history = [] } = body;
+
     if (!query) {
         return {
             statusCode: 400,
@@ -49,27 +70,37 @@ exports.handler = async (event, context) => {
         };
     }
 
-    // 4️⃣ System prompt & temperature
+    if (!safetyCheck(query)) {
+        return {
+            statusCode: 400,
+            headers: CORS_HEADERS,
+            body: JSON.stringify({ message: "Query contains disallowed terms." })
+        };
+    }
+
+    const queryObj = queryProcessor(query, history);
+
     const model = "gemini-2.5-flash";
     let systemPromptBase = "", temperature = 0.2;
 
     switch (taskMode) {
-    case 'summary':
-        systemPromptBase = "Summarize the topic into concise, high-impact bullet points. Focus only on key takeaways. Avoid long explanations.";
-        temperature = 0.1;
-        break;
+        case 'summary':
+            systemPromptBase = "Summarize the topic into concise, high-impact bullet points. Focus only on key takeaways. Avoid long explanations.";
+            temperature = 0.1;
+            break;
 
-    case 'brainstorm':
-        systemPromptBase = "Generate creative, unconventional, and diverse ideas. Push beyond obvious answers. Include unique angles and opportunities.";
-        temperature = 0.9;
-        break;
+        case 'brainstorm':
+            systemPromptBase = "Generate creative, unconventional, and diverse ideas. Push beyond obvious answers. Include unique angles and opportunities.";
+            temperature = 0.9;
+            break;
 
-    case 'report':
-    default:
-        systemPromptBase = "Create a structured report with clearly labeled sections: Summary, Key Insights, and Recommendations. Be analytical and well-organized.";
-        temperature = 0.2;
-        break;
-}
+        case 'report':
+        default:
+            systemPromptBase = "Create a structured report with clearly labeled sections: Summary, Key Insights, and Recommendations. Be analytical and well-organized.";
+            temperature = 0.2;
+            break;
+    }
+
     let levelModifier = "";
     switch (outputLevel) {
         case 'simplified':
@@ -123,7 +154,6 @@ Formatting rules:
         ]
     };
 
-    // 6️⃣ Call Gemini API
     const maxRetries = 2;
     let response;
     const controller = new AbortController();
@@ -167,27 +197,27 @@ Formatting rules:
         };
     }
 
-    // 7️⃣ Process Gemini response
     const result = await response.json();
     const candidate = result.candidates?.[0];
     if (candidate && candidate.content?.parts?.[0]?.text) {
         const rawText = candidate.content.parts[0].text;
 
-        // ✅ CLEAN AND FORMAT TEXT
         const cleanedText = rawText
             .replace(/\*\*/g, '')
             .replace(/\*/g, '')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
 
+        const finalOutput = formatResults(cleanedText, taskMode, outputLevel);
+
         return {
             statusCode: 200,
             headers: CORS_HEADERS,
             body: JSON.stringify({
-                report_text: cleanedText,
+                report_text: finalOutput,
                 keywords: [], // can add keyword extraction later
                 sources: [],
-                meta: { taskMode, outputLevel, timestamp: new Date().toISOString() }
+                meta: { taskMode, outputLevel, timestamp: new Date().toISOString(), intent: queryObj.intent }
             })
         };
     }
