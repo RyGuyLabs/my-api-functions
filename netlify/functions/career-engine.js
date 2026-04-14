@@ -142,9 +142,10 @@ ${baseScore}/100
 ANALYSIS INSTRUCTIONS:
 1. Identify patterns across hobbies, skills, and talents.
 2. Infer strengths (analytical, creative, interpersonal, technical, etc.).
-3. Select ONE primary career that best aligns with long-term success.
-4. Ensure the career is realistic for someone starting from their current position.
-5. Do NOT hedge with multiple career options.
+3. Select the TOP 3 to 5 career paths that best align with long-term success.
+4. Rank them from strongest to weakest alignment.
+5. Each career must be distinct, realistic, and viable for someone starting from their current position.
+6. Do NOT repeat similar roles — each must represent a different path.
 
 OUTPUT REQUIREMENTS:
 
