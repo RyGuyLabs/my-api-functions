@@ -216,9 +216,9 @@ Return ONLY the JSON object. No extra text.`
         const finalData = JSON.parse(jsonString);
 
         return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify(finalData)
+    statusCode: 200,
+    headers,
+    body: JSON.stringify(finalData.careers)
         };
 
     } catch (error) {
