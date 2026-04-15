@@ -176,7 +176,7 @@ Return ONLY the JSON object. No extra text.`
                 }] 
             }],
             generationConfig: {
-                temperature: 0.8,
+                temperature: 0.2,
                 response_mime_type: "application/json"
             }
         };
