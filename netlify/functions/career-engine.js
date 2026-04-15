@@ -175,10 +175,11 @@ FINAL RULE:
 Return ONLY the JSON object. No extra text.` 
                 }] 
             }],
-            generationConfig: {
-                temperature: 0.2,
-                response_mime_type: "application/json"
-            }
+           generationConfig: {
+    temperature: 0.2,
+    topK: 1,
+    response_mime_type: "application/json"
+}
         };
 
         const response = await fetch(url, {
