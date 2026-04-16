@@ -218,7 +218,7 @@ Return ONLY the JSON object. No extra text.`
         return {
     statusCode: 200,
     headers,
-    body: JSON.stringify(finalData.careers)
+    body: JSON.stringify(finalData)
         };
 
     } catch (error) {
