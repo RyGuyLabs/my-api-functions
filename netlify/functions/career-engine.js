@@ -158,7 +158,13 @@ Return EXACTLY this structure:
       "alignmentScore": number,
       "earningPotential": "Realistic earning progression",
       "reasoning": "Clear explanation referencing user traits",
-      "searchKeywords": ["relevant", "job", "keywords"]
+      "searchKeywords": ["relevant", "job", "keywords"],
+      "attainmentPlan": [
+        "Step 1 (start within 24-48 hours)",
+        "Step 2",
+        "Step 3",
+        "Step 4"
+      ]
     }
   ]
 }
