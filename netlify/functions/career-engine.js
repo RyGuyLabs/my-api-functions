@@ -132,9 +132,6 @@ SYSTEM RULES (HARD CONSTRAINTS):
 - You MUST reflect these signals in the alignmentScore
 - You MUST reference at least one trait signal (analytical, creative, interpersonal, technical, physical) in the reasoning
 
-PRE-ANALYZED TRAIT SIGNALS:
-${JSON.stringify(traitSignals)}
-
 BASE PROFILE STRENGTH SCORE:
 ${baseScore}/100
 
