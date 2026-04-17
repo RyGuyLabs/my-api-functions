@@ -210,13 +210,18 @@ Return ONLY the JSON object. No extra text.`
     throw new Error("AI returned empty response");
     }
         
-        // Extract JSON block even if the AI adds markdown backticks
-        const start = rawContent.indexOf('{');
-        const end = rawContent.lastIndexOf('}');
-        if (start === -1 || end === -1) throw new Error("Invalid AI Response Format");
-        
-        const jsonString = rawContent.substring(start, end + 1);
-        const finalData = JSON.parse(jsonString);
+        let finalData;
+
+try {
+    finalData = JSON.parse(rawContent);
+} catch (e) {
+    const match = rawContent.match(/\{[\s\S]*\}/);
+    if (!match) {
+        throw new Error("Invalid AI Response Format");
+    }
+
+    finalData = JSON.parse(match[0]);
+}
 
         return {
     statusCode: 200,
