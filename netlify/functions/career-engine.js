@@ -223,6 +223,15 @@ try {
     finalData = JSON.parse(match[0]);
 }
 
+        finalData.careers = (finalData.careers || []).map(c => ({
+    careerTitle: c.careerTitle || "Unknown Role",
+    alignmentScore: c.alignmentScore || 0,
+    earningPotential: c.earningPotential || "Variable",
+    reasoning: c.reasoning || "",
+    searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
+    attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
+}));
+
         return {
     statusCode: 200,
     headers,
