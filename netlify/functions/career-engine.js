@@ -85,7 +85,18 @@ let country = (rawData.country || "").trim();
 const traitSignals = analyzeTraits(hobbies, skills, talents);
 const scorePackage = scoreProfile(traitSignals);
 const baseScore = scorePackage.score;
-
+const scoreOwnership = {
+    baseScore,
+    breakdown: scorePackage.breakdown,
+    activeTraits: scorePackage.activeTraits,
+    traitSignals,
+    inputFingerprint: Buffer
+        .from(`${hobbies}|${skills}|${talents}|${country}`)
+        .toString("base64"),
+    timestamp: Date.now(),
+    ip
+};
+        
 // Input size limit
 const MAX_INPUT_LENGTH = 2000;
 if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
