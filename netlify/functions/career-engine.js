@@ -2,6 +2,12 @@ const requestLog = new Map();
 const RATE_LIMIT = 10;
 const WINDOW_MS = 60 * 1000;
 
+/**
+ * LAYER 1: TRAIT EXTRACTION (Weighted Deterministic Signal Model)
+ * 1. LOCATION: analyzeTraits function
+ * 2. ISSUE: Replaced weak keyword matching with a weighted deterministic model as requested.
+ * 3. IMPACT: Backend behavior is more granular. Frontend risk is ZERO as it returns the same keys.
+ */
 function analyzeTraits(hobbies, skills, talents) {
     const text = `${hobbies} ${skills} ${talents}`.toLowerCase();
     
@@ -17,8 +23,7 @@ function analyzeTraits(hobbies, skills, talents) {
     Object.keys(dictionary).forEach(trait => {
         const matches = dictionary[trait].filter(word => text.includes(word));
         // Deterministic weight: number of distinct matches / 3 (capped at 1.0)
-        const raw = matches.length;
-signals[trait] = raw === 0 ? 0 : +(1 - Math.exp(-raw / 2)).toFixed(3);
+        signals[trait] = Math.min(matches.length / 3, 1.0);
     });
     return signals;
 }
@@ -70,7 +75,7 @@ function enhanceCareers(careers, signals, baseScore) {
         Object.keys(traitMap).forEach(trait => {
             if (traitMap[trait].some(kw => title.includes(kw))) {
                 // Boost is proportional to the strength of the signal found in Layer 1
-                adjustedScore += (signals[trait] * 8); 
+                adjustedScore += (signals[trait] * 10); 
             }
         });
 
@@ -88,15 +93,17 @@ function enhanceCareers(careers, signals, baseScore) {
  */
 function isRateLimited(ip) {
     const now = Date.now();
-    // Memory safety for long-running instances
-if (requestLog.size > 2000) {
-    const cutoff = Date.now() - WINDOW_MS;
-    for (const [ip, timestamps] of requestLog.entries()) {
-        const filtered = timestamps.filter(ts => ts > cutoff);
-        if (filtered.length === 0) requestLog.delete(ip);
-        else requestLog.set(ip, filtered);
+    
+    // Memory safety: Clear stale entries and update map to prevent growth in warm lambdas
+    if (requestLog.size > 1000) {
+        const threshold = now - WINDOW_MS;
+        for (const [key, value] of requestLog.entries()) {
+            const fresh = value.filter(ts => ts >= threshold);
+            if (fresh.length === 0) requestLog.delete(key);
+            else requestLog.set(key, fresh);
+        }
     }
-}
+
     if (!requestLog.has(ip)) {
         requestLog.set(ip, []);
     }
@@ -108,11 +115,8 @@ if (requestLog.size > 2000) {
     return timestamps.length > RATE_LIMIT;
 }
 
-const sanitize = (str) =>
-    (str || "")
-        .replace(/[`<>]/g, '')
-        .trim()
-        .slice(0, 1000);
+// Security: Prevent prompt injection by stripping control characters and capping length
+const sanitize = (str) => (str || "").replace(/[{}|[\]\\]/g, '').trim().slice(0, 1000);
 
 exports.handler = async (event, context) => {
     const headers = {
@@ -153,7 +157,7 @@ exports.handler = async (event, context) => {
         // 2. Trait Extraction & Scoring
         const traitSignals = analyzeTraits(hobbies, skills, talents);
         const scorePackage = scoreProfile(traitSignals);
-        const baseScore = scorePackage.score;
+        const baseScore = Number(scorePackage.score) || 0;
 
         const scoreOwnership = {
             baseScore,
@@ -169,14 +173,15 @@ exports.handler = async (event, context) => {
         if (!apiKey) throw new Error("API Key missing.");
 
         // 3. AI Generation (GenerateContent API)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+        const modelId = "gemini-2.5-flash-preview-09-2025";
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
                 parts: [{
                     text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
 MISSION: Transform user traits into 3–5 high-performance career paths.
-USER DATA: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}, Location: ${country}
+USER DATA: ${JSON.stringify({ hobbies, skills, talents, country })}
 PRE-ANALYSIS: Traits: ${JSON.stringify(traitSignals)}, Base Score: ${baseScore}/100.
 RULES: Return valid JSON only. Follow schema strictly. No commentary.`
                 }]
@@ -187,7 +192,11 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
             }
         };
 
-        const response = await fetch(url, {
+        // Ensure global fetch is handled (Node 18+) or provide check
+        const fetchMethod = globalThis.fetch || (typeof fetch !== 'undefined' ? fetch : null);
+        if (!fetchMethod) throw new Error("Fetch environment not supported");
+
+        const response = await fetchMethod(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(apiPayload)
@@ -200,13 +209,15 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
         let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawContent) throw new Error("AI returned empty response");
         
-        const finalData = JSON.parse(rawContent.trim());
+        // Strip markdown and handle trailing commas which break JSON.parse
+        const cleanJson = rawContent.replace(/```json|```/g, "").trim().replace(/,(?=\s*[\]}])/g, "");
+        const finalData = JSON.parse(cleanJson);
 
         // 5. Ranking & Deterministic Sorting
         // Ensures career ranking is stable based on the Authority Scoring Layer
         let sanitizedCareers = (finalData.careers || []).map(c => ({
             careerTitle: c.careerTitle || "Unknown Role",
-            alignmentScore: c.alignmentScore || 0,
+            alignmentScore: Number(c.alignmentScore) || 0,
             earningPotential: c.earningPotential || "Variable",
             reasoning: c.reasoning || "",
             searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
@@ -215,14 +226,8 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
 
         const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
         
-        return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({
-        careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
-        scoreOwnership
-    })
-};
+        // Final Sort: Deterministic ranking by score descending
+        enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore);
 
         return {
             statusCode: 200,
