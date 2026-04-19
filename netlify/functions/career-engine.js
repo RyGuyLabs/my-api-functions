@@ -31,24 +31,19 @@ function analyzeTraits(hobbies, skills, talents) {
 /**
  * LAYER 2: DETAILED PROFILE SCORING
  * 1. LOCATION: scoreProfile function
- * 2. ISSUE: Preserved explicit breakdown while transitioning to the signal model.
- * 3. IMPACT: Safe for frontend; maintains existing scoring expectations.
  */
 function scoreProfile(signals) {
-    const breakdown = {
-        analytical: signals.analytical > 0 ? 20 : 0,
-        creative: signals.creative > 0 ? 20 : 0,
-        interpersonal: signals.interpersonal > 0 ? 20 : 0,
-        technical: signals.technical > 0 ? 20 : 0,
-        physical: signals.physical > 0 ? 20 : 0
-    };
+    const breakdown = {};
+    Object.keys(signals).forEach(k => {
+        breakdown[k] = Math.round(signals[k] * 20); // Each trait worth up to 20 pts
+    });
 
     const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
 
     return {
-        score,
+        score: Math.min(score, 100),
         breakdown,
-        activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 0)
+        activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 5)
     };
 }
 
@@ -173,8 +168,9 @@ exports.handler = async (event, context) => {
         if (!apiKey) throw new Error("API Key missing.");
 
         // 3. AI Generation (GenerateContent API)
-        // FIX: Replaced identifier with 'gemini-2.0-flash-exp' to resolve 404 NOT_FOUND on v1beta
-        const modelId = "gemini-2.0-flash-exp";
+        // FIX: Replaced identifier with the stable production 'gemini-1.5-pro' 
+        // to bypass 404 errors associated with experimental/preview variants.
+        const modelId = "gemini-1.5-pro";
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
         const apiPayload = {
