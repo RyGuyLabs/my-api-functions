@@ -146,6 +146,8 @@ Location: ${country}
 SYSTEM PRE-ANALYSIS:
 Trait Signals: ${JSON.stringify(traitSignals)}
 Base Profile Score: ${baseScore}/100
+Score Breakdown: ${JSON.stringify(scorePackage.breakdown)}
+Active Traits: ${scorePackage.activeTraits.join(", ")}
 
 SYSTEM RULES (HARD CONSTRAINTS):
 - You MUST use the provided trait signals in your decision making
