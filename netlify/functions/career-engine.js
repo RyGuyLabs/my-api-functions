@@ -173,8 +173,9 @@ exports.handler = async (event, context) => {
         if (!apiKey) throw new Error("API Key missing.");
 
         // 3. AI Generation (GenerateContent API)
-        const modelId = "gemini-1.5-pro";
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+        // FIX: Ensuring we use a supported model for v1beta to resolve "model not found" errors
+        const modelId = "gemini-2.5-flash-preview-09-2025";
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
@@ -203,7 +204,11 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
         });
 
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error?.message || "Google API Failure");
+        if (!response.ok) {
+            // Log specific error for debugging model availability
+            console.error("Gemini API Error Payload:", JSON.stringify(result));
+            throw new Error(result.error?.message || "Google API Failure");
+        }
 
         // 4. Strict JSON Parsing (Removal of unsafe regex fallbacks)
         let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
