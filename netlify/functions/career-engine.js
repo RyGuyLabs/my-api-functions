@@ -94,8 +94,14 @@ function enhanceCareers(careers, signals, baseScore) {
 function isRateLimited(ip) {
     const now = Date.now();
     // Memory safety for long-running instances
-    if (requestLog.size > 2000) requestLog.clear();
-
+if (requestLog.size > 2000) {
+    const cutoff = Date.now() - WINDOW_MS;
+    for (const [ip, timestamps] of requestLog.entries()) {
+        const filtered = timestamps.filter(ts => ts > cutoff);
+        if (filtered.length === 0) requestLog.delete(ip);
+        else requestLog.set(ip, filtered);
+    }
+}
     if (!requestLog.has(ip)) {
         requestLog.set(ip, []);
     }
