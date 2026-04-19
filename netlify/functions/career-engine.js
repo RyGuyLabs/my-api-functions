@@ -223,7 +223,7 @@ try {
     finalData = JSON.parse(match[0]);
 }
 
-        finalData.careers = (finalData.careers || []).map(c => ({
+let sanitizedCareers = (finalData.careers || []).map(c => ({
     careerTitle: c.careerTitle || "Unknown Role",
     alignmentScore: c.alignmentScore || 0,
     earningPotential: c.earningPotential || "Variable",
@@ -231,6 +231,12 @@ try {
     searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
     attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
 }));
+
+finalData.careers = enhanceCareers(
+    sanitizedCareers,
+    traitSignals,
+    baseScore
+);
 
         return {
     statusCode: 200,
