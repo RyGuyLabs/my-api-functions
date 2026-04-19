@@ -2,12 +2,6 @@ const requestLog = new Map();
 const RATE_LIMIT = 10;
 const WINDOW_MS = 60 * 1000;
 
-/**
- * LAYER 1: TRAIT EXTRACTION (Weighted Deterministic Signal Model)
- * 1. LOCATION: analyzeTraits function
- * 2. ISSUE: Replaced weak keyword matching with a weighted deterministic model as requested.
- * 3. IMPACT: Backend behavior is more granular. Frontend risk is ZERO as it returns the same keys.
- */
 function analyzeTraits(hobbies, skills, talents) {
     const text = `${hobbies} ${skills} ${talents}`.toLowerCase();
     
