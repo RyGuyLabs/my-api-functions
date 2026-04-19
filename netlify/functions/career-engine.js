@@ -221,8 +221,14 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
 
         const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
         
-        // Final Sort: Deterministic ranking by score descending
-        enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore);
+        return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+        careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
+        scoreOwnership
+    })
+};
 
         return {
             statusCode: 200,
