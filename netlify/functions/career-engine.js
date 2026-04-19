@@ -23,7 +23,8 @@ function analyzeTraits(hobbies, skills, talents) {
     Object.keys(dictionary).forEach(trait => {
         const matches = dictionary[trait].filter(word => text.includes(word));
         // Deterministic weight: number of distinct matches / 3 (capped at 1.0)
-        signals[trait] = Math.min(matches.length / 3, 1.0);
+        const raw = matches.length;
+signals[trait] = raw === 0 ? 0 : +(1 - Math.exp(-raw / 2)).toFixed(3);
     });
     return signals;
 }
