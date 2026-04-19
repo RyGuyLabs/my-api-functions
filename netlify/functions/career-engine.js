@@ -76,7 +76,7 @@ function enhanceCareers(careers, signals, baseScore) {
         Object.keys(traitMap).forEach(trait => {
             if (traitMap[trait].some(kw => title.includes(kw))) {
                 // Boost is proportional to the strength of the signal found in Layer 1
-                adjustedScore += (signals[trait] * 10); 
+                adjustedScore += (signals[trait] * 8); 
             }
         });
 
