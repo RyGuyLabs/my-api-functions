@@ -152,7 +152,7 @@ if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
         }
 
         // Gemini API URL
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
