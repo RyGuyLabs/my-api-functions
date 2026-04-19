@@ -206,7 +206,7 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
         let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawContent) throw new Error("AI returned empty response");
         
-        const finalData = JSON.parse(rawContent);
+        const finalData = JSON.parse(rawContent.trim());
 
         // 5. Ranking & Deterministic Sorting
         // Ensures career ranking is stable based on the Authority Scoring Layer
