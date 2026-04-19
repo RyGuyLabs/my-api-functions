@@ -173,8 +173,8 @@ exports.handler = async (event, context) => {
         if (!apiKey) throw new Error("API Key missing.");
 
         // 3. AI Generation (GenerateContent API)
-        // FIX: Replaced invalid preview ID with stable production model ID
-        const modelId = "gemini-1.5-flash";
+        // FIX: Replaced identifier with the '-latest' suffix to resolve NOT_FOUND error on v1beta
+        const modelId = "gemini-1.5-flash-latest";
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
         const apiPayload = {
