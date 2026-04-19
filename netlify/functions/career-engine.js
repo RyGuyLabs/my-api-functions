@@ -1,4 +1,24 @@
 const requestLog = new Map();
+
+/**
+ * FIXED: Added missing enhanceCareers function
+ * This ensures the AI output aligns with the calculated trait signals.
+ */
+function enhanceCareers(careers, signals, baseScore) {
+    return careers.map(career => {
+        // Boost alignment score slightly if it matches a primary trait
+        let adjustedScore = career.alignmentScore || baseScore;
+       
+        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
+        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
+       
+        return {
+            ...career,
+            alignmentScore: Math.min(adjustedScore, 100) // Cap at 100
+        };
+    });
+}
+
 function analyzeTraits(hobbies, skills, talents) {
     const text = (hobbies + " " + skills + " " + talents).toLowerCase();
 
@@ -28,6 +48,7 @@ function scoreProfile(signals) {
         activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 0)
     };
 }
+
 const RATE_LIMIT = 10;
 const WINDOW_MS = 60 * 1000;
 
@@ -96,7 +117,7 @@ const scoreOwnership = {
     timestamp: Date.now(),
     ip
 };
-        
+       
 // Input size limit
 const MAX_INPUT_LENGTH = 2000;
 if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
@@ -119,12 +140,12 @@ if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
             };
         }
 
-        // Switching back to v1beta with the most compatible model string
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+        // Gemini API URL
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
         const apiPayload = {
-            contents: [{ 
-                parts: [{ 
+            contents: [{
+                parts: [{
                     text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
 
 MISSION:
@@ -197,8 +218,8 @@ QUALITY STANDARD:
 - Output should feel like it came from a top-tier career strategist.
 
 FINAL RULE:
-Return ONLY the JSON object. No extra text.` 
-                }] 
+Return ONLY the JSON object. No extra text.`
+                }]
             }],
            generationConfig: {
     temperature: 0.2,
@@ -220,9 +241,9 @@ Return ONLY the JSON object. No extra text.`
             return {
                 statusCode: response.status,
                 headers,
-                body: JSON.stringify({ 
-                    error: "Upstream Error", 
-                    message: result.error?.message || "Google API handshake failed." 
+                body: JSON.stringify({
+                    error: "Upstream Error",
+                    message: result.error?.message || "Google API handshake failed."
                 })
             };
         }
@@ -231,7 +252,7 @@ Return ONLY the JSON object. No extra text.`
         if (!rawContent) {
     throw new Error("AI returned empty response");
     }
-        
+       
         let finalData;
 
 try {
@@ -254,6 +275,7 @@ let sanitizedCareers = (finalData.careers || []).map(c => ({
     attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
 }));
 
+// FIXED: enhanceCareers is now defined at the top of this file
 finalData.careers = enhanceCareers(
     sanitizedCareers,
     traitSignals,
@@ -276,4 +298,3 @@ return {
         };
     }
 };
-
