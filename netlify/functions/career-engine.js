@@ -12,13 +12,21 @@ function analyzeTraits(hobbies, skills, talents) {
 }
 
 function scoreProfile(signals) {
-    let score = 0;
-    if (signals.analytical) score += 20;
-    if (signals.creative) score += 20;
-    if (signals.interpersonal) score += 20;
-    if (signals.technical) score += 20;
-    if (signals.physical) score += 20;
-    return score;
+    const breakdown = {
+        analytical: signals.analytical ? 20 : 0,
+        creative: signals.creative ? 20 : 0,
+        interpersonal: signals.interpersonal ? 20 : 0,
+        technical: signals.technical ? 20 : 0,
+        physical: signals.physical ? 20 : 0
+    };
+
+    const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
+
+    return {
+        score,
+        breakdown,
+        activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 0)
+    };
 }
 const RATE_LIMIT = 10;
 const WINDOW_MS = 60 * 1000;
