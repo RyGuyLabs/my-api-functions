@@ -1,31 +1,19 @@
 const requestLog = new Map();
 function enhanceCareers(careers, signals, baseScore) {
-    return careers.map(career => {
-        // Boost alignment score slightly if it matches a primary trait
-        let adjustedScore = career.alignmentScore || baseScore;
-       
-        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
-        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
-       
-        return {
-            ...career,
-            alignmentScore: Math.min(adjustedScore, 100) // Cap at 100
-        };
-    });
-}
+    const textSignals = signals;
 
-function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
-        // Ensure the alignment score is a number and doesn't exceed 100
-        let adjustedScore = Number(career.alignmentScore) || baseScore;
-        
-        // Simple logic to boost scores if they align with strong technical or creative signals
-        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
-        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
-        
+        let score = Number(career.alignmentScore) || baseScore;
+
+        const title = career.careerTitle.toLowerCase();
+
+        // Minimal safe upgrades (NO frontend contract change)
+        if (textSignals.technical > 0.5 && title.includes('engineer')) score += 5;
+        if (textSignals.creative > 0.5 && title.includes('design')) score += 5;
+
         return {
             ...career,
-            alignmentScore: Math.min(adjustedScore, 100)
+            alignmentScore: Math.min(Math.round(score), 100)
         };
     });
 }
