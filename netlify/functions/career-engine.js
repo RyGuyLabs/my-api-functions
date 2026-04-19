@@ -83,7 +83,8 @@ let skills = (rawData.skills || "").trim();
 let talents = (rawData.talents || "").trim();
 let country = (rawData.country || "").trim();
 const traitSignals = analyzeTraits(hobbies, skills, talents);
-const baseScore = scoreProfile(traitSignals);
+const scorePackage = scoreProfile(traitSignals);
+const baseScore = scorePackage.score;
 
 // Input size limit
 const MAX_INPUT_LENGTH = 2000;
