@@ -259,12 +259,13 @@ finalData.careers = enhanceCareers(
     traitSignals,
     baseScore
 );
+        finalData.scoreOwnership = scoreOwnership;
 
-        return {
+return {
     statusCode: 200,
     headers,
     body: JSON.stringify(finalData)
-        };
+};
 
     } catch (error) {
         console.error("Internal Failure:", error);
