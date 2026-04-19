@@ -1,9 +1,4 @@
 const requestLog = new Map();
-
-/**
- * FIXED: Added missing enhanceCareers function
- * This ensures the AI output aligns with the calculated trait signals.
- */
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         // Boost alignment score slightly if it matches a primary trait
