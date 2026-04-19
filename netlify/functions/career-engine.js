@@ -14,6 +14,22 @@ function enhanceCareers(careers, signals, baseScore) {
     });
 }
 
+function enhanceCareers(careers, signals, baseScore) {
+    return careers.map(career => {
+        // Ensure the alignment score is a number and doesn't exceed 100
+        let adjustedScore = Number(career.alignmentScore) || baseScore;
+        
+        // Simple logic to boost scores if they align with strong technical or creative signals
+        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
+        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
+        
+        return {
+            ...career,
+            alignmentScore: Math.min(adjustedScore, 100)
+        };
+    });
+}
+
 function analyzeTraits(hobbies, skills, talents) {
     const text = (hobbies + " " + skills + " " + talents).toLowerCase();
 
