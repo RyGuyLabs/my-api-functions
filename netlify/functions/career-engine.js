@@ -114,8 +114,11 @@ if (requestLog.size > 2000) {
     return timestamps.length > RATE_LIMIT;
 }
 
-// Security: Prevent prompt injection by stripping control characters and capping length
-const sanitize = (str) => (str || "").replace(/[{}|[\]\\]/g, '').trim().slice(0, 1000);
+const sanitize = (str) =>
+    (str || "")
+        .replace(/[`<>]/g, '')
+        .trim()
+        .slice(0, 1000);
 
 exports.handler = async (event, context) => {
     const headers = {
