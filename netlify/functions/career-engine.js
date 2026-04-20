@@ -135,7 +135,9 @@ function enhanceCareers(careers, signals, baseScore) {
 };
 
         // overlap penalty
-        adjustedScore -= calculateCareerOverlapPenalty(career, careers);
+        const overlap = calculateCareerOverlapPenalty(career, careers);
+        adjustedScore -= overlap;
+        attribution.overlap = overlap;
 
         // fit boost (correct object usage)
         adjustedScore += calculateFitBoost(career, {
