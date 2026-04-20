@@ -1,196 +1,311 @@
 const requestLog = new Map();
-const RATE_LIMIT = 10;
-const WINDOW_MS = 60 * 1000;
+function enhanceCareers(careers, signals, baseScore) {
+    return careers.map(career => {
+        // Boost alignment score slightly if it matches a primary trait
+        let adjustedScore = career.alignmentScore || baseScore;
+       
+        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
+        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
+       
+        return {
+            ...career,
+            alignmentScore: Math.min(adjustedScore, 100) // Cap at 100
+        };
+    });
+}
+
+function enhanceCareers(careers, signals, baseScore) {
+    return careers.map(career => {
+        // Ensure the alignment score is a number and doesn't exceed 100
+        let adjustedScore = Number(career.alignmentScore) || baseScore;
+       
+        // Simple logic to boost scores if they align with strong technical or creative signals
+        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
+        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
+       
+        return {
+            ...career,
+            alignmentScore: Math.min(adjustedScore, 100)
+        };
+    });
+}
 
 function analyzeTraits(hobbies, skills, talents) {
-    const text = `${hobbies} ${skills} ${talents}`.toLowerCase();
+    const text = (hobbies + " " + skills + " " + talents).toLowerCase();
 
-    const dictionary = {
-        analytical: ['analyz', 'data', 'research', 'problem', 'logic', 'math', 'stats', 'query', 'investigat', 'audit'],
-        creative: ['design', 'art', 'write', 'music', 'content', 'creative', 'video', 'brand', 'sketch', 'illustrat'],
-        interpersonal: ['talk', 'help', 'teach', 'communicat', 'sales', 'lead', 'mentor', 'social', 'team', 'coach'],
-        technical: ['code', 'tech', 'software', 'engineer', 'develop', 'api', 'cloud', 'system', 'network', 'security'],
-        physical: ['build', 'hands', 'outdoor', 'fitness', 'labor', 'repair', 'craft', 'move', 'sport', 'mechanic']
+    return {
+        analytical: /(analyz|data|research|problem|logic|math)/.test(text),
+        creative: /(design|art|write|music|content|creative)/.test(text),
+        interpersonal: /(talk|help|teach|communicat|sales|lead)/.test(text),
+        technical: /(code|tech|software|engineer|develop)/.test(text),
+        physical: /(build|hands|outdoor|fitness|labor)/.test(text)
     };
-
-    const signals = {};
-    for (const trait in dictionary) {
-        const matches = dictionary[trait].filter(w => text.includes(w));
-        const raw = matches.length;
-        signals[trait] = raw === 0 ? 0 : +(1 - Math.exp(-raw / 2)).toFixed(3);
-    }
-    return signals;
 }
 
 function scoreProfile(signals) {
     const breakdown = {
-        analytical: signals.analytical > 0 ? 20 : 0,
-        creative: signals.creative > 0 ? 20 : 0,
-        interpersonal: signals.interpersonal > 0 ? 20 : 0,
-        technical: signals.technical > 0 ? 20 : 0,
-        physical: signals.physical > 0 ? 20 : 0
+        analytical: signals.analytical ? 20 : 0,
+        creative: signals.creative ? 20 : 0,
+        interpersonal: signals.interpersonal ? 20 : 0,
+        technical: signals.technical ? 20 : 0,
+        physical: signals.physical ? 20 : 0
     };
 
+    const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
+
     return {
-        score: Object.values(breakdown).reduce((a, b) => a + b, 0),
+        score,
         breakdown,
         activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 0)
     };
 }
 
-function enhanceCareers(careers, signals, baseScore) {
-    const traitMap = {
-        technical: ['engineer', 'developer', 'software', 'tech', 'data', 'architect', 'system'],
-        creative: ['designer', 'writer', 'artist', 'content', 'producer'],
-        interpersonal: ['manager', 'lead', 'coach', 'sales', 'director'],
-        analytical: ['analyst', 'researcher', 'scientist', 'consultant'],
-        physical: ['mechanic', 'trainer', 'technician', 'builder']
-    };
-
-    return careers.map(career => {
-        let adjustedScore = Number(career.alignmentScore) || baseScore;
-        const title = (career.careerTitle || "").toLowerCase();
-
-        for (const trait in traitMap) {
-            if (traitMap[trait].some(k => title.includes(k))) {
-                adjustedScore += (signals[trait] || 0) * 8;
-            }
-        }
-
-        return {
-            ...career,
-            alignmentScore: Math.min(Math.round(adjustedScore), 100)
-        };
-    });
-}
+const RATE_LIMIT = 10;
+const WINDOW_MS = 60 * 1000;
 
 function isRateLimited(ip) {
     const now = Date.now();
 
-    if (requestLog.size > 2000) {
-        const cutoff = now - WINDOW_MS;
-        for (const [ipKey, times] of requestLog.entries()) {
-            const filtered = times.filter(t => t > cutoff);
-            filtered.length ? requestLog.set(ipKey, filtered) : requestLog.delete(ipKey);
-        }
+    if (!requestLog.has(ip)) {
+        requestLog.set(ip, []);
     }
 
-    const times = requestLog.get(ip) || [];
-    const recent = times.filter(t => now - t < WINDOW_MS);
+    const timestamps = requestLog.get(ip).filter(ts => now - ts < WINDOW_MS);
 
-    recent.push(now);
-    requestLog.set(ip, recent);
+    timestamps.push(now);
+    requestLog.set(ip, timestamps);
 
-    return recent.length > RATE_LIMIT;
+    return timestamps.length > RATE_LIMIT;
 }
 
-const sanitize = (str) =>
-    (str || "").replace(/[`<>]/g, '').trim().slice(0, 1000);
-
-exports.handler = async (event) => {
+exports.handler = async (event, context) => {
     const headers = {
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Content-Type": "application/json"
-    };
+    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json"
+};
 
     if (event.httpMethod === "OPTIONS") {
         return { statusCode: 200, headers, body: "OK" };
     }
 
-    try {
-        const ip =
-            event.headers["x-nf-client-connection-ip"] ||
-            event.headers["x-forwarded-for"] ||
-            "unknown";
+    const ip =
+event.headers["x-nf-client-connection-ip"] ||
+event.headers["x-forwarded-for"] ||
+event.headers["client-ip"] ||
+"unknown";
 
-        if (isRateLimited(ip)) {
+if (isRateLimited(ip)) {
+    return {
+        statusCode: 429,
+        headers,
+        body: JSON.stringify({
+            error: "Rate Limit Exceeded",
+            message: "Too many requests. Please wait a moment."
+        })
+    };
+}
+
+    try {
+        const rawData = JSON.parse(event.body || "{}");
+
+let hobbies = (rawData.hobbies || "").trim();
+let skills = (rawData.skills || "").trim();
+let talents = (rawData.talents || "").trim();
+let country = (rawData.country || "").trim();
+const traitSignals = analyzeTraits(hobbies, skills, talents);
+const scorePackage = scoreProfile(traitSignals);
+const baseScore = scorePackage.score;
+const scoreOwnership = {
+    baseScore,
+    breakdown: scorePackage.breakdown,
+    activeTraits: scorePackage.activeTraits,
+    traitSignals,
+    inputFingerprint: Buffer
+        .from(`${hobbies}|${skills}|${talents}|${country}`)
+        .toString("base64"),
+    timestamp: Date.now(),
+    ip
+};
+       
+// Input size limit
+const MAX_INPUT_LENGTH = 2000;
+if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
+    return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({
+            error: "Input too large",
+            message: `Please limit your hobbies, skills, and talents to a combined ${MAX_INPUT_LENGTH} characters.`
+        })
+    };
+}
+        const apiKey = process.env.FIRST_API_KEY;
+
+        if (!apiKey) {
             return {
-                statusCode: 429,
+                statusCode: 500,
                 headers,
-                body: JSON.stringify({ error: "Rate Limit Exceeded" })
+                body: JSON.stringify({ error: "Config Error", message: "API Key missing." })
             };
         }
 
-        const rawData = JSON.parse(event.body || "{}");
+        // Gemini API URL
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
-        const hobbies = sanitize(rawData.hobbies);
-        const skills = sanitize(rawData.skills);
-        const talents = sanitize(rawData.talents);
-        const country = sanitize(rawData.country);
+        const apiPayload = {
+            contents: [{
+                parts: [{
+                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
 
-        const traitSignals = analyzeTraits(hobbies, skills, talents);
-        const scorePackage = scoreProfile(traitSignals);
-        const baseScore = scorePackage.score;
+MISSION:
+Transform a user's natural traits into 3–5 high-performance, real-world career paths that are actionable, realistic, and financially meaningful.
+NON-NEGOTIABLE RULES:
+- You MUST return a valid JSON object only (no markdown, no commentary).
+- You MUST follow the exact schema provided.
+- Be decisive. Do NOT give vague or generic career advice.
+- Avoid low-income or unstable paths unless strongly justified.
+- Prioritize careers with strong earning potential, scalability, or advancement.
+- The user may have low confidence — your output must feel structured, clear, and motivating.
 
-        const apiKey = process.env.FIRST_API_KEY;
-        if (!apiKey) throw new Error("Missing API key");
+USER DATA:
+Hobbies: ${hobbies}
+Skills: ${skills}
+Talents: ${talents}
+Location: ${country}
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+SYSTEM PRE-ANALYSIS:
+Trait Signals: ${JSON.stringify(traitSignals)}
+Base Profile Score: ${baseScore}/100
+Score Breakdown: ${JSON.stringify(scorePackage.breakdown)}
+Active Traits: ${scorePackage.activeTraits.join(", ")}
+
+SYSTEM RULES (HARD CONSTRAINTS):
+- You MUST use the provided trait signals in your decision making
+- You MUST reflect these signals in the alignmentScore
+- You MUST reference at least one trait signal (analytical, creative, interpersonal, technical, physical) in the reasoning
+
+BASE PROFILE STRENGTH SCORE:
+${baseScore}/100
+
+ANALYSIS INSTRUCTIONS:
+1. Identify patterns across hobbies, skills, and talents.
+2. Infer strengths (analytical, creative, interpersonal, technical, etc.).
+3. Select the TOP 3 to 5 career paths that best align with long-term success.
+4. Rank them from strongest to weakest alignment.
+5. Each career must be distinct, realistic, and viable for someone starting from their current position.
+6. Do NOT repeat similar roles — each must represent a different path.
+
+OUTPUT REQUIREMENTS:
+- You MUST return between 3 and 5 career objects inside the "careers" array.
+
+Return EXACTLY this structure:
+
+{
+  "careers": [
+    {
+      "careerTitle": "Specific, real-world job title",
+      "alignmentScore": number,
+      "earningPotential": "Realistic earning progression",
+      "reasoning": "Clear explanation referencing user traits",
+      "searchKeywords": ["relevant", "job", "keywords"],
+      "attainmentPlan": [
+        "Step 1 (start within 24-48 hours)",
+        "Step 2",
+        "Step 3",
+        "Step 4"
+      ]
+    }
+  ]
+}
+
+QUALITY STANDARD:
+- Steps must be specific, executable, and produce tangible outcomes (no vague advice).
+- Step 1 must be achievable within 24–48 hours with no prerequisites.
+- Reasoning must feel personalized, reference user inputs directly, and avoid generic language.
+- Keywords must be optimized for job platforms like LinkedIn/Indeed and include actionable search intent.
+- All fields must logically align (career, salary, steps, and reasoning must not contradict each other).
+- Output should feel like it came from a top-tier career strategist.
+
+FINAL RULE:
+Return ONLY the JSON object. No extra text.`
+                }]
+            }],
+           generationConfig: {
+    temperature: 0.2,
+    topK: 1,
+    response_mime_type: "application/json"
+}
+        };
 
         const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `Return JSON only. Careers based on: ${hobbies}, ${skills}, ${talents}, ${country}. Score: ${baseScore}`
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0.2,
-                    response_mime_type: "application/json"
-                }
-            })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(apiPayload)
         });
 
         const result = await response.json();
 
-        let rawContent =
-            result?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-        if (!rawContent) {
+        if (!response.ok) {
+            console.error("Gemini Error:", JSON.stringify(result));
             return {
-                statusCode: 200,
+                statusCode: response.status,
                 headers,
-                body: JSON.stringify({ careers: [], scorePackage })
+                body: JSON.stringify({
+                    error: "Upstream Error",
+                    message: result.error?.message || "Google API handshake failed."
+                })
             };
         }
 
+        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!rawContent) {
+    throw new Error("AI returned empty response");
+    }
+       
         let finalData;
 
-        try {
-            finalData = JSON.parse(rawContent);
-        } catch {
-            const match = rawContent.match(/\{[\s\S]*\}/);
-            if (!match) throw new Error("Unparseable AI output");
-            finalData = JSON.parse(match[0]);
-        }
+try {
+    finalData = JSON.parse(rawContent);
+} catch (e) {
+    const match = rawContent.match(/\{[\s\S]*\}/);
+    if (!match) {
+        throw new Error("Invalid AI Response Format");
+    }
 
-        const careers = enhanceCareers(
-            (finalData?.careers || []),
-            traitSignals,
-            baseScore
-        );
+    finalData = JSON.parse(match[0]);
+}
 
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                careers: careers.sort((a, b) => b.alignmentScore - a.alignmentScore),
-                scorePackage
-            })
-        };
+let sanitizedCareers = (finalData.careers || []).map(c => ({
+    careerTitle: c.careerTitle || "Unknown Role",
+    alignmentScore: c.alignmentScore || 0,
+    earningPotential: c.earningPotential || "Variable",
+    reasoning: c.reasoning || "",
+    searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
+    attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
+}));
+
+// FIXED: enhanceCareers is now defined at the top of this file
+finalData.careers = enhanceCareers(
+    sanitizedCareers,
+    traitSignals,
+    baseScore
+);
+        finalData.scoreOwnership = scoreOwnership;
+
+return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify(finalData)
+};
 
     } catch (error) {
+        console.error("Internal Failure:", error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({
-                error: "Processing Error",
-                message: error.message
-            })
+            body: JSON.stringify({ error: "Processing Error", message: error.message })
         };
     }
 };
