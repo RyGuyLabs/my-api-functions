@@ -126,6 +126,14 @@ function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         let adjustedScore = Number(career.alignmentScore) || baseScore;
 
+        let attribution = {
+    base: Number(career.alignmentScore) || baseScore,
+    fitBoost: 0,
+    friction: 0,
+    overlap: 0,
+    manual: 0
+};
+
         // overlap penalty
         adjustedScore -= calculateCareerOverlapPenalty(career, careers);
 
