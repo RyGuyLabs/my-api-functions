@@ -233,6 +233,7 @@ let finalData;
 
 try {
     finalData = JSON.parse(rawContent);
+
 } catch (e) {
     const match = rawContent.match(/\{[\s\S]*\}/);
 
@@ -255,6 +256,29 @@ try {
             })
         };
     }
+
+    try {
+        finalData = JSON.parse(match[0]);
+    } catch (err) {
+        console.error("SECONDARY PARSE FAILED:", rawContent);
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+                careers: [{
+                    careerTitle: "Critical Parse Failure",
+                    alignmentScore: 0,
+                    earningPotential: "Unknown",
+                    reasoning: "AI output could not be parsed at any level.",
+                    searchKeywords: [],
+                    attainmentPlan: ["Retry generation"]
+                }],
+                scoreOwnership
+            })
+        };
+    }
+}
 
     finalData = JSON.parse(match[0]);
 } catch (error) {
