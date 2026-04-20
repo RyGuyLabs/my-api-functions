@@ -1,4 +1,22 @@
 const requestLog = new Map();
+function detectTraitConflicts(signals) {
+    const conflicts = [];
+
+    if (signals.analytical && signals.creative) {
+        conflicts.push("analytical_creative");
+    }
+
+    if (signals.technical && signals.interpersonal) {
+        conflicts.push("technical_interpersonal");
+    }
+
+    if (signals.physical && signals.analytical) {
+        conflicts.push("physical_analytical");
+    }
+
+    return conflicts;
+}
+
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         // Boost alignment score slightly if it matches a primary trait
