@@ -174,10 +174,11 @@ attribution.fitBoost = fitBoost;
         attribution.manual = manual;
 
         return {
-        ...career,
-        alignmentScore: Math.min(Math.round(adjustedScore), 100),
-        _debug: attribution
-        };
+  ...career,
+  alignmentScore: Math.min(Math.round(adjustedScore), 100),
+  signals: signals,               
+  attribution: attribution,       
+};
     });
 }
 
