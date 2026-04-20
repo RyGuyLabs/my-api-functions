@@ -173,11 +173,16 @@ attribution.fitBoost = fitBoost;
         adjustedScore += manual;
         attribution.manual = manual;
 
-        return {
+        const finalScore = Math.min(Math.round(adjustedScore), 100);
+
+return {
   ...career,
-  alignmentScore: Math.min(Math.round(adjustedScore), 100),
-  signals: signals,               
-  attribution: attribution,       
+  alignmentScore: finalScore,
+  signals: signals,
+  attribution: {
+    ...attribution,
+    finalScore
+  }
 };
     });
 }
