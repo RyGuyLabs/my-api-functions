@@ -78,25 +78,28 @@ function buildCareerExplanation(career, signals) {
     const title = career.careerTitle.toLowerCase();
 
     if (signals.technical && /(engineer|developer|software|tech)/.test(title)) {
-        reasons.push("Strong technical alignment with your skill patterns");
-    }
+    reasons.push("Your responses show a clear pattern toward technical thinking—this path allows you to solve complex problems, build systems, and create scalable solutions that are highly valued in today’s market.");
+}
 
-    if (signals.creative && /(design|writer|artist|content)/.test(title)) {
-        reasons.push("Matches your creative expression tendencies");
-    }
+if (signals.creative && /(design|writer|artist|content)/.test(title)) {
+    reasons.push("You demonstrate strong creative instincts, and this career gives you a direct outlet to turn ideas into tangible work—whether through design, storytelling, or content creation that captures attention.");
+}
 
-    if (signals.analytical && /(analyst|data|research)/.test(title)) {
-        reasons.push("Fits your analytical and problem-solving profile");
-    }
+if (signals.analytical && /(analyst|data|research)/.test(title)) {
+    reasons.push("You naturally lean toward analysis and structured thinking, making this path a strong fit for breaking down problems, identifying patterns, and making high-impact decisions based on data.");
+}
 
-    if (signals.interpersonal && /(sales|manager|coach|teacher)/.test(title)) {
-        reasons.push("Leverages your communication and leadership strengths");
-    }
+if (signals.interpersonal && /(sales|manager|coach|teacher)/.test(title)) {
+    reasons.push("Your profile reflects strong interpersonal ability—this role allows you to influence, guide, and connect with others, which is a major driver of both career growth and income potential.");
+}
 
-    if (signals.physical && /(mechanic|construction|fitness|labor)/.test(title)) {
-        reasons.push("Aligns with hands-on or physical work preference");
-    }
+if (signals.physical && /(mechanic|construction|fitness|labor)/.test(title)) {
+    reasons.push("You show a preference for hands-on, action-oriented work, and this career aligns with building, moving, or working physically—often leading to faster entry points and practical, in-demand skills.");
+}
 
+if (reasons.length > 1) {
+    reasons.push("What makes this path especially strong for you is the combination of these traits working together—this is where people tend to outperform others and progress faster.");
+}    
     return reasons.length ? reasons.join(". ") : "General alignment based on profile match";
 }
 
