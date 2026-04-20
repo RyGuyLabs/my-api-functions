@@ -282,3 +282,27 @@ try {
         };
     }
 }
+        
+// ===============================
+// FINAL RESPONSE PIPELINE (ADD HERE)
+// ===============================
+
+let sanitizedCareers = (finalData?.careers || []).map(c => ({
+    careerTitle: c.careerTitle || "Unknown Role",
+    alignmentScore: Number(c.alignmentScore) || 0,
+    earningPotential: c.earningPotential || "Variable",
+    reasoning: c.reasoning || "",
+    searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
+    attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
+}));
+
+const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
+
+return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+        careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
+        scoreOwnership
+    })
+};
