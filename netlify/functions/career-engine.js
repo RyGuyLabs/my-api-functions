@@ -62,15 +62,16 @@ function enhanceCareers(careers, signals, baseScore) {
 function analyzeTraits(hobbies, skills, talents) {
     const text = (hobbies + " " + skills + " " + talents).toLowerCase();
 
+    const countMatches = (regex) => (text.match(regex) || []).length;
+
     return {
-        analytical: /(analyz|data|research|problem|logic|math)/.test(text),
-        creative: /(design|art|write|music|content|creative)/.test(text),
-        interpersonal: /(talk|help|teach|communicat|sales|lead)/.test(text),
-        technical: /(code|tech|software|engineer|develop)/.test(text),
-        physical: /(build|hands|outdoor|fitness|labor)/.test(text)
+        analytical: Math.min(countMatches(/(analyz|data|research|problem|logic|math)/g), 3),
+        creative: Math.min(countMatches(/(design|art|write|music|content|creative)/g), 3),
+        interpersonal: Math.min(countMatches(/(talk|help|teach|communicat|sales|lead)/g), 3),
+        technical: Math.min(countMatches(/(code|tech|software|engineer|develop)/g), 3),
+        physical: Math.min(countMatches(/(build|hands|outdoor|fitness|labor)/g), 3)
     };
 }
-
 function scoreProfile(signals) {
     const breakdown = {
         analytical: signals.analytical ? 20 : 0,
