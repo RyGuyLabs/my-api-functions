@@ -379,7 +379,8 @@ let sanitizedCareers = (finalData.careers || []).map(c => ({
     earningPotential: c.earningPotential || "Variable",
     reasoning: c.reasoning || "",
     searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
-    attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
+    attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : [],
+    explanation: buildCareerExplanation(c, traitSignals)
 }));
 
 // FIXED: enhanceCareers is now defined at the top of this file
