@@ -2,12 +2,6 @@ const requestLog = new Map();
 const RATE_LIMIT = 10;
 const WINDOW_MS = 60 * 1000;
 
-/**
- * LAYER 1: TRAIT EXTRACTION (Weighted Deterministic Signal Model)
- * 1. LOCATION: analyzeTraits function
- * 2. ISSUE: Replaced weak keyword matching with a weighted deterministic model as requested.
- * 3. IMPACT: Backend behavior is more granular. Frontend risk is ZERO as it returns the same keys.
- */
 function analyzeTraits(hobbies, skills, talents) {
     const text = `${hobbies} ${skills} ${talents}`.toLowerCase();
     
@@ -23,7 +17,8 @@ function analyzeTraits(hobbies, skills, talents) {
     Object.keys(dictionary).forEach(trait => {
         const matches = dictionary[trait].filter(word => text.includes(word));
         // Deterministic weight: number of distinct matches / 3 (capped at 1.0)
-        signals[trait] = Math.min(matches.length / 3, 1.0);
+        const raw = matches.length;
+        signals[trait] = raw === 0 ? 0 : +(1 - Math.exp(-raw / 2)).toFixed(3);
     });
     return signals;
 }
@@ -31,19 +26,24 @@ function analyzeTraits(hobbies, skills, talents) {
 /**
  * LAYER 2: DETAILED PROFILE SCORING
  * 1. LOCATION: scoreProfile function
+ * 2. ISSUE: Preserved explicit breakdown while transitioning to the signal model.
+ * 3. IMPACT: Safe for frontend; maintains existing scoring expectations.
  */
 function scoreProfile(signals) {
-    const breakdown = {};
-    Object.keys(signals).forEach(k => {
-        breakdown[k] = Math.round(signals[k] * 20); // Each trait worth up to 20 pts
-    });
+    const breakdown = {
+        analytical: signals.analytical > 0 ? 20 : 0,
+        creative: signals.creative > 0 ? 20 : 0,
+        interpersonal: signals.interpersonal > 0 ? 20 : 0,
+        technical: signals.technical > 0 ? 20 : 0,
+        physical: signals.physical > 0 ? 20 : 0
+    };
 
     const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
 
     return {
-        score: Math.min(score, 100),
+        score,
         breakdown,
-        activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 5)
+        activeTraits: Object.keys(breakdown).filter(k => breakdown[k] > 0)
     };
 }
 
@@ -70,7 +70,7 @@ function enhanceCareers(careers, signals, baseScore) {
         Object.keys(traitMap).forEach(trait => {
             if (traitMap[trait].some(kw => title.includes(kw))) {
                 // Boost is proportional to the strength of the signal found in Layer 1
-                adjustedScore += (signals[trait] * 10); 
+                adjustedScore += (signals[trait] * 8); 
             }
         });
 
@@ -88,17 +88,15 @@ function enhanceCareers(careers, signals, baseScore) {
  */
 function isRateLimited(ip) {
     const now = Date.now();
-    
-    // Memory safety: Clear stale entries and update map to prevent growth in warm lambdas
-    if (requestLog.size > 1000) {
-        const threshold = now - WINDOW_MS;
-        for (const [key, value] of requestLog.entries()) {
-            const fresh = value.filter(ts => ts >= threshold);
-            if (fresh.length === 0) requestLog.delete(key);
-            else requestLog.set(key, fresh);
+    // Memory safety for long-running instances
+    if (requestLog.size > 2000) {
+        const cutoff = Date.now() - WINDOW_MS;
+        for (const [ipKey, timestamps] of requestLog.entries()) {
+            const filtered = timestamps.filter(ts => ts > cutoff);
+            if (filtered.length === 0) requestLog.delete(ipKey);
+            else requestLog.set(ipKey, filtered);
         }
     }
-
     if (!requestLog.has(ip)) {
         requestLog.set(ip, []);
     }
@@ -110,8 +108,11 @@ function isRateLimited(ip) {
     return timestamps.length > RATE_LIMIT;
 }
 
-// Security: Prevent prompt injection by stripping control characters and capping length
-const sanitize = (str) => (str || "").replace(/[{}|[\]\\]/g, '').trim().slice(0, 1000);
+const sanitize = (str) =>
+    (str || "")
+        .replace(/[`<>]/g, '')
+        .trim()
+        .slice(0, 1000);
 
 exports.handler = async (event, context) => {
     const headers = {
@@ -152,7 +153,7 @@ exports.handler = async (event, context) => {
         // 2. Trait Extraction & Scoring
         const traitSignals = analyzeTraits(hobbies, skills, talents);
         const scorePackage = scoreProfile(traitSignals);
-        const baseScore = Number(scorePackage.score) || 0;
+        const baseScore = scorePackage.score;
 
         const scoreOwnership = {
             baseScore,
@@ -168,17 +169,14 @@ exports.handler = async (event, context) => {
         if (!apiKey) throw new Error("API Key missing.");
 
         // 3. AI Generation (GenerateContent API)
-        // FIX: Using gemini-1.5-flash-002 which is the most compatible production identifier
-        // for v1beta when general aliases like 'gemini-1.5-pro' fail.
-        const modelId = "gemini-1.5-flash-002";
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
                 parts: [{
                     text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
 MISSION: Transform user traits into 3–5 high-performance career paths.
-USER DATA: ${JSON.stringify({ hobbies, skills, talents, country })}
+USER DATA: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}, Location: ${country}
 PRE-ANALYSIS: Traits: ${JSON.stringify(traitSignals)}, Base Score: ${baseScore}/100.
 RULES: Return valid JSON only. Follow schema strictly. No commentary.`
                 }]
@@ -189,36 +187,26 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
             }
         };
 
-        // Ensure global fetch is handled (Node 18+) or provide check
-        const fetchMethod = globalThis.fetch || (typeof fetch !== 'undefined' ? fetch : null);
-        if (!fetchMethod) throw new Error("Fetch environment not supported");
-
-        const response = await fetchMethod(url, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(apiPayload)
         });
 
         const result = await response.json();
-        if (!response.ok) {
-            // Log specific error for debugging model availability
-            console.error("Gemini API Error Payload:", JSON.stringify(result));
-            throw new Error(result.error?.message || "Google API Failure");
-        }
+        if (!response.ok) throw new Error(result.error?.message || "Google API Failure");
 
         // 4. Strict JSON Parsing (Removal of unsafe regex fallbacks)
         let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawContent) throw new Error("AI returned empty response");
         
-        // Strip markdown and handle trailing commas which break JSON.parse
-        const cleanJson = rawContent.replace(/```json|```/g, "").trim().replace(/,(?=\s*[\]}])/g, "");
-        const finalData = JSON.parse(cleanJson);
+        const finalData = JSON.parse(rawContent.trim());
 
         // 5. Ranking & Deterministic Sorting
         // Ensures career ranking is stable based on the Authority Scoring Layer
         let sanitizedCareers = (finalData.careers || []).map(c => ({
             careerTitle: c.careerTitle || "Unknown Role",
-            alignmentScore: Number(c.alignmentScore) || 0,
+            alignmentScore: c.alignmentScore || 0,
             earningPotential: c.earningPotential || "Variable",
             reasoning: c.reasoning || "",
             searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
@@ -227,14 +215,11 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
 
         const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
         
-        // Final Sort: Deterministic ranking by score descending
-        enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore);
-
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
-                careers: enhancedCareers,
+                careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
                 scoreOwnership
             })
         };
