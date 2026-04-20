@@ -45,21 +45,6 @@ function calculateFitBoost(career, signals) {
 
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
-        // Boost alignment score slightly if it matches a primary trait
-        let adjustedScore = career.alignmentScore || baseScore;
-       
-        if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) adjustedScore += 5;
-        if (signals.creative && career.careerTitle.toLowerCase().includes('design')) adjustedScore += 5;
-       
-        return {
-            ...career,
-            alignmentScore: Math.min(adjustedScore, 100) // Cap at 100
-        };
-    });
-}
-
-function enhanceCareers(careers, signals, baseScore) {
-    return careers.map(career => {
         // Ensure the alignment score is a number and doesn't exceed 100
         let adjustedScore = Number(career.alignmentScore) || baseScore;
         adjustedScore += calculateFitBoost(career, signals);
