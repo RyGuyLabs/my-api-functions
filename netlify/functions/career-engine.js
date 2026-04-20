@@ -126,59 +126,81 @@ function calculateExecutionFriction(career, signals) {
 }
 
 function enhanceCareers(careers, signals, baseScore) {
-    return careers.map(career => {
+    // STEP 1: compute raw adjusted scores
+    const enriched = careers.map(career => {
         let adjustedScore = Number(career.alignmentScore) || baseScore;
 
         let attribution = {
-    base: Number(career.alignmentScore) || baseScore,
-    fitBoost: 0,
-    friction: 0,
-    overlap: 0,
-    manual: 0
-};
+            base: Number(career.alignmentScore) || baseScore,
+            fitBoost: 0,
+            friction: 0,
+            overlap: 0,
+            manual: 0
+        };
 
-        // overlap penalty
         const overlap = calculateCareerOverlapPenalty(career, careers);
         adjustedScore -= overlap;
         attribution.overlap = overlap;
 
-        // fit boost (correct object usage)
         const fitBoost = calculateFitBoost(career, {
-    technical: signals.technical > 0,
-    creative: signals.creative > 0,
-    analytical: signals.analytical > 0,
-    interpersonal: signals.interpersonal > 0,
-    physical: signals.physical > 0
-});
+            technical: signals.technical > 0,
+            creative: signals.creative > 0,
+            analytical: signals.analytical > 0,
+            interpersonal: signals.interpersonal > 0,
+            physical: signals.physical > 0
+        });
 
-adjustedScore += fitBoost;
-attribution.fitBoost = fitBoost;
+        adjustedScore += fitBoost;
+        attribution.fitBoost = fitBoost;
 
-        // friction penalty (separate step — CORRECT placement)
         const friction = calculateExecutionFriction(career, signals);
         adjustedScore -= friction;
         attribution.friction = friction;
 
-        // legacy boosts (still fine, optional)
         let manual = 0;
 
         if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) {
-        manual += 5;
+            manual += 5;
         }
 
         if (signals.creative && career.careerTitle.toLowerCase().includes('design')) {
-        manual += 5;
+            manual += 5;
         }
 
         adjustedScore += manual;
         attribution.manual = manual;
 
         return {
-  ...career,
-  alignmentScore: Math.min(Math.round(adjustedScore), 100),
-  signals: signals,               
-  attribution: attribution,       
-};
+            ...career,
+            rawScore: adjustedScore,
+            attribution
+        };
+    });
+
+    // STEP 2: SORT (this is the missing “ranking intelligence”)
+    enriched.sort((a, b) => b.rawScore - a.rawScore);
+
+    // STEP 3: APPLY DISTRIBUTION NORMALIZATION
+    const max = enriched[0]?.rawScore || 1;
+    const min = enriched[enriched.length - 1]?.rawScore || 0;
+    const range = Math.max(max - min, 1);
+
+    return enriched.map((career, index) => {
+        // normalize into 0–100 but enforce spread
+        let normalized = ((career.rawScore - min) / range) * 100;
+
+        // ranking pressure (THIS creates separation users feel)
+        const rankPenalty = index * 4; 
+        normalized -= rankPenalty;
+
+        // clamp
+        normalized = Math.max(1, Math.min(100, Math.round(normalized)));
+
+        return {
+            ...career,
+            alignmentScore: normalized,
+            rank: index + 1
+        };
     });
 }
 
