@@ -72,6 +72,34 @@ function calculateCareerOverlapPenalty(career, allCareers) {
     return Math.min(overlaps * 2, 6);
 }
 
+function buildCareerExplanation(career, signals) {
+    const reasons = [];
+
+    const title = career.careerTitle.toLowerCase();
+
+    if (signals.technical && /(engineer|developer|software|tech)/.test(title)) {
+        reasons.push("Strong technical alignment with your skill patterns");
+    }
+
+    if (signals.creative && /(design|writer|artist|content)/.test(title)) {
+        reasons.push("Matches your creative expression tendencies");
+    }
+
+    if (signals.analytical && /(analyst|data|research)/.test(title)) {
+        reasons.push("Fits your analytical and problem-solving profile");
+    }
+
+    if (signals.interpersonal && /(sales|manager|coach|teacher)/.test(title)) {
+        reasons.push("Leverages your communication and leadership strengths");
+    }
+
+    if (signals.physical && /(mechanic|construction|fitness|labor)/.test(title)) {
+        reasons.push("Aligns with hands-on or physical work preference");
+    }
+
+    return reasons.length ? reasons.join(". ") : "General alignment based on profile match";
+}
+
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         // Ensure the alignment score is a number and doesn't exceed 100
