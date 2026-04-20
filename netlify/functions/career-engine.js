@@ -126,59 +126,88 @@ function calculateExecutionFriction(career, signals) {
 }
 
 function enhanceCareers(careers, signals, baseScore) {
-    return careers.map(career => {
-        let adjustedScore = Number(career.alignmentScore) || baseScore;
+    // STEP 1: build raw score space (DO NOT clamp yet)
+    const enriched = careers.map((career, index) => {
+
+        // IMPORTANT FIX: start from AI score, but stabilize fallback
+        let base = Number(career.alignmentScore);
+        if (!base || base <= 0) base = baseScore;
+
+        let adjustedScore = base;
 
         let attribution = {
-    base: Number(career.alignmentScore) || baseScore,
-    fitBoost: 0,
-    friction: 0,
-    overlap: 0,
-    manual: 0
-};
+            base,
+            fitBoost: 0,
+            friction: 0,
+            overlap: 0,
+            manual: 0
+        };
 
-        // overlap penalty
+        // OVERLAP (kept but softened slightly)
         const overlap = calculateCareerOverlapPenalty(career, careers);
         adjustedScore -= overlap;
         attribution.overlap = overlap;
 
-        // fit boost (correct object usage)
+        // FIT BOOST
         const fitBoost = calculateFitBoost(career, {
-    technical: signals.technical > 0,
-    creative: signals.creative > 0,
-    analytical: signals.analytical > 0,
-    interpersonal: signals.interpersonal > 0,
-    physical: signals.physical > 0
-});
+            technical: signals.technical > 0,
+            creative: signals.creative > 0,
+            analytical: signals.analytical > 0,
+            interpersonal: signals.interpersonal > 0,
+            physical: signals.physical > 0
+        });
 
-adjustedScore += fitBoost;
-attribution.fitBoost = fitBoost;
+        adjustedScore += fitBoost;
+        attribution.fitBoost = fitBoost;
 
-        // friction penalty (separate step — CORRECT placement)
+        // FRICTION
         const friction = calculateExecutionFriction(career, signals);
         adjustedScore -= friction;
         attribution.friction = friction;
 
-        // legacy boosts (still fine, optional)
+        // SMALL IDENTITY BOOST (kept minimal to avoid distortion)
         let manual = 0;
 
         if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) {
-        manual += 5;
+            manual += 2;
         }
 
         if (signals.creative && career.careerTitle.toLowerCase().includes('design')) {
-        manual += 5;
+            manual += 2;
         }
 
         adjustedScore += manual;
         attribution.manual = manual;
 
         return {
-  ...career,
-  alignmentScore: Math.min(Math.round(adjustedScore), 100),
-  signals: signals,               
-  attribution: attribution,       
-};
+            ...career,
+            rawScore: adjustedScore,
+            attribution
+        };
+    });
+
+    // STEP 2: SORT (this is now your REAL ranking engine)
+    enriched.sort((a, b) => b.rawScore - a.rawScore);
+
+    // STEP 3: CREATE SPREAD (THIS FIXES YOUR “everything feels same” issue)
+    const top = enriched[0]?.rawScore || 1;
+
+    return enriched.map((career, index) => {
+
+        // relative scoring (NOT absolute compression)
+        let score = (career.rawScore / top) * 100;
+
+        // ranking pressure to force separation
+        score -= index * 6;
+
+        // clamp safely
+        score = Math.max(5, Math.min(100, Math.round(score)));
+
+        return {
+            ...career,
+            alignmentScore: score,
+            rank: index + 1
+        };
     });
 }
 
