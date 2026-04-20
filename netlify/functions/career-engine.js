@@ -43,10 +43,40 @@ function calculateFitBoost(career, signals) {
     return boost;
 }
 
+function calculateCareerOverlapPenalty(career, allCareers) {
+    const title = career.careerTitle.toLowerCase();
+
+    const categories = {
+        tech: /(engineer|developer|software|data|it)/,
+        creative: /(design|artist|writer|content)/,
+        business: /(sales|manager|marketing|consult)/,
+        physical: /(mechanic|construction|fitness|labor)/,
+        education: /(teacher|coach|trainer|instructor)/
+    };
+
+    let overlaps = 0;
+
+    for (const other of allCareers) {
+        if (other.careerTitle === career.careerTitle) continue;
+
+        const otherTitle = other.careerTitle.toLowerCase();
+
+        for (const key in categories) {
+            if (categories[key].test(title) && categories[key].test(otherTitle)) {
+                overlaps++;
+            }
+        }
+    }
+
+    // small penalty per overlap (keeps system stable)
+    return Math.min(overlaps * 2, 6);
+}
+
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         // Ensure the alignment score is a number and doesn't exceed 100
         let adjustedScore = Number(career.alignmentScore) || baseScore;
+        adjustedScore -= calculateCareerOverlapPenalty(career, careers);
         adjustedScore += calculateFitBoost(career, {
     technical: signals.technical > 0,
     creative: signals.creative > 0,
