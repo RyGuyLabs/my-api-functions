@@ -188,43 +188,76 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
         };
 
         const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(apiPayload)
-        });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(apiPayload)
+});
 
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error?.message || "Google API Failure");
+const result = await response.json();
 
-        // 4. Strict JSON Parsing (Removal of unsafe regex fallbacks)
-        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!rawContent) throw new Error("AI returned empty response");
-        
-        const finalData = JSON.parse(rawContent.trim());
+if (!response.ok) {
+    console.error("GEMINI ERROR:", result);
+    throw new Error(result.error?.message || "Google API Failure");
+}
 
-        // 5. Ranking & Deterministic Sorting
-        // Ensures career ranking is stable based on the Authority Scoring Layer
-        let sanitizedCareers = (finalData.careers || []).map(c => ({
-            careerTitle: c.careerTitle || "Unknown Role",
-            alignmentScore: c.alignmentScore || 0,
-            earningPotential: c.earningPotential || "Variable",
-            reasoning: c.reasoning || "",
-            searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
-            attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
-        }));
+// SAFE EXTRACTION LAYER
+let rawContent =
+    result?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    result?.candidates?.[0]?.output ||
+    "";
 
-        const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
-        
+// HARD DEBUG SAFETY
+if (!rawContent) {
+    console.error("EMPTY RESPONSE FROM MODEL:", JSON.stringify(result));
+    
+    // fallback output so system NEVER breaks
+    return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+            careers: [{
+                careerTitle: "Career Analysis Unavailable",
+                alignmentScore: 0,
+                earningPotential: "Unknown",
+                reasoning: "System fallback activated due to AI response failure.",
+                searchKeywords: [],
+                attainmentPlan: ["Retry request"]
+            }],
+            scoreOwnership
+        })
+    };
+}
+
+// SAFE PARSING LAYER
+let finalData;
+
+try {
+    finalData = JSON.parse(rawContent);
+} catch (e) {
+    const match = rawContent.match(/\{[\s\S]*\}/);
+
+    if (!match) {
+        console.error("UNPARSEABLE AI OUTPUT:", rawContent);
+
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
-                careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
+                careers: [{
+                    careerTitle: "Parsing Recovery Mode",
+                    alignmentScore: 0,
+                    earningPotential: "Unknown",
+                    reasoning: "AI returned malformed output; fallback activated.",
+                    searchKeywords: [],
+                    attainmentPlan: ["Retry generation"]
+                }],
                 scoreOwnership
             })
         };
+    }
 
-    } catch (error) {
+    finalData = JSON.parse(match[0]);
+} catch (error) {
         console.error("Internal Failure:", error);
         return {
             statusCode: 500,
