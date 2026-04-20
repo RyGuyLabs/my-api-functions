@@ -161,7 +161,7 @@ exports.handler = async (event, context) => {
             };
         }
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview-09-2025:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
