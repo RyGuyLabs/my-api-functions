@@ -126,12 +126,11 @@ function calculateExecutionFriction(career, signals) {
 }
 
 function enhanceCareers(careers, signals, baseScore) {
-    // STEP 1: compute raw adjusted scores
     const enriched = careers.map(career => {
-        let adjustedScore = Number(career.alignmentScore) || baseScore;
+        let score = Number(career.alignmentScore) || baseScore;
 
-        let attribution = {
-            base: Number(career.alignmentScore) || baseScore,
+        const attribution = {
+            base: score,
             fitBoost: 0,
             friction: 0,
             overlap: 0,
@@ -139,7 +138,7 @@ function enhanceCareers(careers, signals, baseScore) {
         };
 
         const overlap = calculateCareerOverlapPenalty(career, careers);
-        adjustedScore -= overlap;
+        score -= overlap;
         attribution.overlap = overlap;
 
         const fitBoost = calculateFitBoost(career, {
@@ -150,11 +149,11 @@ function enhanceCareers(careers, signals, baseScore) {
             physical: signals.physical > 0
         });
 
-        adjustedScore += fitBoost;
+        score += fitBoost;
         attribution.fitBoost = fitBoost;
 
         const friction = calculateExecutionFriction(career, signals);
-        adjustedScore -= friction;
+        score -= friction;
         attribution.friction = friction;
 
         let manual = 0;
@@ -167,39 +166,28 @@ function enhanceCareers(careers, signals, baseScore) {
             manual += 5;
         }
 
-        adjustedScore += manual;
+        score += manual;
         attribution.manual = manual;
 
         return {
             ...career,
-            rawScore: adjustedScore,
+            adjustedScore: score,
             attribution
         };
     });
 
-    // STEP 2: SORT (this is the missing “ranking intelligence”)
-    enriched.sort((a, b) => b.rawScore - a.rawScore);
+    // ONLY ranking (no normalization)
+    enriched.sort((a, b) => b.adjustedScore - a.adjustedScore);
 
-    // STEP 3: APPLY DISTRIBUTION NORMALIZATION
-    const max = enriched[0]?.rawScore || 1;
-    const min = enriched[enriched.length - 1]?.rawScore || 0;
-    const range = Math.max(max - min, 1);
+    // stable score scaling (IMPORTANT: no min/max normalization)
+    const top = enriched[0]?.adjustedScore || 1;
 
     return enriched.map((career, index) => {
-        // normalize into 0–100 but enforce spread
-        let normalized = ((career.rawScore - min) / range) * 100;
-
-        // ranking pressure (THIS creates separation users feel)
-        const rankPenalty = index * 4; 
-        normalized -= rankPenalty;
-
-        // clamp
-        normalized = Math.max(1, Math.min(100, Math.round(normalized)));
-
         return {
             ...career,
-            alignmentScore: normalized,
-            rank: index + 1
+            alignmentScore: Math.max(1, Math.min(100, Math.round(career.adjustedScore))),
+            rank: index + 1,
+            strengthGapToTop: top - career.adjustedScore
         };
     });
 }
