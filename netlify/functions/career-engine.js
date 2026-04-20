@@ -17,6 +17,32 @@ function detectTraitConflicts(signals) {
     return conflicts;
 }
 
+function calculateFitBoost(career, signals) {
+    const title = career.careerTitle.toLowerCase();
+    let boost = 0;
+
+    const matchesTechnical = signals.technical && /(engineer|developer|software|tech)/.test(title);
+    const matchesCreative = signals.creative && /(design|writer|artist|content)/.test(title);
+    const matchesAnalytical = signals.analytical && /(analyst|data|research)/.test(title);
+    const matchesInterpersonal = signals.interpersonal && /(sales|manager|coach|teacher)/.test(title);
+    const matchesPhysical = signals.physical && /(mechanic|construction|fitness|labor)/.test(title);
+
+    const matchCount = [
+        matchesTechnical,
+        matchesCreative,
+        matchesAnalytical,
+        matchesInterpersonal,
+        matchesPhysical
+    ].filter(Boolean).length;
+
+    // exponential-style reinforcement (not linear)
+    if (matchCount === 1) boost = 2;
+    if (matchCount === 2) boost = 5;
+    if (matchCount >= 3) boost = 10;
+
+    return boost;
+}
+
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         // Boost alignment score slightly if it matches a primary trait
