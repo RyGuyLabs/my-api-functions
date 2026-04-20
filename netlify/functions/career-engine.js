@@ -229,16 +229,19 @@ if (!rawContent) {
 }
 
 // SAFE PARSING LAYER
+// SAFE PARSING LAYER
 let finalData;
 
 try {
     finalData = JSON.parse(rawContent);
 
 } catch (e) {
+    console.error("PRIMARY JSON PARSE FAILED:", rawContent);
+
     const match = rawContent.match(/\{[\s\S]*\}/);
 
     if (!match) {
-        console.error("UNPARSEABLE AI OUTPUT:", rawContent);
+        console.error("NO JSON FOUND IN OUTPUT");
 
         return {
             statusCode: 200,
@@ -248,7 +251,7 @@ try {
                     careerTitle: "Parsing Recovery Mode",
                     alignmentScore: 0,
                     earningPotential: "Unknown",
-                    reasoning: "AI returned malformed output; fallback activated.",
+                    reasoning: "AI returned non-JSON output.",
                     searchKeywords: [],
                     attainmentPlan: ["Retry generation"]
                 }],
@@ -260,7 +263,7 @@ try {
     try {
         finalData = JSON.parse(match[0]);
     } catch (err) {
-        console.error("SECONDARY PARSE FAILED:", rawContent);
+        console.error("SECONDARY JSON PARSE FAILED:", match[0]);
 
         return {
             statusCode: 200,
@@ -270,7 +273,7 @@ try {
                     careerTitle: "Critical Parse Failure",
                     alignmentScore: 0,
                     earningPotential: "Unknown",
-                    reasoning: "AI output could not be parsed at any level.",
+                    reasoning: "AI output could not be recovered.",
                     searchKeywords: [],
                     attainmentPlan: ["Retry generation"]
                 }],
@@ -279,14 +282,3 @@ try {
         };
     }
 }
-
-    finalData = JSON.parse(match[0]);
-} catch (error) {
-        console.error("Internal Failure:", error);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: "Processing Error", message: error.message })
-        };
-    }
-};
