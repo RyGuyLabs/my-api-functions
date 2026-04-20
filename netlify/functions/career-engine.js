@@ -100,6 +100,28 @@ function buildCareerExplanation(career, signals) {
     return reasons.length ? reasons.join(". ") : "General alignment based on profile match";
 }
 
+function calculateExecutionFriction(career, signals) {
+    const title = career.careerTitle.toLowerCase();
+    let penalty = 0;
+
+    // high barrier roles (harder entry)
+    if (/(doctor|lawyer|engineer|scientist)/.test(title)) {
+        penalty += 4;
+    }
+
+    // medium barrier roles
+    if (/(analyst|developer|manager|consult)/.test(title)) {
+        penalty += 2;
+    }
+
+    // if user is weak on technical signals but career is technical-heavy
+    if (!signals.technical && /(engineer|developer|software)/.test(title)) {
+        penalty += 3;
+    }
+
+    return penalty;
+}
+
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
         // Ensure the alignment score is a number and doesn't exceed 100
