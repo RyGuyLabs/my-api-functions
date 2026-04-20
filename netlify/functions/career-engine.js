@@ -141,6 +141,7 @@ const scoreOwnership = {
     breakdown: scorePackage.breakdown,
     activeTraits: scorePackage.activeTraits,
     traitSignals,
+    traitConflicts,
     inputFingerprint: Buffer
         .from(`${hobbies}|${skills}|${talents}|${country}`)
         .toString("base64"),
