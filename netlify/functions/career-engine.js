@@ -126,69 +126,59 @@ function calculateExecutionFriction(career, signals) {
 }
 
 function enhanceCareers(careers, signals, baseScore) {
-    const enriched = careers.map(career => {
-        let score = Number(career.alignmentScore) || baseScore;
+    return careers.map(career => {
+        let adjustedScore = Number(career.alignmentScore) || baseScore;
 
-        const attribution = {
-            base: score,
-            fitBoost: 0,
-            friction: 0,
-            overlap: 0,
-            manual: 0
-        };
+        let attribution = {
+    base: Number(career.alignmentScore) || baseScore,
+    fitBoost: 0,
+    friction: 0,
+    overlap: 0,
+    manual: 0
+};
 
+        // overlap penalty
         const overlap = calculateCareerOverlapPenalty(career, careers);
-        score -= overlap;
+        adjustedScore -= overlap;
         attribution.overlap = overlap;
 
+        // fit boost (correct object usage)
         const fitBoost = calculateFitBoost(career, {
-            technical: signals.technical > 0,
-            creative: signals.creative > 0,
-            analytical: signals.analytical > 0,
-            interpersonal: signals.interpersonal > 0,
-            physical: signals.physical > 0
-        });
+    technical: signals.technical > 0,
+    creative: signals.creative > 0,
+    analytical: signals.analytical > 0,
+    interpersonal: signals.interpersonal > 0,
+    physical: signals.physical > 0
+});
 
-        score += fitBoost;
-        attribution.fitBoost = fitBoost;
+adjustedScore += fitBoost;
+attribution.fitBoost = fitBoost;
 
+        // friction penalty (separate step — CORRECT placement)
         const friction = calculateExecutionFriction(career, signals);
-        score -= friction;
+        adjustedScore -= friction;
         attribution.friction = friction;
 
+        // legacy boosts (still fine, optional)
         let manual = 0;
 
         if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) {
-            manual += 5;
+        manual += 5;
         }
 
         if (signals.creative && career.careerTitle.toLowerCase().includes('design')) {
-            manual += 5;
+        manual += 5;
         }
 
-        score += manual;
+        adjustedScore += manual;
         attribution.manual = manual;
 
         return {
-            ...career,
-            adjustedScore: score,
-            attribution
-        };
-    });
-
-    // ONLY ranking (no normalization)
-    enriched.sort((a, b) => b.adjustedScore - a.adjustedScore);
-
-    // stable score scaling (IMPORTANT: no min/max normalization)
-    const top = enriched[0]?.adjustedScore || 1;
-
-    return enriched.map((career, index) => {
-        return {
-            ...career,
-            alignmentScore: Math.max(1, Math.min(100, Math.round(career.adjustedScore))),
-            rank: index + 1,
-            strengthGapToTop: top - career.adjustedScore
-        };
+  ...career,
+  alignmentScore: Math.min(Math.round(adjustedScore), 100),
+  signals: signals,               
+  attribution: attribution,       
+};
     });
 }
 
