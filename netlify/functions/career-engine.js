@@ -16,7 +16,6 @@ function analyzeTraits(hobbies, skills, talents) {
     const signals = {};
     Object.keys(dictionary).forEach(trait => {
         const matches = dictionary[trait].filter(word => text.includes(word));
-        // Deterministic weight: number of distinct matches / 3 (capped at 1.0)
         const raw = matches.length;
         signals[trait] = raw === 0 ? 0 : +(1 - Math.exp(-raw / 2)).toFixed(3);
     });
@@ -25,9 +24,6 @@ function analyzeTraits(hobbies, skills, talents) {
 
 /**
  * LAYER 2: DETAILED PROFILE SCORING
- * 1. LOCATION: scoreProfile function
- * 2. ISSUE: Preserved explicit breakdown while transitioning to the signal model.
- * 3. IMPACT: Safe for frontend; maintains existing scoring expectations.
  */
 function scoreProfile(signals) {
     const breakdown = {
@@ -48,10 +44,7 @@ function scoreProfile(signals) {
 }
 
 /**
- * LAYER 3: SCORING AUTHORITY MODEL (Deterministic Adjustment)
- * 1. LOCATION: enhanceCareers function
- * 2. ISSUE: Fixed authority conflict. Backend now acts as the final arbiter for alignment accuracy.
- * 3. IMPACT: Prevents AI "hallucination" of scores. Zero frontend breakage.
+ * LAYER 3: SCORING AUTHORITY MODEL
  */
 function enhanceCareers(careers, signals, baseScore) {
     const traitMap = {
@@ -66,10 +59,8 @@ function enhanceCareers(careers, signals, baseScore) {
         let adjustedScore = Number(career.alignmentScore) || baseScore;
         const title = (career.careerTitle || "").toLowerCase();
 
-        // Authority logic: Apply weight-based boosts from deterministic signals
         Object.keys(traitMap).forEach(trait => {
             if (traitMap[trait].some(kw => title.includes(kw))) {
-                // Boost is proportional to the strength of the signal found in Layer 1
                 adjustedScore += (signals[trait] * 8); 
             }
         });
@@ -83,12 +74,9 @@ function enhanceCareers(careers, signals, baseScore) {
 
 /**
  * SECURITY & RELIABILITY UTILITIES
- * 1. LOCATION: isRateLimited and sanitize
- * 2. ISSUE: Hardened rate limiting for serverless and added injection prevention.
  */
 function isRateLimited(ip) {
     const now = Date.now();
-    // Memory safety for long-running instances
     if (requestLog.size > 2000) {
         const cutoff = Date.now() - WINDOW_MS;
         for (const [ipKey, timestamps] of requestLog.entries()) {
@@ -144,13 +132,11 @@ exports.handler = async (event, context) => {
     try {
         const rawData = JSON.parse(event.body || "{}");
 
-        // 1. Inputs & Sanitization (Injection Protection)
         let hobbies = sanitize(rawData.hobbies);
         let skills = sanitize(rawData.skills);
         let talents = sanitize(rawData.talents);
         let country = sanitize(rawData.country);
 
-        // 2. Trait Extraction & Scoring
         const traitSignals = analyzeTraits(hobbies, skills, talents);
         const scorePackage = scoreProfile(traitSignals);
         const baseScore = scorePackage.score;
@@ -168,8 +154,7 @@ exports.handler = async (event, context) => {
         const apiKey = process.env.FIRST_API_KEY;
         if (!apiKey) throw new Error("API Key missing.");
 
-        // 3. AI Generation (GenerateContent API)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
@@ -188,121 +173,91 @@ RULES: Return valid JSON only. Follow schema strictly. No commentary.`
         };
 
         const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(apiPayload)
-});
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(apiPayload)
+        });
 
-const result = await response.json();
+        const result = await response.json();
 
-if (!response.ok) {
-    console.error("GEMINI ERROR:", result);
-    throw new Error(result.error?.message || "Google API Failure");
-}
+        if (!response.ok) {
+            console.error("GEMINI ERROR:", result);
+            throw new Error(result.error?.message || "Google API Failure");
+        }
 
-// SAFE EXTRACTION LAYER
-let rawContent =
-    result?.candidates?.[0]?.content?.parts?.[0]?.text ||
-    result?.candidates?.[0]?.output ||
-    "";
+        let rawContent = result?.candidates?.[0]?.content?.parts?.[0]?.text || result?.candidates?.[0]?.output || "";
 
-// HARD DEBUG SAFETY
-if (!rawContent) {
-    console.error("EMPTY RESPONSE FROM MODEL:", JSON.stringify(result));
-    
-    // fallback output so system NEVER breaks
-    return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-            careers: [{
-                careerTitle: "Career Analysis Unavailable",
-                alignmentScore: 0,
-                earningPotential: "Unknown",
-                reasoning: "System fallback activated due to AI response failure.",
-                searchKeywords: [],
-                attainmentPlan: ["Retry request"]
-            }],
-            scoreOwnership
-        })
-    };
-}
+        if (!rawContent) {
+            console.error("EMPTY RESPONSE FROM MODEL:", JSON.stringify(result));
+            return {
+                statusCode: 200,
+                headers,
+                body: JSON.stringify({
+                    careers: [{
+                        careerTitle: "Career Analysis Unavailable",
+                        alignmentScore: 0,
+                        earningPotential: "Unknown",
+                        reasoning: "System fallback activated due to AI response failure.",
+                        searchKeywords: [],
+                        attainmentPlan: ["Retry request"]
+                    }],
+                    scoreOwnership
+                })
+            };
+        }
 
-// SAFE PARSING LAYER
-// SAFE PARSING LAYER
-let finalData;
+        let finalData;
+        try {
+            finalData = JSON.parse(rawContent);
+        } catch (e) {
+            console.error("PRIMARY JSON PARSE FAILED, ATTEMPTING RECOVERY:", rawContent);
+            const match = rawContent.match(/\{[\s\S]*\}/);
+            if (!match) {
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify({
+                        careers: [{
+                            careerTitle: "Critical Parse Failure",
+                            alignmentScore: 0,
+                            earningPotential: "Unknown",
+                            reasoning: "AI output could not be recovered.",
+                            searchKeywords: [],
+                            attainmentPlan: ["Retry generation"]
+                        }],
+                        scoreOwnership
+                    })
+                };
+            }
+            finalData = JSON.parse(match[0]);
+        }
 
-try {
-    finalData = JSON.parse(rawContent);
+        let sanitizedCareers = (finalData?.careers || []).map(c => ({
+            careerTitle: c.careerTitle || "Unknown Role",
+            alignmentScore: Number(c.alignmentScore) || 0,
+            earningPotential: c.earningPotential || "Variable",
+            reasoning: c.reasoning || "",
+            searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
+            attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
+        }));
 
-} catch (e) {
-    console.error("PRIMARY JSON PARSE FAILED:", rawContent);
-
-    const match = rawContent.match(/\{[\s\S]*\}/);
-
-    if (!match) {
-        console.error("NO JSON FOUND IN OUTPUT");
-
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                careers: [{
-                    careerTitle: "Parsing Recovery Mode",
-                    alignmentScore: 0,
-                    earningPotential: "Unknown",
-                    reasoning: "AI returned non-JSON output.",
-                    searchKeywords: [],
-                    attainmentPlan: ["Retry generation"]
-                }],
-                scoreOwnership
-            })
-        };
-    }
-
-    try {
-        finalData = JSON.parse(match[0]);
-    } catch (err) {
-        console.error("SECONDARY JSON PARSE FAILED:", match[0]);
+        const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
 
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify({
-                careers: [{
-                    careerTitle: "Critical Parse Failure",
-                    alignmentScore: 0,
-                    earningPotential: "Unknown",
-                    reasoning: "AI output could not be recovered.",
-                    searchKeywords: [],
-                    attainmentPlan: ["Retry generation"]
-                }],
+                careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
                 scoreOwnership
             })
         };
+
+    } catch (error) {
+        console.error("Internal Failure:", error);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: "Processing Error", message: error.message })
+        };
     }
-}
-        
-// ===============================
-// FINAL RESPONSE PIPELINE (ADD HERE)
-// ===============================
-
-let sanitizedCareers = (finalData?.careers || []).map(c => ({
-    careerTitle: c.careerTitle || "Unknown Role",
-    alignmentScore: Number(c.alignmentScore) || 0,
-    earningPotential: c.earningPotential || "Variable",
-    reasoning: c.reasoning || "",
-    searchKeywords: Array.isArray(c.searchKeywords) ? c.searchKeywords : [],
-    attainmentPlan: Array.isArray(c.attainmentPlan) ? c.attainmentPlan : []
-}));
-
-const enhancedCareers = enhanceCareers(sanitizedCareers, traitSignals, baseScore);
-
-return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({
-        careers: enhancedCareers.sort((a, b) => b.alignmentScore - a.alignmentScore),
-        scoreOwnership
-    })
 };
