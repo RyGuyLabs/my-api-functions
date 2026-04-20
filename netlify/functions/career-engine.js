@@ -140,29 +140,40 @@ function enhanceCareers(careers, signals, baseScore) {
         attribution.overlap = overlap;
 
         // fit boost (correct object usage)
-        adjustedScore += calculateFitBoost(career, {
-            technical: signals.technical > 0,
-            creative: signals.creative > 0,
-            analytical: signals.analytical > 0,
-            interpersonal: signals.interpersonal > 0,
-            physical: signals.physical > 0
-        });
+        const fitBoost = calculateFitBoost(career, {
+    technical: signals.technical > 0,
+    creative: signals.creative > 0,
+    analytical: signals.analytical > 0,
+    interpersonal: signals.interpersonal > 0,
+    physical: signals.physical > 0
+});
+
+adjustedScore += fitBoost;
+attribution.fitBoost = fitBoost;
 
         // friction penalty (separate step — CORRECT placement)
-        adjustedScore -= calculateExecutionFriction(career, signals);
+        const friction = calculateExecutionFriction(career, signals);
+        adjustedScore -= friction;
+        attribution.friction = friction;
 
         // legacy boosts (still fine, optional)
+        let manual = 0;
+
         if (signals.technical && career.careerTitle.toLowerCase().includes('engineer')) {
-            adjustedScore += 5;
+        manual += 5;
         }
 
         if (signals.creative && career.careerTitle.toLowerCase().includes('design')) {
-            adjustedScore += 5;
+        manual += 5;
         }
 
+        adjustedScore += manual;
+        attribution.manual = manual;
+
         return {
-            ...career,
-            alignmentScore: Math.min(Math.round(adjustedScore), 100)
+        ...career,
+        alignmentScore: Math.min(Math.round(adjustedScore), 100),
+        _debug: attribution
         };
     });
 }
