@@ -128,6 +128,7 @@ function enhanceCareers(careers, signals, baseScore) {
         let adjustedScore = Number(career.alignmentScore) || baseScore;
         adjustedScore -= calculateCareerOverlapPenalty(career, careers);
         adjustedScore += calculateFitBoost(career, {
+        adjustedScore -= calculateExecutionFriction(career, signals);    
     technical: signals.technical > 0,
     creative: signals.creative > 0,
     analytical: signals.analytical > 0,
