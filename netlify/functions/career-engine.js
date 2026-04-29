@@ -191,6 +191,8 @@ attribution.fitBoost = fitBoost;
 
         const finalScore = Math.min(Math.round(adjustedScore), 100);
 
+const earnings = generateEarnings(finalScore);
+
 return {
   ...career,
   alignmentScore: finalScore,
@@ -198,7 +200,8 @@ return {
   attribution: {
     ...attribution,
     finalScore
-  }
+  },
+  ...earnings
 };
     });
 }
