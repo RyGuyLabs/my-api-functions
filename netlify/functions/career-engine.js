@@ -43,14 +43,19 @@ function calculateFitBoost(career, signals) {
     return boost;
 }
 
-function generateEarnings(score) {
-    const base = 35000;
+function generateEarnings(score, title) {
+    let base = 35000;
 
-    const multiplier = 1 + (score / 100) * 3.2;
+    if (/engineer|developer|software/.test(title)) base = 70000;
+    if (/sales|manager|consult/.test(title)) base = 50000;
+    if (/design|creative/.test(title)) base = 45000;
+    if (/labor|construction|mechanic/.test(title)) base = 40000;
+
+    const multiplier = 1 + (score / 100) * 2.5;
 
     const entry = Math.round(base * multiplier);
     const mid = Math.round(entry * 1.6);
-    const ceiling = Math.round(entry * 3.2);
+    const ceiling = Math.round(entry * 2.5);
 
     return {
         earningEntry: `$${entry.toLocaleString()}`,
