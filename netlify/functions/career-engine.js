@@ -200,7 +200,7 @@ attribution.fitBoost = fitBoost;
 
         const finalScore = Math.max(40, Math.min(Math.round(adjustedScore), 100));
 
-const earnings = generateEarnings(finalScore);
+const earnings = generateEarnings(finalScore, career.careerTitle.toLowerCase());
 
 return {
   ...career,
