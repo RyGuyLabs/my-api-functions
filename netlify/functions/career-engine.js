@@ -143,10 +143,10 @@ function calculateExecutionFriction(career, signals) {
 
 function enhanceCareers(careers, signals, baseScore) {
     return careers.map(career => {
-        let adjustedScore = Number(career.alignmentScore);
+       let adjustedScore = Number(career.alignmentScore);
 
-if (isNaN(adjustedScore)) {
-    adjustedScore = baseScore;
+if (isNaN(adjustedScore) || adjustedScore === 0) {
+    adjustedScore = baseScore + Math.random() * 10;
 }
 
         let attribution = {
