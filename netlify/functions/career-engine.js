@@ -43,6 +43,22 @@ function calculateFitBoost(career, signals) {
     return boost;
 }
 
+function generateEarnings(score) {
+    const base = 35000;
+
+    const multiplier = 1 + (score / 100) * 3.2;
+
+    const entry = Math.round(base * multiplier);
+    const mid = Math.round(entry * 1.6);
+    const ceiling = Math.round(entry * 3.2);
+
+    return {
+        earningEntry: `$${entry.toLocaleString()}`,
+        earningMid: `$${mid.toLocaleString()}`,
+        earningCeiling: `$${ceiling.toLocaleString()}+`
+    };
+}
+
 function calculateCareerOverlapPenalty(career, allCareers) {
     const title = career.careerTitle.toLowerCase();
 
