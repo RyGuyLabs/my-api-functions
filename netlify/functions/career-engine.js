@@ -193,7 +193,7 @@ attribution.fitBoost = fitBoost;
         adjustedScore += manual;
         attribution.manual = manual;
 
-        const finalScore = Math.min(Math.round(adjustedScore), 100);
+        const finalScore = Math.max(40, Math.min(Math.round(adjustedScore), 100));
 
 const earnings = generateEarnings(finalScore);
 
