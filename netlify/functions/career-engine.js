@@ -159,7 +159,7 @@ function enhanceCareers(careers, signals, baseScore) {
        let adjustedScore = Number(career.alignmentScore);
 
 if (isNaN(adjustedScore) || adjustedScore === 0) {
-    adjustedScore = baseScore + Math.random() * 10;
+    adjustedScore = baseScore;
 }
 
         let attribution = {
@@ -205,6 +205,7 @@ attribution.fitBoost = fitBoost;
 
         adjustedScore += manual;
         attribution.manual = manual;
+        adjustedScore += (careers.indexOf(career) - 1) * 1.5;
 
         const finalScore = Math.max(10, Math.min(Math.round(adjustedScore), 100));
 
