@@ -139,19 +139,16 @@ function calculateExecutionFriction(career, signals) {
     const title = career.careerTitle.toLowerCase();
     let penalty = 0;
 
-    // high barrier roles (harder entry)
     if (/(doctor|lawyer|engineer|scientist)/.test(title)) {
+        penalty += 8;
+    }
+
+    if (/(analyst|developer|manager|consult)/.test(title)) {
         penalty += 4;
     }
 
-    // medium barrier roles
-    if (/(analyst|developer|manager|consult)/.test(title)) {
-        penalty += 2;
-    }
-
-    // if user is weak on technical signals but career is technical-heavy
     if (!signals.technical && /(engineer|developer|software)/.test(title)) {
-        penalty += 3;
+        penalty += 6;
     }
 
     return penalty;
