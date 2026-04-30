@@ -43,18 +43,31 @@ function calculateFitBoost(career, signals) {
     return boost;
 }
 
-function generateEarnings(score, title) {
-    let base = 35000;
+function generateEarnings(score, careerTitle = "") {
+    const baseMap = {
+        engineer: 70000,
+        developer: 75000,
+        analyst: 65000,
+        sales: 50000,
+        manager: 60000,
+        designer: 55000,
+        default: 45000
+    };
 
-    if (/engineer|developer|software/.test(title)) base = 70000;
-    if (/sales|manager|consult/.test(title)) base = 50000;
-    if (/design|creative/.test(title)) base = 45000;
-    if (/labor|construction|mechanic/.test(title)) base = 40000;
+    const title = careerTitle.toLowerCase();
+    let base = baseMap.default;
 
-    const multiplier = 1 + (score / 100) * 2.5;
+    for (const key in baseMap) {
+        if (title.includes(key)) {
+            base = baseMap[key];
+            break;
+        }
+    }
+
+    const multiplier = 1 + (score / 100) * 1.8;
 
     const entry = Math.round(base * multiplier);
-    const mid = Math.round(entry * 1.6);
+    const mid = Math.round(entry * 1.5);
     const ceiling = Math.round(entry * 2.5);
 
     return {
@@ -63,7 +76,6 @@ function generateEarnings(score, title) {
         earningCeiling: `$${ceiling.toLocaleString()}+`
     };
 }
-
 function calculateCareerOverlapPenalty(career, allCareers) {
     const title = career.careerTitle.toLowerCase();
 
