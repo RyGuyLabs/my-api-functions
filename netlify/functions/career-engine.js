@@ -35,10 +35,9 @@ function calculateFitBoost(career, signals) {
         matchesPhysical
     ].filter(Boolean).length;
 
-    // exponential-style reinforcement (not linear)
-    if (matchCount === 1) boost = 2;
-    if (matchCount === 2) boost = 5;
-    if (matchCount >= 3) boost = 10;
+   if (matchCount === 1) boost = 1;
+if (matchCount === 2) boost = 3;
+if (matchCount >= 3) boost = 5;
 
     return boost;
 }
