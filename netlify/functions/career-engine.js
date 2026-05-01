@@ -218,7 +218,11 @@ attribution.fitBoost = fitBoost;
 
         const finalScore = Math.max(15, Math.min(Math.round(scaled), 95));
 
-const earnings = generateEarnings(finalScore, career.careerTitle);
+const earnings = generateEarnings(
+    finalScore,
+    career.careerTitle,
+    signals.country || ""
+);
 
 return {
   ...career,
