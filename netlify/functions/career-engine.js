@@ -287,41 +287,69 @@ function isRateLimited(ip) {
 }
 
 exports.handler = async (event) => {
-  const headers = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json"
-  };
 
-  // ✅ Handle preflight request FIRST
-  if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers,
-      body: ""
-    };
-  }
-
-  try {
-    const data = JSON.parse(event.body);
-
-    // 🔧 your save logic here
-    console.log("Saving profile:", data);
-
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ success: true })
+    const headers = {
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Content-Type": "application/json"
     };
 
-  } catch (err) {
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message })
-    };
-  }
+    if (event.httpMethod === "OPTIONS") {
+        return {
+            statusCode: 200,
+            headers,
+            body: ""
+        };
+    }
+
+    try {
+
+        const ip =
+            event.headers["x-nf-client-connection-ip"] ||
+            event.headers["x-forwarded-for"] ||
+            event.headers["client-ip"] ||
+            "unknown";
+
+        if (isRateLimited(ip)) {
+            return {
+                statusCode: 429,
+                headers,
+                body: JSON.stringify({
+                    error: "Rate Limit Exceeded"
+                })
+            };
+        }
+
+        const rawData = JSON.parse(event.body || "{}");
+
+        // EVERYTHING else goes here
+        const hobbies = (rawData.hobbies || "").trim();
+        const skills = (rawData.skills || "").trim();
+        const talents = (rawData.talents || "").trim();
+        const country = (rawData.country || "").trim();
+
+        const traitSignals = analyzeTraits(hobbies, skills, talents);
+        const scorePackage = scoreProfile(traitSignals);
+        const baseScore = scorePackage.score;
+
+        const response = {
+            success: true
+        };
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify(response)
+        };
+
+    } catch (error) {
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: error.message })
+        };
+    }
 };
 
     const ip =
