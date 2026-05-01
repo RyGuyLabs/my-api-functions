@@ -207,7 +207,10 @@ attribution.fitBoost = fitBoost;
         attribution.manual = manual;
         adjustedScore += (careers.indexOf(career) - 1) * 1.5;
 
-        const finalScore = Math.max(10, Math.min(Math.round(adjustedScore), 100));
+        const normalized = adjustedScore / (baseScore + 15); 
+        const scaled = normalized * 100;
+
+        const finalScore = Math.max(15, Math.min(Math.round(scaled), 95));
 
 const earnings = generateEarnings(finalScore, career.careerTitle);
 
