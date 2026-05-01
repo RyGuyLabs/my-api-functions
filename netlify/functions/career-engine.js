@@ -42,37 +42,32 @@ if (matchCount >= 3) boost = 5;
     return boost;
 }
 
-function generateEarnings(score, careerTitle = "") {
-    const baseMap = {
-        engineer: 70000,
-        developer: 75000,
-        analyst: 65000,
-        sales: 50000,
-        manager: 60000,
-        designer: 55000,
-        default: 45000
-    };
+function generateEarnings(score, title) {
 
-    const title = careerTitle.toLowerCase();
-    let base = baseMap.default;
+    const t = title.toLowerCase();
 
-    for (const key in baseMap) {
-        if (title.includes(key)) {
-            base = baseMap[key];
-            break;
-        }
-    }
+    // 1. Career-based baseline
+    let base;
 
-    const multiplier = 1 + (score / 100) * 1.8;
+    if (/(engineer|developer|software)/.test(t)) base = 85000;
+    else if (/(data|analyst|research)/.test(t)) base = 70000;
+    else if (/(sales|manager|consult)/.test(t)) base = 65000;
+    else if (/(design|creative|writer|content)/.test(t)) base = 50000;
+    else if (/(mechanic|construction|labor)/.test(t)) base = 45000;
+    else base = 55000;
 
-    const entry = Math.round(base * multiplier);
-    const mid = Math.round(entry * 1.5);
-    const ceiling = Math.round(entry * 2.5);
+    // 2. Score influence (minor, not dominant)
+    const modifier = 1 + (score - 70) / 200;
+
+    const entry = Math.round(base * 0.8 * modifier);
+    const mid = Math.round(base * 1.2 * modifier);
+    const ceiling = Math.round(base * 1.8 * modifier);
 
     return {
         earningEntry: `$${entry.toLocaleString()}`,
         earningMid: `$${mid.toLocaleString()}`,
-        earningCeiling: `$${ceiling.toLocaleString()}+`
+        earningCeiling: `$${ceiling.toLocaleString()}`,
+        earningPotential: `$${mid.toLocaleString()} avg`
     };
 }
 function calculateCareerOverlapPenalty(career, allCareers) {
