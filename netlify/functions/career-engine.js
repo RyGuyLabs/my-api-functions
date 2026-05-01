@@ -47,32 +47,49 @@ function generateEarnings(score, title, country) {
     const t = (title || "").toLowerCase();
     const loc = (country || "").toLowerCase();
 
-    // 1. Career-based baseline
-    let base;
+    // 1. REALISTIC BASE RANGES (approx BLS-style medians)
+    const salaryMap = [
+        { match: /(software|developer|engineer)/, base: 95000 },
+        { match: /(data|analyst|research)/, base: 75000 },
+        { match: /(sales|account|business|marketing)/, base: 65000 },
+        { match: /(manager|consult)/, base: 80000 },
+        { match: /(design|creative|writer|content)/, base: 55000 },
+        { match: /(mechanic|construction|labor|technician)/, base: 50000 },
+        { match: /(teacher|education|coach)/, base: 52000 }
+    ];
 
-    if (/(engineer|developer|software)/.test(t)) base = 85000;
-    else if (/(data|analyst|research)/.test(t)) base = 70000;
-    else if (/(sales|manager|consult)/.test(t)) base = 65000;
-    else if (/(design|creative|writer|content)/.test(t)) base = 50000;
-    else if (/(mechanic|construction|labor)/.test(t)) base = 45000;
-    else base = 55000;
+    let base = 60000;
 
-    // 2. REGION MULTIPLIER (simple but effective)
+    for (const role of salaryMap) {
+        if (role.match.test(t)) {
+            base = role.base;
+            break;
+        }
+    }
+
+    // 2. REGION ADJUSTMENT (cost-of-living tiers)
     let regionMultiplier = 1;
 
-    if (/united states|usa|california|new york/.test(loc)) regionMultiplier = 1.25;
-    else if (/canada|uk|australia/.test(loc)) regionMultiplier = 1.15;
-    else if (/europe/.test(loc)) regionMultiplier = 1.05;
-    else if (/india|philippines|africa/.test(loc)) regionMultiplier = 0.7;
+    if (/california|new york|washington|massachusetts/.test(loc)) {
+        regionMultiplier = 1.25;
+    } else if (/texas|florida|illinois|colorado/.test(loc)) {
+        regionMultiplier = 1.1;
+    } else if (/united states|usa/.test(loc)) {
+        regionMultiplier = 1.0;
+    } else if (/canada|uk|australia/.test(loc)) {
+        regionMultiplier = 1.1;
+    } else if (/india|philippines|africa/.test(loc)) {
+        regionMultiplier = 0.7;
+    }
 
-    base = base * regionMultiplier;
+    base *= regionMultiplier;
 
-    // 3. Score influence (light)
-    const modifier = 1 + (score - 70) / 200;
+    // 3. ALIGNMENT INFLUENCE (tight, not dominant)
+    const modifier = 1 + ((score - 70) / 300);
 
-    const entry = Math.round(base * 0.8 * modifier);
-    const mid = Math.round(base * 1.2 * modifier);
-    const ceiling = Math.round(base * 1.8 * modifier);
+    const entry = Math.round(base * 0.75 * modifier);
+    const mid = Math.round(base * 1.15 * modifier);
+    const ceiling = Math.round(base * 1.7 * modifier);
 
     return {
         earningEntry: `$${entry.toLocaleString()}`,
