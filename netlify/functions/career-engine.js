@@ -42,9 +42,10 @@ if (matchCount >= 3) boost = 5;
     return boost;
 }
 
-function generateEarnings(score, title) {
+function generateEarnings(score, title, country) {
 
-    const t = title.toLowerCase();
+    const t = (title || "").toLowerCase();
+    const loc = (country || "").toLowerCase();
 
     // 1. Career-based baseline
     let base;
@@ -56,7 +57,17 @@ function generateEarnings(score, title) {
     else if (/(mechanic|construction|labor)/.test(t)) base = 45000;
     else base = 55000;
 
-    // 2. Score influence (minor, not dominant)
+    // 2. REGION MULTIPLIER (simple but effective)
+    let regionMultiplier = 1;
+
+    if (/united states|usa|california|new york/.test(loc)) regionMultiplier = 1.25;
+    else if (/canada|uk|australia/.test(loc)) regionMultiplier = 1.15;
+    else if (/europe/.test(loc)) regionMultiplier = 1.05;
+    else if (/india|philippines|africa/.test(loc)) regionMultiplier = 0.7;
+
+    base = base * regionMultiplier;
+
+    // 3. Score influence (light)
     const modifier = 1 + (score - 70) / 200;
 
     const entry = Math.round(base * 0.8 * modifier);
