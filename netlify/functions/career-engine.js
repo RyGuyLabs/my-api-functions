@@ -497,10 +497,9 @@ let sanitizedCareers = (finalData.careers || []).map(c => ({
     explanation: buildCareerExplanation(c, traitSignals)
 }));
 
-// FIXED: enhanceCareers is now defined at the top of this file
 finalData.careers = enhanceCareers(
     sanitizedCareers,
-    traitSignals,
+    { ...traitSignals, country },
     baseScore
 );
         finalData.scoreOwnership = scoreOwnership;
