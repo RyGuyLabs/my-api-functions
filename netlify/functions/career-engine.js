@@ -286,17 +286,43 @@ function isRateLimited(ip) {
     return timestamps.length > RATE_LIMIT;
 }
 
-exports.handler = async (event, context) => {
-    const headers = {
+exports.handler = async (event) => {
+  const headers = {
     "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json"
-};
+  };
 
-    if (event.httpMethod === "OPTIONS") {
-        return { statusCode: 200, headers, body: "OK" };
-    }
+  // ✅ Handle preflight request FIRST
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers,
+      body: ""
+    };
+  }
+
+  try {
+    const data = JSON.parse(event.body);
+
+    // 🔧 your save logic here
+    console.log("Saving profile:", data);
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ success: true })
+    };
+
+  } catch (err) {
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: err.message })
+    };
+  }
+};
 
     const ip =
 event.headers["x-nf-client-connection-ip"] ||
