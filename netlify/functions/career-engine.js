@@ -299,19 +299,28 @@ exports.handler = async (event) => {
         const ip = ...;
 
         if (isRateLimited(ip)) {
-            return { statusCode: 429, headers, body: JSON.stringify(...) };
+            return {
+                statusCode: 429,
+                headers,
+                body: JSON.stringify({
+                    error: "Rate Limit Exceeded",
+                    message: "Too many requests. Please wait a moment."
+                })
+            };
         }
 
         const rawData = JSON.parse(event.body || "{}");
 
-        let hobbies = ...
-        let skills = ...
-        let talents = ...
-        let country = ...
+        let hobbies = (rawData.hobbies || "").trim();
+        let skills = (rawData.skills || "").trim();
+        let talents = (rawData.talents || "").trim();
+        let country = (rawData.country || "").trim();
 
-        const traitSignals = analyzeTraits(...);
-        const scorePackage = scoreProfile(...);
+        const traitSignals = analyzeTraits(hobbies, skills, talents);
+        const scorePackage = scoreProfile(traitSignals);
         const baseScore = scorePackage.score;
+
+        // ALL API + processing code stays here
 
         const response = await fetch(url, {
             method: "POST",
