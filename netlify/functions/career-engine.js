@@ -287,38 +287,32 @@ function isRateLimited(ip) {
 }
 
 exports.handler = async (event) => {
-
+    // 1. Setup Headers - Explicitly allow the origin and the custom headers you use
     const headers = {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nf-client-connection-ip",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Content-Type": "application/json"
     };
 
-    if (!event.headers || !event.headers.origin) {
-        return {
-            statusCode: 200,
-            headers,
-            body: ""
-        };
-    }
-
+    // 2. Handle Preflight (OPTIONS) - Do this BEFORE any other logic
     if (event.httpMethod === "OPTIONS") {
         return {
-            statusCode: 200,
+            statusCode: 204, // "No Content" is the cleaner standard for CORS preflight
             headers,
             body: ""
         };
     }
 
     try {
-
+        // 3. Extract IP safely
         const ip =
             event.headers["x-nf-client-connection-ip"] ||
             event.headers["x-forwarded-for"] ||
             event.headers["client-ip"] ||
             "unknown";
 
+        // 4. Rate Limiting Check
         if (isRateLimited(ip)) {
             return {
                 statusCode: 429,
