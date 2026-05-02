@@ -316,31 +316,33 @@ exports.handler = async (event) => {
                 statusCode: 429,
                 headers,
                 body: JSON.stringify({
-                    error: "Rate Limit Exceeded"
-                })
+                    error: "Rate Limit Exceeded"                
             };
         }
 
         const rawData = JSON.parse(event.body || "{}");
 
-        // EVERYTHING else goes here
-        const hobbies = (rawData.hobbies || "").trim();
-        const skills = (rawData.skills || "").trim();
-        const talents = (rawData.talents || "").trim();
-        const country = (rawData.country || "").trim();
+        let hobbies = (rawData.hobbies || "").trim();
+        let skills = (rawData.skills || "").trim();
+        let talents = (rawData.talents || "").trim();
+        let country = (rawData.country || "").trim();
 
         const traitSignals = analyzeTraits(hobbies, skills, talents);
         const scorePackage = scoreProfile(traitSignals);
         const baseScore = scorePackage.score;
 
-        const response = {
-            success: true
-        };
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(apiPayload)
+        });
+
+        const result = await response.json();
 
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(response)
+            body: JSON.stringify(result)
         };
 
     } catch (error) {
@@ -351,7 +353,6 @@ exports.handler = async (event) => {
         };
     }
 };
-
     const ip =
 event.headers["x-nf-client-connection-ip"] ||
 event.headers["x-forwarded-for"] ||
