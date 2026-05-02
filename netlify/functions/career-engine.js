@@ -288,52 +288,34 @@ function isRateLimited(ip) {
 
 exports.handler = async (event) => {
 
-    const headers = {
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Content-Type": "application/json"
-    };
+    const headers = { ... };
 
     if (event.httpMethod === "OPTIONS") {
-        return {
-            statusCode: 200,
-            headers,
-            body: ""
-        };
+        return { statusCode: 200, headers, body: "" };
     }
 
     try {
 
-        const ip =
-            event.headers["x-nf-client-connection-ip"] ||
-            event.headers["x-forwarded-for"] ||
-            event.headers["client-ip"] ||
-            "unknown";
+        const ip = ...;
 
         if (isRateLimited(ip)) {
-    return {
-        statusCode: 429,
-        headers,
-        body: JSON.stringify({
-            error: "Rate Limit Exceeded"
-        })
-    };
-}
+            return { statusCode: 429, headers, body: JSON.stringify(...) };
+        }
+
         const rawData = JSON.parse(event.body || "{}");
 
-        let hobbies = (rawData.hobbies || "").trim();
-        let skills = (rawData.skills || "").trim();
-        let talents = (rawData.talents || "").trim();
-        let country = (rawData.country || "").trim();
+        let hobbies = ...
+        let skills = ...
+        let talents = ...
+        let country = ...
 
-        const traitSignals = analyzeTraits(hobbies, skills, talents);
-        const scorePackage = scoreProfile(traitSignals);
+        const traitSignals = analyzeTraits(...);
+        const scorePackage = scoreProfile(...);
         const baseScore = scorePackage.score;
 
         const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(apiPayload)
         });
 
