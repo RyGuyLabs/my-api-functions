@@ -289,23 +289,27 @@ function isRateLimited(ip) {
 exports.handler = async (event) => {
 
     const headers = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Content-Type": "application/json"
-};
-
-   if (event.httpMethod === "OPTIONS") {
-    return {
-        statusCode: 200,
-        headers: {
-            "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Allow-Methods": "POST, OPTIONS"
-        },
-        body: ""
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Content-Type": "application/json"
     };
-}
+
+    if (!event.headers || !event.headers.origin) {
+        return {
+            statusCode: 200,
+            headers,
+            body: ""
+        };
+    }
+
+    if (event.httpMethod === "OPTIONS") {
+        return {
+            statusCode: 200,
+            headers,
+            body: ""
+        };
+    }
 
     try {
 
