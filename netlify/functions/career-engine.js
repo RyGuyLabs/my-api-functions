@@ -312,14 +312,14 @@ exports.handler = async (event) => {
             "unknown";
 
         if (isRateLimited(ip)) {
-            return {
-                statusCode: 429,
-                headers,
-                body: JSON.stringify({
-                    error: "Rate Limit Exceeded"                
-            };
-        }
-
+    return {
+        statusCode: 429,
+        headers,
+        body: JSON.stringify({
+            error: "Rate Limit Exceeded"
+        })
+       };
+      }
         const rawData = JSON.parse(event.body || "{}");
 
         let hobbies = (rawData.hobbies || "").trim();
