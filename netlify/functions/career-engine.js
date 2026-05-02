@@ -287,7 +287,7 @@ function isRateLimited(ip) {
 }
 
 exports.handler = async (event) => {
-    // 1. Setup Headers - Explicitly allow the origin and the custom headers you use
+    // 1. Define headers at the very top so they are available to all return statements
     const headers = {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nf-client-connection-ip",
@@ -295,10 +295,11 @@ exports.handler = async (event) => {
         "Content-Type": "application/json"
     };
 
-    // 2. Handle Preflight (OPTIONS) - Do this BEFORE any other logic
+    // 2. Handle OPTIONS immediately
+    // Don't check for origin presence here; just return the headers the browser is asking for.
     if (event.httpMethod === "OPTIONS") {
         return {
-            statusCode: 204, // "No Content" is the cleaner standard for CORS preflight
+            statusCode: 204, 
             headers,
             body: ""
         };
