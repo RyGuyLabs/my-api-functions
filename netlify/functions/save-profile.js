@@ -9,34 +9,55 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 exports.handler = async (event) => {
+    // 1. Define the "Key" to the gate
+    const headers = {
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Content-Type": "application/json"
+    };
+
+    // 2. Handle the Preflight Handshake (Critical for Squarespace)
+    if (event.httpMethod === "OPTIONS") {
+        return {
+            statusCode: 204, // No Content
+            headers,
+            body: ""
+        };
+    }
+
+    // 3. Only allow POST for the actual save logic
     if (event.httpMethod !== "POST") {
         return {
             statusCode: 405,
-            body: "Method Not Allowed"
+            headers,
+            body: JSON.stringify({ error: "Method Not Allowed" })
         };
     }
 
     try {
-        const body = JSON.parse(event.body);
-
+        const body = JSON.parse(event.body || "{}");
         const { careers, primary } = body;
 
-        // 🔒 BASIC VALIDATION
+        // BASIC VALIDATION
         if (!careers || !primary) {
             return {
                 statusCode: 400,
+                headers,
                 body: JSON.stringify({ error: "Missing data" })
             };
         }
 
-        // 🧠 OPTIONAL: limit size (prevents abuse)
+        // Payload size limit
         if (JSON.stringify(body).length > 50000) {
             return {
                 statusCode: 413,
+                headers,
                 body: JSON.stringify({ error: "Payload too large" })
             };
         }
 
+        // SAVE TO FIRESTORE
         await db.collection("careerProfiles").add({
             careers,
             primary,
@@ -45,6 +66,7 @@ exports.handler = async (event) => {
 
         return {
             statusCode: 200,
+            headers,
             body: JSON.stringify({ success: true })
         };
 
@@ -53,7 +75,8 @@ exports.handler = async (event) => {
 
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "Internal error" })
+            headers,
+            body: JSON.stringify({ error: "Internal error", message: err.message })
         };
     }
 };
