@@ -296,7 +296,11 @@ exports.handler = async (event) => {
 
     try {
 
-        const ip = ...;
+        const ip =
+            event.headers["x-nf-client-connection-ip"] ||
+            event.headers["x-forwarded-for"] ||
+            event.headers["client-ip"] ||
+            "unknown";
 
         if (isRateLimited(ip)) {
             return {
@@ -320,65 +324,31 @@ exports.handler = async (event) => {
         const scorePackage = scoreProfile(traitSignals);
         const baseScore = scorePackage.score;
 
-        // ALL API + processing code stays here
-
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(apiPayload)
-        });
-
-        const result = await response.json();
-
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify(result)
+        const scoreOwnership = {
+            baseScore,
+            breakdown: scorePackage.breakdown,
+            activeTraits: scorePackage.activeTraits,
+            traitSignals,
+            inputFingerprint: Buffer
+                .from(`${hobbies}|${skills}|${talents}|${country}`)
+                .toString("base64"),
+            timestamp: Date.now(),
+            ip
         };
 
-    } catch (error) {
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: error.message })
-        };
-    }
-};
-        const rawData = JSON.parse(event.body || "{}");
+        // Input size limit
+        const MAX_INPUT_LENGTH = 2000;
+        if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({
+                    error: "Input too large",
+                    message: `Please limit your hobbies, skills, and talents to a combined ${MAX_INPUT_LENGTH} characters.`
+                })
+            };
+        }
 
-let hobbies = (rawData.hobbies || "").trim();
-let skills = (rawData.skills || "").trim();
-let talents = (rawData.talents || "").trim();
-let country = (rawData.country || "").trim();
-const traitSignals = analyzeTraits(hobbies, skills, talents);
-const traitConflicts = detectTraitConflicts(traitSignals);
-const scorePackage = scoreProfile(traitSignals);
-const baseScore = scorePackage.score;
-const scoreOwnership = {
-    baseScore,
-    breakdown: scorePackage.breakdown,
-    activeTraits: scorePackage.activeTraits,
-    traitSignals,
-    traitConflicts,
-    inputFingerprint: Buffer
-        .from(`${hobbies}|${skills}|${talents}|${country}`)
-        .toString("base64"),
-    timestamp: Date.now(),
-    ip
-};
-       
-// Input size limit
-const MAX_INPUT_LENGTH = 2000;
-if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
-    return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({
-            error: "Input too large",
-            message: `Please limit your hobbies, skills, and talents to a combined ${MAX_INPUT_LENGTH} characters.`
-        })
-    };
-}
         const apiKey = process.env.FIRST_API_KEY;
 
         if (!apiKey) {
@@ -389,7 +359,6 @@ if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
             };
         }
 
-        // Gemini API URL
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
         const apiPayload = {
