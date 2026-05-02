@@ -335,19 +335,6 @@ exports.handler = async (event) => {
         };
     }
 };
-
-if (isRateLimited(ip)) {
-    return {
-        statusCode: 429,
-        headers,
-        body: JSON.stringify({
-            error: "Rate Limit Exceeded",
-            message: "Too many requests. Please wait a moment."
-        })
-    };
-}
-
-    try {
         const rawData = JSON.parse(event.body || "{}");
 
 let hobbies = (rawData.hobbies || "").trim();
