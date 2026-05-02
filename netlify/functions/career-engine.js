@@ -353,11 +353,6 @@ exports.handler = async (event) => {
         };
     }
 };
-    const ip =
-event.headers["x-nf-client-connection-ip"] ||
-event.headers["x-forwarded-for"] ||
-event.headers["client-ip"] ||
-"unknown";
 
 if (isRateLimited(ip)) {
     return {
