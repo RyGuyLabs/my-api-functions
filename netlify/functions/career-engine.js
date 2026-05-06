@@ -286,6 +286,16 @@ function isRateLimited(ip) {
     return timestamps.length > RATE_LIMIT;
 }
 
+const admin = require("firebase-admin");
+
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
+    });
+}
+
+const db = admin.firestore();
+
 exports.handler = async (event) => {
     // 1. Define headers at the very top so they are available to all return statements
     const headers = {
