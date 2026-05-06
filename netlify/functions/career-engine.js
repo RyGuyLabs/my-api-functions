@@ -297,7 +297,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const requestLog = new Map();
 
-// 2. HELPER LOGIC (Your scoring math)
+// 2. HELPER FUNCTIONS (The "Brains" of the RyGuy Engine)
 function analyzeTraits(hobbies, skills, talents) {
     const text = (hobbies + " " + skills + " " + talents).toLowerCase();
     const countMatches = (regex) => (text.match(regex) || []).length;
@@ -318,7 +318,12 @@ function scoreProfile(signals) {
         technical: signals.technical ? 20 : 0,
         physical: signals.physical ? 20 : 0
     };
-    return { score: Object.values(breakdown).reduce((a, b) => a + b, 0), breakdown };
+    const activeTraits = Object.keys(breakdown).filter(key => breakdown[key] > 0);
+    return { 
+        score: Object.values(breakdown).reduce((a, b) => a + b, 0), 
+        breakdown,
+        activeTraits 
+    };
 }
 
 function isRateLimited(ip) {
@@ -327,10 +332,14 @@ function isRateLimited(ip) {
     const timestamps = requestLog.get(ip).filter(ts => now - ts < 60000);
     timestamps.push(now);
     requestLog.set(ip, timestamps);
-    return timestamps.length > 10;
+    return timestamps.length > 20; // Allow 20 tries per minute
 }
 
-// 3. THE MAIN HANDLER (The Front Door)
+// STUB FUNCTIONS (Placeholders for your specific logic if not defined elsewhere)
+function buildCareerExplanation(c, s) { return `Aligned with your profile strength.`; }
+function enhanceCareers(careers, meta, score) { return careers; }
+
+// 3. THE MAIN HANDLER
 exports.handler = async (event) => {
     const headers = {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
@@ -346,23 +355,35 @@ exports.handler = async (event) => {
         if (isRateLimited(ip)) return { statusCode: 429, headers, body: JSON.stringify({ error: "Rate Limit Exceeded" }) };
 
         const rawData = JSON.parse(event.body || "{}");
-        const { hobbies = "", skills = "", talents = "", country = "" } = rawData;
+        const hobbies = (rawData.hobbies || "").trim();
+        const skills = (rawData.skills || "").trim();
+        const talents = (rawData.talents || "").trim();
+        const country = (rawData.country || "").trim();
 
-        // Run Analysis
+        // VALIDATION
+        const MAX_INPUT_LENGTH = 2000;
+        if ((hobbies + skills + talents).length > MAX_INPUT_LENGTH) {
+            return { statusCode: 400, headers, body: JSON.stringify({ error: "Input too large" }) };
+        }
+
         const traitSignals = analyzeTraits(hobbies, skills, talents);
         const scorePackage = scoreProfile(traitSignals);
+        const baseScore = scorePackage.score;
 
-        // Call Gemini AI
         const apiKey = process.env.FIRST_API_KEY;
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
         const apiPayload = {
             contents: [{
                 parts: [{
-                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine. MISSION: Transform natural traits into 3-5 high-performance careers. USER DATA: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}. LOCATION: ${country}. TRAITS: ${JSON.stringify(traitSignals)}. Return ONLY a JSON object with a "careers" array.`
+                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine.
+MISSION: Transform traits into 3–5 high-performance careers.
+USER DATA: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}, Location: ${country}
+TRAITS: ${JSON.stringify(traitSignals)}, Score: ${baseScore}/100
+Return ONLY a JSON object: {"careers": [{"careerTitle": "", "alignmentScore": 0, "earningPotential": "", "reasoning": "", "searchKeywords": [], "attainmentPlan": []}]}`
                 }]
             }],
-            generationConfig: { response_mime_type: "application/json" }
+            generationConfig: { temperature: 0.2, response_mime_type: "application/json" }
         };
 
         const response = await fetch(url, {
@@ -372,14 +393,25 @@ exports.handler = async (event) => {
         });
 
         const result = await response.json();
-        const finalData = JSON.parse(result.candidates[0].content.parts[0].text);
+        if (!response.ok) throw new Error(result.error?.message || "Google API Failure");
 
-        // SAVE TO FIRESTORE
+        let rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        let finalData = JSON.parse(rawContent);
+
+        // Sanitize and Enhance
+        finalData.careers = (finalData.careers || []).map(c => ({
+            ...c,
+            explanation: buildCareerExplanation(c, traitSignals)
+        }));
+
+        finalData.careers = enhanceCareers(finalData.careers, { ...traitSignals, country }, baseScore);
+
+        // 4. SAVE TO FIRESTORE
         await db.collection("career_interactions").add({
             input: { hobbies, skills, talents, country },
             traits: traitSignals,
-            results: finalData.careers,
-            ip,
+            baseScore,
+            userIp: ip,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
@@ -390,11 +422,11 @@ exports.handler = async (event) => {
         };
 
     } catch (error) {
-        console.error("Engine Error:", error);
+        console.error("Internal Failure:", error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "Internal Error", message: error.message })
+            body: JSON.stringify({ error: "Processing Error", message: error.message })
         };
     }
 };
