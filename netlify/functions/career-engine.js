@@ -292,21 +292,6 @@ const admin = require("firebase-admin");
 function buildCareerExplanation(c, s) { return `Aligned with your profile strength.`; }
 function enhanceCareers(careers, meta, score) { return careers; }
 
-// 3. THE MAIN HANDLER
-exports.handler = async (event) => {
-    const headers = {
-        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nf-client-connection-ip",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Content-Type": "application/json"
-    };
-
-    if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers, body: "" };
-
-    try {
-        const ip = event.headers["x-nf-client-connection-ip"] || "unknown";
-        if (isRateLimited(ip)) return { statusCode: 429, headers, body: JSON.stringify({ error: "Rate Limit Exceeded" }) };
-
         const rawData = JSON.parse(event.body || "{}");
         const hobbies = (rawData.hobbies || "").trim();
         const skills = (rawData.skills || "").trim();
