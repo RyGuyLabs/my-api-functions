@@ -288,16 +288,50 @@ function isRateLimited(ip) {
 
 const admin = require("firebase-admin");
 
+// 1. INITIALIZE FIREBASE
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
     });
 }
-
 const db = admin.firestore();
+const requestLog = new Map();
 
+// 2. HELPER LOGIC (Your scoring math)
+function analyzeTraits(hobbies, skills, talents) {
+    const text = (hobbies + " " + skills + " " + talents).toLowerCase();
+    const countMatches = (regex) => (text.match(regex) || []).length;
+    return {
+        analytical: Math.min(countMatches(/(analyz|data|research|problem|logic|math)/g), 3),
+        creative: Math.min(countMatches(/(design|art|write|music|content|creative)/g), 3),
+        interpersonal: Math.min(countMatches(/(talk|help|teach|communicat|sales|lead)/g), 3),
+        technical: Math.min(countMatches(/(code|tech|software|engineer|develop)/g), 3),
+        physical: Math.min(countMatches(/(build|hands|outdoor|fitness|labor)/g), 3)
+    };
+}
+
+function scoreProfile(signals) {
+    const breakdown = {
+        analytical: signals.analytical ? 20 : 0,
+        creative: signals.creative ? 20 : 0,
+        interpersonal: signals.interpersonal ? 20 : 0,
+        technical: signals.technical ? 20 : 0,
+        physical: signals.physical ? 20 : 0
+    };
+    return { score: Object.values(breakdown).reduce((a, b) => a + b, 0), breakdown };
+}
+
+function isRateLimited(ip) {
+    const now = Date.now();
+    if (!requestLog.has(ip)) requestLog.set(ip, []);
+    const timestamps = requestLog.get(ip).filter(ts => now - ts < 60000);
+    timestamps.push(now);
+    requestLog.set(ip, timestamps);
+    return timestamps.length > 10;
+}
+
+// 3. THE MAIN HANDLER (The Front Door)
 exports.handler = async (event) => {
-    // 1. Set up headers for Squarespace
     const headers = {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nf-client-connection-ip",
@@ -305,70 +339,62 @@ exports.handler = async (event) => {
         "Content-Type": "application/json"
     };
 
-    // 2. Handle the Pre-flight check (standard for web apps)
-    if (event.httpMethod === "OPTIONS") {
-        return { statusCode: 204, headers, body: "" };
-    }
+    if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers, body: "" };
 
     try {
-        // 3. Get the User's IP and Data
         const ip = event.headers["x-nf-client-connection-ip"] || "unknown";
+        if (isRateLimited(ip)) return { statusCode: 429, headers, body: JSON.stringify({ error: "Rate Limit Exceeded" }) };
+
         const rawData = JSON.parse(event.body || "{}");
+        const { hobbies = "", skills = "", talents = "", country = "" } = rawData;
 
-        // 4. Rate Limiting
-        if (isRateLimited(ip)) {
-            return {
-                statusCode: 429,
-                headers,
-                body: JSON.stringify({ error: "Rate Limit Exceeded" })
-            };
-        }
-
-        // 5. Run your Trait Analysis
-        const traitSignals = analyzeTraits(rawData.hobbies || "", rawData.skills || "", rawData.talents || "");
+        // Run Analysis
+        const traitSignals = analyzeTraits(hobbies, skills, talents);
         const scorePackage = scoreProfile(traitSignals);
 
-        // 6. Call the Gemini AI
+        // Call Gemini AI
         const apiKey = process.env.FIRST_API_KEY;
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
-        // (The AI payload goes here - the big block of text starting with "SYSTEM: You are the RyGuyLabs...")
+        const apiPayload = {
+            contents: [{
+                parts: [{
+                    text: `SYSTEM: You are the RyGuyLabs Career Alignment Engine. MISSION: Transform natural traits into 3-5 high-performance careers. USER DATA: Hobbies: ${hobbies}, Skills: ${skills}, Talents: ${talents}. LOCATION: ${country}. TRAITS: ${JSON.stringify(traitSignals)}. Return ONLY a JSON object with a "careers" array.`
+                }]
+            }],
+            generationConfig: { response_mime_type: "application/json" }
+        };
+
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: `... (Your Full Prompt Here) ...` }] }]
-            })
+            body: JSON.stringify(apiPayload)
         });
 
         const result = await response.json();
-        let finalData = JSON.parse(result.candidates[0].content.parts[0].text);
+        const finalData = JSON.parse(result.candidates[0].content.parts[0].text);
 
-        // 7. Apply your custom scoring math
-        finalData.careers = enhanceCareers(finalData.careers, { ...traitSignals, country: rawData.country }, scorePackage.score);
-
-        // 8. SAVE TO FIRESTORE
-        // This is where you actually log the interaction in your database
+        // SAVE TO FIRESTORE
         await db.collection("career_interactions").add({
-            ...rawData,
+            input: { hobbies, skills, talents, country },
             traits: traitSignals,
-            userIp: ip,
+            results: finalData.careers,
+            ip,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // 9. Send the final result back to your website
         return {
             statusCode: 200,
             headers,
             body: JSON.stringify(finalData)
         };
 
-    } catch (err) {
-        console.error("Backend Error:", err);
+    } catch (error) {
+        console.error("Engine Error:", error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: "Internal Server Error", details: err.message })
+            body: JSON.stringify({ error: "Internal Error", message: error.message })
         };
     }
 };
