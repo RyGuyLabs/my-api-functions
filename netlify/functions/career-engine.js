@@ -288,53 +288,6 @@ function isRateLimited(ip) {
 
 const admin = require("firebase-admin");
 
-// 1. INITIALIZE FIREBASE
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
-    });
-}
-const db = admin.firestore();
-const requestLog = new Map();
-
-// 2. HELPER FUNCTIONS (The "Brains" of the RyGuy Engine)
-function analyzeTraits(hobbies, skills, talents) {
-    const text = (hobbies + " " + skills + " " + talents).toLowerCase();
-    const countMatches = (regex) => (text.match(regex) || []).length;
-    return {
-        analytical: Math.min(countMatches(/(analyz|data|research|problem|logic|math)/g), 3),
-        creative: Math.min(countMatches(/(design|art|write|music|content|creative)/g), 3),
-        interpersonal: Math.min(countMatches(/(talk|help|teach|communicat|sales|lead)/g), 3),
-        technical: Math.min(countMatches(/(code|tech|software|engineer|develop)/g), 3),
-        physical: Math.min(countMatches(/(build|hands|outdoor|fitness|labor)/g), 3)
-    };
-}
-
-function scoreProfile(signals) {
-    const breakdown = {
-        analytical: signals.analytical ? 20 : 0,
-        creative: signals.creative ? 20 : 0,
-        interpersonal: signals.interpersonal ? 20 : 0,
-        technical: signals.technical ? 20 : 0,
-        physical: signals.physical ? 20 : 0
-    };
-    const activeTraits = Object.keys(breakdown).filter(key => breakdown[key] > 0);
-    return { 
-        score: Object.values(breakdown).reduce((a, b) => a + b, 0), 
-        breakdown,
-        activeTraits 
-    };
-}
-
-function isRateLimited(ip) {
-    const now = Date.now();
-    if (!requestLog.has(ip)) requestLog.set(ip, []);
-    const timestamps = requestLog.get(ip).filter(ts => now - ts < 60000);
-    timestamps.push(now);
-    requestLog.set(ip, timestamps);
-    return timestamps.length > 20; // Allow 20 tries per minute
-}
-
 // STUB FUNCTIONS (Placeholders for your specific logic if not defined elsewhere)
 function buildCareerExplanation(c, s) { return `Aligned with your profile strength.`; }
 function enhanceCareers(careers, meta, score) { return careers; }
