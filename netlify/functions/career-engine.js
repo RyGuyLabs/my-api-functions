@@ -297,7 +297,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 exports.handler = async (event) => {
-    // 1. Define headers at the very top so they are available to all return statements
+    // 1. Set up headers for Squarespace
     const headers = {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nf-client-connection-ip",
@@ -305,59 +305,62 @@ exports.handler = async (event) => {
         "Content-Type": "application/json"
     };
 
-    // 2. Handle OPTIONS immediately
-    // Don't check for origin presence here; just return the headers the browser is asking for.
+    // 2. Handle the Pre-flight check (standard for web apps)
     if (event.httpMethod === "OPTIONS") {
-        return {
-            statusCode: 204, 
-            headers,
-            body: ""
-        };
+        return { statusCode: 204, headers, body: "" };
     }
 
     try {
-        // 3. Extract IP safely
-        const ip =
-            event.headers["x-nf-client-connection-ip"] ||
-            event.headers["x-forwarded-for"] ||
-            event.headers["client-ip"] ||
-            "unknown";
+        // 3. Get the User's IP and Data
+        const ip = event.headers["x-nf-client-connection-ip"] || "unknown";
+        const rawData = JSON.parse(event.body || "{}");
 
-        // 4. Rate Limiting Check
+        // 4. Rate Limiting
         if (isRateLimited(ip)) {
             return {
                 statusCode: 429,
                 headers,
-                body: JSON.stringify({
-                    error: "Rate Limit Exceeded",
-                    message: "Too many requests. Please wait a moment."
-                })
+                body: JSON.stringify({ error: "Rate Limit Exceeded" })
             };
         }
 
-        // 5. Only allow POST for actual data processing
-        if (event.httpMethod !== "POST") {
-            return {
-                statusCode: 405,
-                headers,
-                body: JSON.stringify({ error: "Method Not Allowed" })
-            };
-        }
+        // 5. Run your Trait Analysis
+        const traitSignals = analyzeTraits(rawData.hobbies || "", rawData.skills || "", rawData.talents || "");
+        const scorePackage = scoreProfile(traitSignals);
 
-        // 6. Process the Body
-        const data = JSON.parse(event.body || "{}");
+        // 6. Call the Gemini AI
+        const apiKey = process.env.FIRST_API_KEY;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
 
-        // 7. Save to Firestore (using the admin SDK you initialized)
+        // (The AI payload goes here - the big block of text starting with "SYSTEM: You are the RyGuyLabs...")
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: `... (Your Full Prompt Here) ...` }] }]
+            })
+        });
+
+        const result = await response.json();
+        let finalData = JSON.parse(result.candidates[0].content.parts[0].text);
+
+        // 7. Apply your custom scoring math
+        finalData.careers = enhanceCareers(finalData.careers, { ...traitSignals, country: rawData.country }, scorePackage.score);
+
+        // 8. SAVE TO FIRESTORE
+        // This is where you actually log the interaction in your database
         await db.collection("career_interactions").add({
-            ...data,
+            ...rawData,
+            traits: traitSignals,
             userIp: ip,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // 9. Send the final result back to your website
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ message: "Success! Data saved to RyGuy Labs." })
+            body: JSON.stringify(finalData)
         };
 
     } catch (err) {
