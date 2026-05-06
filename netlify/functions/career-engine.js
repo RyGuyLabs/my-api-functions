@@ -406,8 +406,8 @@ Return ONLY a JSON object: {"careers": [{"careerTitle": "", "alignmentScore": 0,
 
         finalData.careers = enhanceCareers(finalData.careers, { ...traitSignals, country }, baseScore);
 
-        // 4. SAVE TO FIRESTORE
-        await db.collection("career_interactions").add({
+        // 4. SAVE TO FIRESTORE (REVISED)
+        const docRef = await db.collection("career_interactions").add({
             input: { hobbies, skills, talents, country },
             traits: traitSignals,
             baseScore,
@@ -415,10 +415,14 @@ Return ONLY a JSON object: {"careers": [{"careerTitle": "", "alignmentScore": 0,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // 5. RETURN DATA + UNIQUE PROFILE ID
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify(finalData)
+            body: JSON.stringify({
+                ...finalData,
+                profileId: docRef.id // This is the unique key for re-access
+            })
         };
 
     } catch (error) {
