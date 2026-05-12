@@ -286,16 +286,6 @@ function isRateLimited(ip) {
     return timestamps.length > RATE_LIMIT;
 }
 
-const admin = require("firebase-admin");
-
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
-    });
-}
-
-const db = admin.firestore();
-
 exports.handler = async (event) => {
     // 1. Define headers at the very top so they are available to all return statements
     const headers = {
@@ -334,41 +324,6 @@ exports.handler = async (event) => {
                 })
             };
         }
-
-        // 5. Only allow POST for actual data processing
-        if (event.httpMethod !== "POST") {
-            return {
-                statusCode: 405,
-                headers,
-                body: JSON.stringify({ error: "Method Not Allowed" })
-            };
-        }
-
-        // 6. Process the Body
-        const data = JSON.parse(event.body || "{}");
-
-        // 7. Save to Firestore (using the admin SDK you initialized)
-        await db.collection("career_interactions").add({
-            ...data,
-            userIp: ip,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({ message: "Success! Data saved to RyGuy Labs." })
-        };
-
-    } catch (err) {
-        console.error("Backend Error:", err);
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: "Internal Server Error", details: err.message })
-        };
-    }
-};
 
         const rawData = JSON.parse(event.body || "{}");
 
