@@ -225,14 +225,6 @@ const rankMultiplier = (() => {
 adjustedScore += rankMultiplier;
 attribution.rankMultiplier = rankMultiplier;
 
-        const normalized = adjustedScore / (baseScore + 15); 
-        const scaled = normalized * 100;
-
-const finalScore = Math.max(10, Math.min(Math.round(scaled), 100));
-const spreadPenalty = careers.indexOf(career) * 4;
-
-const spreadFinal = finalScore - spreadPenalty;
-
 const earnings = generateEarnings(
     finalScore,
     career.careerTitle,
@@ -261,17 +253,6 @@ return {
     earningMid: `$${adjust(earnings.earningMid)}`,
     earningCeiling: `$${adjust(earnings.earningCeiling)}`,
     earningPotential: earnings.earningPotential
-};
-
-return {
-  ...career,
-  alignmentScore: finalScore,
-  signals: signals,
-  attribution: {
-    ...attribution,
-    finalScore
-  },
-  ...earnings
 };
     });
 }
