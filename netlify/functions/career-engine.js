@@ -228,7 +228,10 @@ attribution.rankMultiplier = rankMultiplier;
         const normalized = adjustedScore / (baseScore + 15); 
         const scaled = normalized * 100;
 
-        const finalScore = Math.max(15, Math.min(Math.round(scaled), 95));
+const finalScore = Math.max(10, Math.min(Math.round(scaled), 100));
+const spreadPenalty = careers.indexOf(career) * 4;
+
+const spreadFinal = finalScore - spreadPenalty;
 
 const earnings = generateEarnings(
     finalScore,
