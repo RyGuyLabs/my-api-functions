@@ -286,6 +286,45 @@ function isRateLimited(ip) {
     return timestamps.length > RATE_LIMIT;
 }
 
+exports.handler = async (event) => {
+    // 1. Define headers at the very top so they are available to all return statements
+    const headers = {
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-nf-client-connection-ip",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Content-Type": "application/json"
+    };
+
+    // 2. Handle OPTIONS immediately
+    // Don't check for origin presence here; just return the headers the browser is asking for.
+    if (event.httpMethod === "OPTIONS") {
+        return {
+            statusCode: 204, 
+            headers,
+            body: ""
+        };
+    }
+
+    try {
+        // 3. Extract IP safely
+        const ip =
+            event.headers["x-nf-client-connection-ip"] ||
+            event.headers["x-forwarded-for"] ||
+            event.headers["client-ip"] ||
+            "unknown";
+
+        // 4. Rate Limiting Check
+        if (isRateLimited(ip)) {
+            return {
+                statusCode: 429,
+                headers,
+                body: JSON.stringify({
+                    error: "Rate Limit Exceeded",
+                    message: "Too many requests. Please wait a moment."
+                })
+            };
+        }
+
         const rawData = JSON.parse(event.body || "{}");
 
         let hobbies = (rawData.hobbies || "").trim();
