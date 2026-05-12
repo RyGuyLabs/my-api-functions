@@ -211,7 +211,19 @@ attribution.fitBoost = fitBoost;
 
         adjustedScore += manual;
         attribution.manual = manual;
-        adjustedScore += (careers.indexOf(career) - 1) * 1.5;
+        // position-based variance (creates intentional spread)
+const index = careers.findIndex(c => c.careerTitle === career.careerTitle);
+
+const rankMultiplier = (() => {
+    if (index === 0) return 6;
+    if (index === 1) return 3;
+    if (index === 2) return 0;
+    if (index === 3) return -2;
+    return -4;
+})();
+
+adjustedScore += rankMultiplier;
+attribution.rankMultiplier = rankMultiplier;
 
         const normalized = adjustedScore / (baseScore + 15); 
         const scaled = normalized * 100;
@@ -223,6 +235,30 @@ const earnings = generateEarnings(
     career.careerTitle,
     signals.country || ""
 );
+
+// apply score-based variance multiplier
+const varianceFactor = 0.85 + (finalScore / 200); 
+// range ~0.85 to 1.35
+
+function adjust(value) {
+    const num = parseFloat(value.replace(/[$,]/g, ""));
+    return Math.round(num * varianceFactor).toLocaleString();
+}
+
+return {
+    ...career,
+    alignmentScore: finalScore,
+    signals,
+    attribution: {
+        ...attribution,
+        rankMultiplier,
+        finalScore
+    },
+    earningEntry: `$${adjust(earnings.earningEntry)}`,
+    earningMid: `$${adjust(earnings.earningMid)}`,
+    earningCeiling: `$${adjust(earnings.earningCeiling)}`,
+    earningPotential: earnings.earningPotential
+};
 
 return {
   ...career,
