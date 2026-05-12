@@ -274,16 +274,22 @@ const WINDOW_MS = 60 * 1000;
 function isRateLimited(ip) {
     const now = Date.now();
 
+    if (!ip || ip === "unknown") return false;
+
     if (!requestLog.has(ip)) {
         requestLog.set(ip, []);
     }
 
-    const timestamps = requestLog.get(ip).filter(ts => now - ts < WINDOW_MS);
+    const timestamps = requestLog.get(ip);
 
-    timestamps.push(now);
-    requestLog.set(ip, timestamps);
+    // remove expired timestamps
+    const filtered = timestamps.filter(ts => now - ts < WINDOW_MS);
 
-    return timestamps.length > RATE_LIMIT;
+    filtered.push(now);
+
+    requestLog.set(ip, filtered);
+
+    return filtered.length > RATE_LIMIT;
 }
 
 exports.handler = async (event) => {
