@@ -226,7 +226,21 @@ adjustedScore += rankMultiplier;
 attribution.rankMultiplier = rankMultiplier;
 // FINAL SCORE MUST BE CREATED HERE
 const finalScore = Math.max(10, Math.min(Math.round(adjustedScore), 100));
+const scoreBands = [
+    [92, 100], // rank 0
+    [84, 91],  // rank 1
+    [76, 83],  // rank 2
+    [68, 75],  // rank 3
+    [60, 67]   // rank 4
+];
 
+const band = scoreBands[index] || [50, 60];
+
+const clampedFinalScore = Math.max(
+    band[0],
+    Math.min(finalScore, band[1])
+);
+        
 const earnings = generateEarnings(
     finalScore,
     career.careerTitle,
@@ -244,7 +258,7 @@ function adjust(value) {
 
 return {
     ...career,
-    alignmentScore: finalScore,
+    alignmentScore: clampedFinalScore,
     signals,
     attribution: {
         ...attribution,
