@@ -224,6 +224,8 @@ const rankMultiplier = (() => {
 
 adjustedScore += rankMultiplier;
 attribution.rankMultiplier = rankMultiplier;
+// FINAL SCORE MUST BE CREATED HERE
+const finalScore = Math.max(10, Math.min(Math.round(adjustedScore), 100));
 
 const earnings = generateEarnings(
     finalScore,
