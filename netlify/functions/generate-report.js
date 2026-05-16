@@ -227,29 +227,78 @@ for (let i = 0; i < maxRetries; i++) {
     }
 
     const result = await response.json();
-    const candidate = result.candidates?.[0];
-    if (candidate && candidate.content?.parts?.[0]?.text) {
-        const rawText = candidate.content.parts[0].text;
 
-        const cleanedText = rawText
-            .replace(/\*\*/g, '')
-            .replace(/\*/g, '')
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
+const candidate = result.candidates?.[0];
 
-        const finalOutput = formatResults(cleanedText, taskMode, outputLevel);
+if (candidate && candidate.content?.parts?.[0]?.text) {
 
-        return {
-            statusCode: 200,
-            headers: CORS_HEADERS,
-            body: JSON.stringify({
-                report_text: finalOutput,
-                keywords: [], // can add keyword extraction later
-                sources: [],
-                meta: { taskMode, outputLevel, timestamp: new Date().toISOString(), intent: queryObj.intent }
-            })
-        };
-    }
+    const rawText =
+        candidate.content.parts[0].text;
+
+    const cleanedText = rawText
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+    const finalOutput =
+        formatResults(cleanedText, taskMode, outputLevel);
+
+    // --- KEYWORD EXTRACTION ---
+    const extractedKeywords = [...new Set(
+
+        cleanedText.match(/\b[A-Z][a-zA-Z]{3,}\b/g) || []
+
+    )].slice(0, 10);
+
+    // --- GROUNDING METADATA PARSING ---
+    let extractedSources = [];
+
+    const groundingChunks =
+        candidate.groundingMetadata?.groundingChunks || [];
+
+    groundingChunks.forEach(chunk => {
+
+        if (chunk.web) {
+
+            extractedSources.push({
+                title: chunk.web.title || "Untitled Source",
+                uri: chunk.web.uri || "#"
+            });
+
+        }
+
+    });
+
+    // remove duplicates
+    extractedSources = extractedSources.filter(
+        (source, index, self) =>
+            index === self.findIndex(
+                s => s.uri === source.uri
+            )
+    );
+
+    return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+
+            report_text: finalOutput,
+
+            keywords: extractedKeywords,
+
+            sources: extractedSources,
+
+            meta: {
+                taskMode,
+                outputLevel,
+                timestamp: new Date().toISOString(),
+                intent: queryObj.intent
+            }
+
+        })
+    };
+}
 
     return {
         statusCode: 500,
