@@ -118,16 +118,22 @@ exports.handler = async (event, context) => {
 
     const systemPrompt = `${systemPromptBase}${levelModifier}
 Respond in ${language}.
-Structure your response with:
+
+Structure your response EXACTLY as follows:
+
 - TITLE
-- MAIN REPORT (use clear paragraphs)
-- KEY INSIGHTS (highlight main concepts)
+- SUMMARY
+- STRATEGIC INSIGHT
+- KEY INSIGHTS
+- ACTION DIRECTIVE
 - CONCLUSION
 
-Formatting rules:
+Rules:
+- Every section must appear in the response
+- If a section has no meaningful content, write "Not applicable"
+- Do not skip or rename sections
 - No markdown (* or **)
-- Use clear paragraphs
-- Add spacing between sections
+- Use clear paragraphs with spacing between sections
 `;
 
     // 5️⃣ Build contents array (history + current query)
