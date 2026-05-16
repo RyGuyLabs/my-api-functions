@@ -116,26 +116,34 @@ exports.handler = async (event, context) => {
             break;
     }
 
-    const systemPrompt = `${systemPromptBase}${levelModifier}
+   const systemPrompt = `${systemPromptBase}${levelModifier}
 Respond in ${language}.
 
-Structure your response EXACTLY as follows:
+You are producing a structured intelligence briefing.
 
-- TITLE
-- SUMMARY
-- STRATEGIC INSIGHT
-- KEY INSIGHTS
-- ACTION DIRECTIVE
-- CONCLUSION
+Each section has a DISTINCT FUNCTION:
 
-Rules:
-- Every section must appear in the response
-- If a section has no meaningful content, write "Not applicable"
-- Do not skip or rename sections
-- No markdown (* or **)
-- Use clear paragraphs with spacing between sections
+- TITLE: Identify the core topic in a concise name
+
+- SUMMARY: Neutral overview of what the content is about (no analysis)
+
+- STRATEGIC INSIGHT: Interpret patterns, implications, or meaning behind the information
+
+- OPPORTUNITY DETECTED: Identify actionable advantages, leverage points, or hidden value
+
+- KEY INSIGHTS: List factual or conceptual takeaways (non-redundant, bullet-like sentences)
+
+- ACTION DIRECTIVE: Give 2–4 specific next steps the user could take based on the analysis
+
+- CONCLUSION: Final synthesis in one short paragraph
+
+STRICT RULES:
+- Do NOT repeat the same idea across sections
+- Each section must contain UNIQUE content
+- If no content exists for a section, infer the closest meaningful interpretation (do NOT leave blank)
+- No markdown formatting
+- Use clear paragraph separation
 `;
-
     // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
