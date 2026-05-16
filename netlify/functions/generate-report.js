@@ -241,13 +241,6 @@ if (candidate && candidate.content?.parts?.[0]?.text) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-// 🔥 NEW: lightweight keyword extraction (safe, no AI cost)
-const keywordMatches = [...new Set(
-    cleanedText
-        .match(/\b([A-Z][a-zA-Z]{3,}|strategy|market|system|analysis|growth|risk|data|insight)\b/g)
-        ?.slice(0, 8) || []
-)];
-
     const finalOutput =
         formatResults(cleanedText, taskMode, outputLevel);
 
