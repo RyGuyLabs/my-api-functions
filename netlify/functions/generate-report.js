@@ -155,33 +155,62 @@ Formatting rules:
     };
 
     const maxRetries = 2;
-    let response;
+let response;
+
+for (let i = 0; i < maxRetries; i++) {
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
 
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    signal: controller.signal
-                }
-            );
+    const timeout = setTimeout(() => {
+        controller.abort();
+    }, 18000);
 
-            if (response.ok || response.status !== 429) break;
-            await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000 + Math.random() * 1000));
+    try {
 
-        } catch (err) {
-            console.error(`[${new Date().toISOString()}] RequestID=${context.awsRequestId} | Attempt ${i+1} failed:`, err.message);
-            if (i === maxRetries - 1) throw new Error("Gemini API call failed after multiple retries.");
-            await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000 + Math.random() * 1000));
+        response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            }
+        );
+
+        clearTimeout(timeout);
+
+        if (response.ok || response.status !== 429) {
+            break;
         }
-    }
 
-    clearTimeout(timeout);
+        console.warn(
+            `[${new Date().toISOString()}] Retry triggered from status ${response.status}`
+        );
+
+        await new Promise(r =>
+            setTimeout(r, (i + 1) * 1500)
+        );
+
+    } catch (err) {
+
+        clearTimeout(timeout);
+
+        console.error(
+            `[${new Date().toISOString()}] RequestID=${context.awsRequestId} | Attempt ${i + 1} failed:`,
+            err.message
+        );
+
+        if (i === maxRetries - 1) {
+            throw new Error("Gemini API call failed after multiple retries.");
+        }
+
+        await new Promise(r =>
+            setTimeout(r, (i + 1) * 1500)
+        );
+    }
+}
 
     if (!response || !response.ok) {
         const errorBody = await response.json().catch(() => ({}));
