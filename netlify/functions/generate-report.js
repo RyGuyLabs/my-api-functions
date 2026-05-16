@@ -246,16 +246,19 @@ if (candidate && candidate.content?.parts?.[0]?.text) {
 
     // --- KEYWORD EXTRACTION ---
     const extractedKeywords = [...new Set(
-
-        cleanedText.match(/\b[A-Z][a-zA-Z]{3,}\b/g) || []
-
-    )].slice(0, 10);
+    cleanedText
+        .replace(/\n/g, ' ')
+        .match(/\b([A-Z][a-zA-Z]{4,}|strategy|market|system|analysis|growth|risk|data|insight|opportunity|performance|structure|optimization|behavior)\b/g)
+        || []
+)].slice(0, 10);
 
     // --- GROUNDING METADATA PARSING ---
     let extractedSources = [];
 
-    const groundingChunks =
-        candidate.groundingMetadata?.groundingChunks || [];
+const groundingChunks =
+    candidate.groundingMetadata?.groundingChunks ||
+    result.candidates?.[0]?.groundingMetadata?.groundingChunks ||
+    [];
 
     groundingChunks.forEach(chunk => {
 
