@@ -13,9 +13,58 @@ function safetyCheck(query) {
 }
 
 function queryProcessor(query, history) {
-    const normalized = query.trim().toLowerCase();
-    const intent = normalized.includes('resume') ? 'careerAdvice' : 'general';
-    return { normalized, intent };
+
+    const normalized =
+        query.trim().toLowerCase();
+
+    let intent = 'general';
+
+    // --- CAREER / JOBS ---
+    if (
+        /career|job|salary|resume|interview|employment|profession|skill/.test(normalized)
+    ) {
+        intent = 'career';
+    }
+
+    // --- BUSINESS / ENTREPRENEURSHIP ---
+    else if (
+        /business|startup|market|revenue|profit|investment|company|sales/.test(normalized)
+    ) {
+        intent = 'business';
+    }
+
+    // --- TECHNOLOGY ---
+    else if (
+        /ai|software|technology|cybersecurity|programming|coding|automation|machine learning/.test(normalized)
+    ) {
+        intent = 'technology';
+    }
+
+    // --- FINANCIAL ---
+    else if (
+        /stocks|finance|economy|crypto|trading|inflation|banking/.test(normalized)
+    ) {
+        intent = 'financial';
+    }
+
+    // --- HISTORICAL ---
+    else if (
+        /history|historical|war|empire|civilization|president|ancient/.test(normalized)
+    ) {
+        intent = 'historical';
+    }
+
+    // --- SCIENTIFIC ---
+    else if (
+        /science|physics|biology|chemistry|space|medical|genetics/.test(normalized)
+    ) {
+        intent = 'scientific';
+    }
+
+    return {
+        normalized,
+        intent
+    };
 }
 
 function formatResults(rawText, taskMode, outputLevel) {
