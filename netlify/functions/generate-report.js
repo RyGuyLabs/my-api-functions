@@ -130,25 +130,7 @@ exports.handler = async (event, context) => {
     const queryObj = queryProcessor(query, history);
 
     const model = "gemini-2.5-flash";
-    let systemPromptBase = "", temperature = 0.2;
-
-    switch (taskMode) {
-        case 'summary':
-            systemPromptBase = "Summarize the topic into concise, high-impact bullet points. Focus only on key takeaways. Avoid long explanations.";
-            temperature = 0.1;
-            break;
-
-        case 'brainstorm':
-            systemPromptBase = "Generate creative, unconventional, and diverse ideas. Push beyond obvious answers. Include unique angles and opportunities.";
-            temperature = 0.9;
-            break;
-
-        case 'report':
-        default:
-            systemPromptBase = "Create a structured report with clearly labeled sections: Summary, Key Insights, and Recommendations. Be analytical and well-organized.";
-            temperature = 0.2;
-            break;
-    }
+    let temperature = 0.35;
 
     let levelModifier = "";
     switch (outputLevel) {
