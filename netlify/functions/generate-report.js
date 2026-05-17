@@ -133,21 +133,18 @@ exports.handler = async (event, context) => {
     let temperature = 0.35;
 
     let levelModifier = "";
-    switch (outputLevel) {
-        case 'simplified':
-            levelModifier = " Use very simple language. Explain concepts clearly with examples.";
-            break;
-        case 'collegiate':
-            levelModifier = " Use college-level explanations with moderate technical depth.";
-            break;
-        case 'professional':
-            levelModifier = " Use advanced, professional, and technical language appropriate for experts.";
-            break;
-        default:
-            break;
-    }
 
-   const systemPrompt = `${systemPromptBase}${levelModifier}
+if (outputLevel === 'simplified') {
+    levelModifier =
+        " Explain clearly and simply while preserving intelligence.";
+}
+
+if (outputLevel === 'professional') {
+    levelModifier =
+        " Provide deeper strategic and technical insight where useful.";
+}
+
+   const systemPrompt = `${levelModifier}
 
 Respond in ${language}.
 
