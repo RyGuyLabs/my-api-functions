@@ -168,7 +168,7 @@ for (let i = 0; i < maxRetries; i++) {
 
     const timeout = setTimeout(() => {
         controller.abort();
-    }, 18000);
+    }, 28000);
 
     try {
 
