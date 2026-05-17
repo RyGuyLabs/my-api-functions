@@ -117,32 +117,23 @@ exports.handler = async (event, context) => {
     }
 
    const systemPrompt = `${systemPromptBase}${levelModifier}
+
 Respond in ${language}.
 
-You are producing a structured intelligence briefing.
+Your objective:
+- Deliver intelligent, useful, readable analysis
+- Adapt naturally to the user's query
+- Prioritize clarity, depth, and relevance
+- Use structure only when beneficial
+- Preserve exploratory and analytical flexibility
 
-Each section has a DISTINCT FUNCTION:
-
-- TITLE: Identify the core topic in a concise name
-
-- SUMMARY: Neutral overview of what the content is about (no analysis)
-
-- STRATEGIC INSIGHT: Interpret patterns, implications, or meaning behind the information
-
-- OPPORTUNITY DETECTED: Identify actionable advantages, leverage points, or hidden value
-
-- KEY INSIGHTS: List factual or conceptual takeaways (non-redundant, bullet-like sentences)
-
-- ACTION DIRECTIVE: Give 2–4 specific next steps the user could take based on the analysis
-
-- CONCLUSION: Final synthesis in one short paragraph
-
-STRICT RULES:
-- Do NOT repeat the same idea across sections
-- Each section must contain UNIQUE content
-- If no content exists for a section, infer the closest meaningful interpretation (do NOT leave blank)
-- No markdown formatting
-- Use clear paragraph separation
+Formatting rules:
+- No markdown symbols (* or **)
+- Use spacing between major ideas
+- Use headers naturally when appropriate
+- Avoid repetitive phrasing
+- Avoid filler summaries
+- Do not force sections if they are unnecessary
 `;
     // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
