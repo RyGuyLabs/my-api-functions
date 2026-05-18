@@ -351,18 +351,54 @@ const candidate = result.candidates?.[0];
 if (candidate && candidate.content?.parts?.[0]?.text) {
 
     const rawText =
-        candidate.content.parts[0].text;
+    candidate.content.parts[0].text;
 
-    const cleanedText = rawText
-    .replace(/\*\*/g, '')
-    .replace(/\*/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+let parsed;
 
-    const finalOutput =
-        formatResults(cleanedText, taskMode, outputLevel);
+try {
 
-    const sections = extractSections(cleanedText);
+    parsed = JSON.parse(rawText);
+
+} catch (err) {
+
+    console.error("JSON PARSE FAILURE:", err);
+
+    return {
+        statusCode: 500,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+            message: "Model returned invalid JSON."
+        })
+    };
+}
+
+const snapshot =
+    Array.isArray(parsed.snapshot)
+        ? parsed.snapshot
+        : [];
+
+const actions =
+    Array.isArray(parsed.actions)
+        ? parsed.actions
+        : [];
+
+const signals =
+    Array.isArray(parsed.signals)
+        ? parsed.signals
+        : [];
+
+const insight =
+    Array.isArray(parsed.insight)
+        ? parsed.insight
+        : [];
+
+const main =
+    typeof parsed.main === "string"
+        ? parsed.main
+        : "";
+
+const finalOutput =
+    main;
     
     // --- KEYWORD EXTRACTION ---
     const extractedKeywords = [...new Set(
