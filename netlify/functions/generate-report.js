@@ -249,6 +249,9 @@ signals:
 insight:
 - Deep analysis, reasoning, interpretation
 
+opportunity:
+- Identify emerging opportunities, future momentum, underserved markets, strategic advantages, or high-upside directions related to the query
+
 main:
 - Full coherent readable report in paragraph form
 
