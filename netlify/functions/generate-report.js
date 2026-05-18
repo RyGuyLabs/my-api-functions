@@ -211,7 +211,8 @@ Your output MUST follow this exact JSON schema:
   "actions": ["..."],
   "signals": ["..."],
   "insight": ["..."],
-  "main": "..."
+  "main": "...",
+  "confidence": 0
 }
 
 STRICT RULES:
