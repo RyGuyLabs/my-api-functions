@@ -73,6 +73,60 @@ function formatResults(rawText, taskMode, outputLevel) {
     return rawText;
 }
 
+// --- STRUCTURED SECTION BUILDER ---
+function extractSections(text) {
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const snapshot = [];
+    const actions = [];
+    const signals = [];
+    const insight = [];
+
+    for (const line of lines) {
+
+        const lower = line.toLowerCase();
+
+        // SNAPSHOT
+        if (
+            lower.includes("summary") ||
+            lower.includes("overview") ||
+            lower.includes("bottom line") ||
+            lower.includes("in short")
+        ) {
+            snapshot.push(line);
+        }
+
+        // ACTIONS
+        else if (
+            lower.includes("recommend") ||
+            lower.includes("suggest") ||
+            lower.includes("should") ||
+            lower.includes("next step") ||
+            lower.includes("consider")
+        ) {
+            actions.push(line);
+        }
+
+        // SIGNALS (light heuristic for now)
+        else if (
+            lower.includes("trend") ||
+            lower.includes("signal") ||
+            lower.includes("indicates") ||
+            lower.includes("pattern")
+        ) {
+            signals.push(line);
+        }
+
+        // EVERYTHING ELSE
+        else {
+            insight.push(line);
+        }
+    }
+
+    return { snapshot, actions, signals, insight };
+}
+
 exports.handler = async (event, context) => {
     // 1️⃣ Preflight OPTIONS
     if (event.httpMethod === 'OPTIONS') {
@@ -284,60 +338,6 @@ if (candidate && candidate.content?.parts?.[0]?.text) {
         formatResults(cleanedText, taskMode, outputLevel);
 
     const sections = extractSections(cleanedText);
-    
-// --- STRUCTURED SECTION BUILDER ---
-function extractSections(text) {
-
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-    const snapshot = [];
-    const actions = [];
-    const signals = [];
-    const insight = [];
-
-    for (const line of lines) {
-
-        const lower = line.toLowerCase();
-
-        // SNAPSHOT
-        if (
-            lower.includes("summary") ||
-            lower.includes("overview") ||
-            lower.includes("bottom line") ||
-            lower.includes("in short")
-        ) {
-            snapshot.push(line);
-        }
-
-        // ACTIONS
-        else if (
-            lower.includes("recommend") ||
-            lower.includes("suggest") ||
-            lower.includes("should") ||
-            lower.includes("next step") ||
-            lower.includes("consider")
-        ) {
-            actions.push(line);
-        }
-
-        // SIGNALS (light heuristic for now)
-        else if (
-            lower.includes("trend") ||
-            lower.includes("signal") ||
-            lower.includes("indicates") ||
-            lower.includes("pattern")
-        ) {
-            signals.push(line);
-        }
-
-        // EVERYTHING ELSE
-        else {
-            insight.push(line);
-        }
-    }
-
-    return { snapshot, actions, signals, insight };
-}
     
     // --- KEYWORD EXTRACTION ---
     const extractedKeywords = [...new Set(
