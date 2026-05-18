@@ -243,6 +243,12 @@ insight:
 main:
 - Full coherent readable report in paragraph form
 
+confidence:
+- Integer from 0 to 100
+- Represents confidence in the overall analysis
+- Higher confidence = clearer consensus and stronger evidence
+- Lower confidence = ambiguity, uncertainty, conflicting signals, or limited evidence
+
 STYLE RULES:
 - Be precise and structured
 - Avoid repetition
