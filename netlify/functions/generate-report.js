@@ -417,7 +417,7 @@ const finalOutput =
   `${main}
 
 Key Takeaways:
-${snapshot?.join("\n")}
+${snapshot.length ? snapshot.join("\n") : "—"}
 
 Recommended Actions:
 ${actions?.join("\n")}
