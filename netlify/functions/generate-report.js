@@ -237,29 +237,26 @@ SYSTEM COHERENCE LAYER (CRITICAL):
 
 MAIN OVERRIDE RULE:
 - MAIN is the ONLY complete answer to the user query.
-- If MAIN does not fully answer the question, the output is considered invalid.
 
-HIERARCHY RULE (STRICT):
+HIERARCHY RULE:
 1. MAIN = final answer
 2. INSIGHT = explanation of MAIN
-3. SIGNALS = supporting evidence / patterns behind INSIGHT
-4. SNAPSHOT = compressed version of MAIN
-5. ACTIONS = executable steps derived ONLY from MAIN
-6. OPPORTUNITY = forward-looking extensions of MAIN (not separate analysis)
+3. SIGNALS = evidence behind INSIGHT
+4. SNAPSHOT = compressed MAIN
+5. ACTIONS = derived only from MAIN
+6. OPPORTUNITY = forward-looking extension
 
 NON-DUPLICATION RULE:
-- No field may repeat sentences from another field.
-- Each field must contribute a different layer of reasoning.
+- No repeated sentences across fields
+- Each field must serve a distinct purpose
 
 SIGNAL RANKING RULE:
-- First signal = strongest evidence
-- Last signal = weakest inference
-- Signals must be ordered by confidence strength
+- strongest signal first, weakest last
 
-CONFIDENCE BEHAVIOR RULE:
-- 80–100: decisive, structured, high certainty language
-- 50–79: balanced reasoning with mild uncertainty
-- below 50: explicitly acknowledge ambiguity in MAIN
+CONFIDENCE RULE:
+- 80–100 = decisive
+- 50–79 = balanced
+- <50 = uncertainty must be acknowledged
 
 OPPORTUNITY RULE:
 - Must not restate insight or actions
