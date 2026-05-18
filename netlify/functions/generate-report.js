@@ -350,28 +350,35 @@ const candidate = result.candidates?.[0];
 
 if (candidate && candidate.content?.parts?.[0]?.text) {
 
-    const rawText =
+   const rawText =
     candidate.content.parts[0].text;
+
+const cleanedText = rawText
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
 
 let parsed;
 
 try {
 
-    parsed = JSON.parse(rawText);
+    parsed = JSON.parse(cleanedText);
 
 } catch (err) {
 
-    console.error("JSON PARSE FAILURE:", err);
+    console.error(
+        "JSON PARSE FAILURE:",
+        err.message
+    );
 
-    return {
-        statusCode: 500,
-        headers: CORS_HEADERS,
-        body: JSON.stringify({
-            message: "Model returned invalid JSON."
-        })
+    parsed = {
+        snapshot: [],
+        actions: [],
+        signals: [],
+        insight: [],
+        main: cleanedText
     };
 }
-
 const snapshot =
     Array.isArray(parsed.snapshot)
         ? parsed.snapshot
