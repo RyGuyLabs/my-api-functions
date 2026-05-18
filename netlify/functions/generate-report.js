@@ -444,10 +444,10 @@ const groundingChunks =
 
     report_text: finalOutput, // keep your existing main panel EXACTLY the same
 
-    snapshot: sections.snapshot,
-    actions: sections.actions,
-    signals: sections.signals,
-    insight: sections.insight,
+    snapshot,
+actions,
+signals,
+insight,
 
     keywords: extractedKeywords,
     sources: extractedSources,
