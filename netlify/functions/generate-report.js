@@ -78,10 +78,18 @@ function extractSections(text) {
 
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-    const snapshot = [];
-    const actions = [];
-    const signals = [];
-    const insight = [];
+    const snapshot = data.snapshot || [];
+    const actions = data.actions || [];
+    const signals = data.signals || [];
+    const sources = data.sources || [];
+    const insight = data.insight || [];
+
+    const confidence = data.meta?.confidence ?? data.confidence ?? 50;
+
+const signalStrength =
+    signals.length > 5 ? "high" :
+    signals.length > 2 ? "medium" :
+    "low";
 
     for (const line of lines) {
 
