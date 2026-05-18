@@ -384,7 +384,7 @@ const groundingChunks =
     report_text: finalOutput, // keep your existing main panel EXACTLY the same
 
     snapshot: sections.snapshot,
-    actions: sections.actions,
+    action: sections.actions,
     signals: sections.signals,
     insight: sections.insight,
 
