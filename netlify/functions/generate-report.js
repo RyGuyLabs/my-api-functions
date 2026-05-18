@@ -232,7 +232,6 @@ STYLE RULES:
 - Avoid repetition
 - Avoid filler language
 - Prioritize clarity over verbosity
-`;
 
 SYSTEM COHERENCE LAYER (CRITICAL):
 
