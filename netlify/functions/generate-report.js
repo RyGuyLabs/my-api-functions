@@ -76,7 +76,7 @@ function formatResults(rawText, taskMode, outputLevel) {
 // --- STRUCTURED SECTION BUILDER ---
 function extractSections(text) {
 
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
     const snapshot = [];
     const actions = [];
