@@ -496,6 +496,7 @@ const groundingChunks =
 actions,
 signals,
 insight,
+opportunity,
 
     keywords: extractedKeywords,
     sources: extractedSources,
