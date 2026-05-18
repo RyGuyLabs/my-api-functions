@@ -418,9 +418,11 @@ const insight =
             : [];
 
     const opportunity =
-    typeof parsed.opportunity === "string"
+    Array.isArray(parsed.opportunity)
         ? parsed.opportunity
-        : "";
+        : parsed.opportunity
+            ? [String(parsed.opportunity)]
+            : [];
 
 const main =
     typeof parsed.main === "string"
