@@ -73,6 +73,30 @@ function formatResults(rawText, taskMode, outputLevel) {
     return rawText;
 }
 
+// --- STRUCTURED SECTION BUILDER ---
+function extractSections(text) {
+
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    const snapshot = [];
+    const actions = [];
+    const signals = [];
+    const insight = [];
+
+    for (const line of lines) {
+
+        const lower = line.toLowerCase();
+
+        // SNAPSHOT
+        if (
+            lower.includes("summary") ||
+            lower.includes("overview") ||
+            lower.includes("bottom line") ||
+            lower.includes("in short")
+        ) {
+            snapshot.push(line);
+        }
+
         // ACTIONS
         else if (
             lower.includes("recommend") ||
