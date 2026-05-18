@@ -73,60 +73,26 @@ function formatResults(rawText, taskMode, outputLevel) {
     return rawText;
 }
 
-// --- STRUCTURED SECTION BUILDER ---
 function extractSections(text) {
-
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-    const snapshot = data.snapshot || [];
-    const actions = data.actions || [];
-    const signals = data.signals || [];
-    const sources = data.sources || [];
-    const insight = data.insight || [];
-
-    const confidence = data.meta?.confidence ?? data.confidence ?? 50;
-
-const signalStrength =
-    signals.length > 5 ? "high" :
-    signals.length > 2 ? "medium" :
-    "low";
+    const snapshot = [];
+    const actions = [];
+    const signals = [];
+    const insight = [];
 
     for (const line of lines) {
-
         const lower = line.toLowerCase();
 
-        // SNAPSHOT
-        if (
-            lower.includes("summary") ||
-            lower.includes("overview") ||
-            lower.includes("bottom line") ||
-            lower.includes("in short")
-        ) {
+        if (lower.includes("summary") || lower.includes("overview")) {
             snapshot.push(line);
         }
-
-        // ACTIONS
-        else if (
-            lower.includes("recommend") ||
-            lower.includes("suggest") ||
-            lower.includes("should") ||
-            lower.includes("next step") ||
-            lower.includes("consider")
-        ) {
+        else if (lower.includes("recommend") || lower.includes("should")) {
             actions.push(line);
         }
-
-        // SIGNALS (light heuristic for now)
-        else if (
-            lower.includes("trend") ||
-            lower.includes("signal") ||
-            lower.includes("indicates") ||
-            lower.includes("pattern")
-        ) {
+        else if (lower.includes("trend") || lower.includes("signal")) {
             signals.push(line);
         }
-
-        // EVERYTHING ELSE
         else {
             insight.push(line);
         }
