@@ -267,6 +267,41 @@ STYLE RULES:
 - Avoid filler language
 - Prioritize clarity over verbosity
 `;
+
+SYSTEM COHERENCE LAYER (CRITICAL):
+
+MAIN OVERRIDE RULE:
+- MAIN is the ONLY complete answer to the user query.
+- If MAIN does not fully answer the question, the output is considered invalid.
+
+HIERARCHY RULE (STRICT):
+1. MAIN = final answer
+2. INSIGHT = explanation of MAIN
+3. SIGNALS = supporting evidence / patterns behind INSIGHT
+4. SNAPSHOT = compressed version of MAIN
+5. ACTIONS = executable steps derived ONLY from MAIN
+6. OPPORTUNITY = forward-looking extensions of MAIN (not separate analysis)
+
+NON-DUPLICATION RULE:
+- No field may repeat sentences from another field.
+- Each field must contribute a different layer of reasoning.
+
+SIGNAL RANKING RULE:
+- First signal = strongest evidence
+- Last signal = weakest inference
+- Signals must be ordered by confidence strength
+
+CONFIDENCE BEHAVIOR RULE:
+- 80–100: decisive, structured, high certainty language
+- 50–79: balanced reasoning with mild uncertainty
+- below 50: explicitly acknowledge ambiguity in MAIN
+
+OPPORTUNITY RULE:
+- Must not restate insight or actions
+- Must introduce ONLY forward-looking possibilities or strategic angles
+
+QUALITY ENFORCEMENT:
+- If output is fragmented or repetitive, regenerate internally before finalizing
     // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
