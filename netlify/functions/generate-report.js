@@ -420,15 +420,16 @@ Key Takeaways:
 ${snapshot.length ? snapshot.join("\n") : "—"}
 
 Recommended Actions:
-${actions?.join("\n")}
+${actions.length ? actions.join("\n") : "—"}
 
 Signals:
-${signals?.join("\n")}
+${signals.length ? signals.join("\n") : "—"}
 
 Insight:
-${insight?.join("\n")}
+${insight.length ? insight.join("\n") : "—"}
 
-Confidence Score: ${parsed.confidence ?? 0}/100`;
+Confidence Score: ${parsed.confidence ?? 0}/100
+`.trim();
     
     // --- KEYWORD EXTRACTION ---
     const extractedKeywords = [...new Set(
