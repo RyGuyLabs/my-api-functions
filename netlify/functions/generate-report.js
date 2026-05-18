@@ -404,7 +404,9 @@ const signals =
 const insight =
     Array.isArray(parsed.insight)
         ? parsed.insight
-        : [];
+        : parsed.insight
+            ? [String(parsed.insight)]
+            : [];
 
 const main =
     typeof parsed.main === "string"
@@ -412,7 +414,21 @@ const main =
         : "";
 
 const finalOutput =
-    main;
+  `${main}
+
+Key Takeaways:
+${snapshot?.join("\n")}
+
+Recommended Actions:
+${actions?.join("\n")}
+
+Signals:
+${signals?.join("\n")}
+
+Insight:
+${insight?.join("\n")}
+
+Confidence Score: ${parsed.confidence ?? 0}/100`;
     
     // --- KEYWORD EXTRACTION ---
     const extractedKeywords = [...new Set(
