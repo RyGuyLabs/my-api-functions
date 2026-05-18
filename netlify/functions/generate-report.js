@@ -424,6 +424,7 @@ const groundingChunks =
     }
 })
     };
+}
 
     return {
         statusCode: 500,
