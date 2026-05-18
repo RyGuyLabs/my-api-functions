@@ -489,7 +489,7 @@ const groundingChunks =
         headers: CORS_HEADERS,
         body: JSON.stringify({
 
-    report_text: finalOutput,
+    report_text: main,
 
     snapshot,
 actions,
