@@ -402,7 +402,7 @@ const finalOutput =
     
     // --- KEYWORD EXTRACTION ---
     const extractedKeywords = [...new Set(
-    cleanedText
+    finalOutput
         .replace(/\n/g, ' ')
         .match(/\b([A-Z][a-zA-Z]{4,}|strategy|market|system|analysis|growth|risk|data|insight|opportunity|performance|structure|optimization|behavior)\b/g)
         || []
