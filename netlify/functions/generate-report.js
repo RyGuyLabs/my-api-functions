@@ -481,7 +481,7 @@ const groundingChunks =
         headers: CORS_HEADERS,
         body: JSON.stringify({
 
-    report_text: finalOutput, // keep your existing main panel EXACTLY the same
+    report_text: finalOutput,
 
     snapshot,
 actions,
@@ -490,6 +490,8 @@ insight,
 
     keywords: extractedKeywords,
     sources: extractedSources,
+
+    confidence: parsed.confidence ?? 0,
 
     meta: {
         taskMode,
