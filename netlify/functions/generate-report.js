@@ -264,6 +264,7 @@ OPPORTUNITY RULE:
 
 QUALITY ENFORCEMENT:
 - If output is fragmented or repetitive, regenerate internally before finalizing
+`;
     // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
         role: msg.role === 'user' ? 'user' : 'model',
