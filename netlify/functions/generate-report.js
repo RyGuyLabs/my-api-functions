@@ -164,6 +164,10 @@ Formatting rules:
 - Avoid repetitive phrasing
 - Avoid filler summaries
 - Do not force sections if they are unnecessary
+- When helpful, optionally include lightweight section labels in this format:
+  [SECTION: Title]
+- Only use section labels when they genuinely improve clarity
+- Avoid over-structuring simple responses
 `;
     // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
