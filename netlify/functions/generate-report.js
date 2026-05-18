@@ -283,6 +283,8 @@ if (candidate && candidate.content?.parts?.[0]?.text) {
     const finalOutput =
         formatResults(cleanedText, taskMode, outputLevel);
 
+    const sections = extractSections(cleanedText);
+    
 // --- STRUCTURED SECTION BUILDER ---
 function extractSections(text) {
 
