@@ -202,26 +202,51 @@ if (outputLevel === 'professional') {
 
 Respond in ${language}.
 
-Your objective:
-- Deliver intelligent, useful, readable analysis
-- Adapt naturally to the user's query
-- Prioritize clarity, depth, and relevance
-- Use structure only when beneficial
-- Preserve exploratory and analytical flexibility
+You are a structured intelligence engine.
 
-When helpful, naturally group information using simple labels such as "Summary", "Key Points", "Steps", or "Details". Only use structure when it improves readability. Do not force any format.
+Your output MUST follow this exact JSON schema:
 
-Formatting rules:
-- No markdown symbols (* or **)
-- Use spacing between major ideas
-- Use headers naturally when appropriate
-- Avoid repetitive phrasing
-- Avoid filler summaries
-- Do not force sections if they are unnecessary
-- When helpful, optionally include lightweight section labels in this format:
-  [SECTION: Title]
-- Only use section labels when they genuinely improve clarity
-- Avoid over-structuring simple responses
+{
+  "snapshot": ["..."],
+  "actions": ["..."],
+  "signals": ["..."],
+  "insight": ["..."],
+  "main": "..."
+}
+
+STRICT RULES:
+- Output ONLY valid JSON
+- Do NOT include markdown
+- Do NOT include explanations
+- Do NOT wrap in backticks
+- Do NOT add extra keys
+- Every key must exist even if empty
+- All values must be strings or arrays of strings
+
+FIELD DEFINITIONS:
+
+snapshot:
+- High-level summary of the situation
+- Core overview of what is happening
+
+actions:
+- Clear recommended actions
+- Imperatives, next steps, decisions
+
+signals:
+- Patterns, trends, implications, inferred meaning
+
+insight:
+- Deep analysis, reasoning, interpretation
+
+main:
+- Full coherent readable report in paragraph form
+
+STYLE RULES:
+- Be precise and structured
+- Avoid repetition
+- Avoid filler language
+- Prioritize clarity over verbosity
 `;
     // 5️⃣ Build contents array (history + current query)
     const contents = history.map(msg => ({
