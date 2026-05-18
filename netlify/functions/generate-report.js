@@ -420,6 +420,11 @@ const insight =
             ? [String(parsed.insight)]
             : [];
 
+    const opportunity =
+    typeof parsed.opportunity === "string"
+        ? parsed.opportunity
+        : "";
+
 const main =
     typeof parsed.main === "string"
         ? parsed.main
