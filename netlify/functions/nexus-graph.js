@@ -413,8 +413,9 @@ Array.from(nodeMap.values()).forEach(node => {
     statusCode: 200,
     headers,
     body: JSON.stringify({
-        nodes: Array.from(nodeMap.values()),
-        links
+    nodes: Array.from(nodeMap.values()),
+    links,
+    strategicPaths
     })
 };
 
