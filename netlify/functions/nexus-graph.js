@@ -300,7 +300,11 @@ nodes.forEach(node => {
 
     } catch (error) {
 
-        console.error("BUILD NEXUS GRAPH ERROR:", error);
+        console.error(
+    "BUILD NEXUS GRAPH ERROR:",
+    error,
+    error.stack
+);
 
         return {
             statusCode: 500,
