@@ -129,7 +129,7 @@ exports.handler = async (event) => {
 }
         function calculateNodeWeight(type, label = "") {
 
-    const normalized = label.toLowerCase();
+    const normalized = String(label || "").toLowerCase();
 
     let base = 0.7;
 
