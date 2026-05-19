@@ -216,44 +216,55 @@ const data = {
 
         });
 
-        // OPPORTUNITY
-        // OPPORTUNITY
+// OPPORTUNITY NODE
 const oppId = "opportunity_main";
 
-if (data.opportunity && data.opportunity.trim() !== "") {
+// ALWAYS CREATE OPPORTUNITY NODE
+nodeMap.set(oppId, {
+    id: oppId,
+    type: "opportunity",
+    label:
+        data.opportunity && data.opportunity.trim() !== ""
+            ? data.opportunity
+            : "Strategic Opportunity",
+    weight: calculateNodeWeight(
+        "opportunity",
+        data.opportunity || "Strategic Opportunity"
+    )
+});
 
-    nodeMap.set(oppId, {
-        id: oppId,
-        type: "opportunity",
-        label: data.opportunity,
-        weight: calculateNodeWeight(
-            "opportunity",
-            data.opportunity
+// CONNECT INSIGHTS → OPPORTUNITY
+data.insight.forEach((insight, j) => {
+
+    const insightId = `insight_${j}`;
+
+    // Ensure insight exists
+    if (!nodeMap.has(insightId)) {
+
+        nodeMap.set(insightId, {
+            id: insightId,
+            type: "insight",
+            label: insight,
+            weight: calculateNodeWeight("insight", insight)
+        });
+
+    }
+
+    links.push({
+        source: insightId,
+        target: oppId,
+        strength: calculateRelationshipStrength(
+            insight,
+            data.opportunity || "Strategic Opportunity"
         )
     });
 
-    data.insight.forEach((insight, j) => {
+});
 
-        const insightId = `insight_${j}`;
+// ======================================================
+// ACTION NODES
+// ======================================================
 
-        if (nodeMap.has(insightId)) {
-
-            links.push({
-                source: insightId,
-                target: oppId,
-                strength: calculateRelationshipStrength(
-                    insight,
-                    data.opportunity
-                )
-            });
-
-        }
-
-    });
-
-}
-
-        // ACTIONS
 data.actions.forEach((action, i) => {
 
     const actionId = `action_${i}`;
@@ -265,19 +276,15 @@ data.actions.forEach((action, i) => {
         weight: calculateNodeWeight("action", action)
     });
 
-    // ONLY LINK IF OPPORTUNITY EXISTS
-    if (data.opportunity) {
-
-        links.push({
-            source: "opportunity_main",
-            target: actionId,
-            strength: calculateRelationshipStrength(
-                data.opportunity,
-                action
-            )
-        });
-
-    }
+    // ALWAYS LINK TO OPPORTUNITY
+    links.push({
+        source: oppId,
+        target: actionId,
+        strength: calculateRelationshipStrength(
+            data.opportunity || "Strategic Opportunity",
+            action
+        )
+    });
 
 });
 
