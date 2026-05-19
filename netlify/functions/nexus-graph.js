@@ -96,11 +96,24 @@ exports.handler = async (event) => {
             break;
     }
 
-    // Connection influence
-    const connectedLinks = links.filter(link =>
-        link.source === node.id ||
-        link.target === node.id
+    const connectedLinks = links.filter(link => {
+
+    const sourceId =
+        typeof link.source === "object"
+            ? link.source.id
+            : link.source;
+
+    const targetId =
+        typeof link.target === "object"
+            ? link.target.id
+            : link.target;
+
+    return (
+        sourceId === node.id ||
+        targetId === node.id
     );
+
+});
 
     score += connectedLinks.length * 6;
 
