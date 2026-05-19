@@ -18,10 +18,18 @@ exports.handler = async (event) => {
 
     try {
 
-        const data = JSON.parse(event.body);
+        const raw = JSON.parse(event.body || "{}");
+
+const data = {
+    signals: Array.isArray(raw.signals) ? raw.signals : [],
+    insight: Array.isArray(raw.insight) ? raw.insight : Array.isArray(raw.insights) ? raw.insights : [],
+    actions: Array.isArray(raw.actions) ? raw.actions : [],
+    opportunity: typeof raw.opportunity === "string" ? raw.opportunity : ""
+};
 
         const nodes = [];
         const links = [];
+        const nodeMap = new Map();
 
         function calculateRelationshipStrength(sourceLabel = "", targetLabel = "") {
 
@@ -193,7 +201,7 @@ exports.handler = async (event) => {
 
                 const insightId = `insight_${j}`;
 
-                if (!nodes.find(n => n.id === insightId)) {
+                if (!nodeMap.has(insightId)) {
 
                     nodes.push({
                         id: insightId,
@@ -219,7 +227,7 @@ exports.handler = async (event) => {
 
             const oppId = "opportunity_main";
 
-            nodes.push({
+            nodeMap.set(insightId, {
                 id: oppId,
                 type: "opportunity",
                 label: data.opportunity,
