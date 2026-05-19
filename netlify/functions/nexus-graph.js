@@ -222,7 +222,7 @@ const data = {
 
             const oppId = "opportunity_main";
 
-            nodeMap.set(insightId, {
+            nodeMap.set(oppId, {
                 id: oppId,
                 type: "opportunity",
                 label: data.opportunity,
