@@ -25,8 +25,8 @@ exports.handler = async (event) => {
 
         function calculateRelationshipStrength(sourceLabel = "", targetLabel = "") {
 
-    const source = sourceLabel.toLowerCase();
-    const target = targetLabel.toLowerCase();
+    const source = String(sourceLabel || "").toLowerCase();
+    const target = String(targetLabel || "").toLowerCase();
 
     let score = 0.35;
 
