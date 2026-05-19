@@ -72,6 +72,48 @@ exports.handler = async (event) => {
     return Math.max(0.2, Math.min(score, 1));
 }
 
+        function calculateStrategicScore(node, links) {
+
+    let score = 0;
+
+    // Base type weighting
+    switch(node.type) {
+
+        case "signal":
+            score += 18;
+            break;
+
+        case "insight":
+            score += 35;
+            break;
+
+        case "opportunity":
+            score += 55;
+            break;
+
+        case "action":
+            score += 28;
+            break;
+    }
+
+    // Connection influence
+    const connectedLinks = links.filter(link =>
+        link.source === node.id ||
+        link.target === node.id
+    );
+
+    score += connectedLinks.length * 6;
+
+    // Relationship strength amplification
+    connectedLinks.forEach(link => {
+        score += Math.round((link.strength || 0.3) * 14);
+    });
+
+    // Weight amplification
+    score += Math.round((node.weight || 0.5) * 20);
+
+    return Math.min(score, 100);
+}
         function calculateNodeWeight(type, label = "") {
 
     const normalized = label.toLowerCase();
