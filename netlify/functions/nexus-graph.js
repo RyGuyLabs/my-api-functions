@@ -23,6 +23,55 @@ exports.handler = async (event) => {
         const nodes = [];
         const links = [];
 
+        function calculateRelationshipStrength(sourceLabel = "", targetLabel = "") {
+
+    const source = sourceLabel.toLowerCase();
+    const target = targetLabel.toLowerCase();
+
+    let score = 0.35;
+
+    const strategicTerms = [
+        "ai",
+        "automation",
+        "systems",
+        "security",
+        "network",
+        "infrastructure",
+        "intelligence",
+        "finance",
+        "analytics",
+        "data",
+        "strategy",
+        "growth",
+        "scaling"
+    ];
+
+    strategicTerms.forEach(term => {
+
+        if (source.includes(term) && target.includes(term)) {
+            score += 0.12;
+        }
+
+    });
+
+    // Shared word amplification
+    const sourceWords = source.split(" ");
+    const targetWords = target.split(" ");
+
+    sourceWords.forEach(word => {
+
+        if (
+            word.length > 3 &&
+            targetWords.includes(word)
+        ) {
+            score += 0.08;
+        }
+
+    });
+
+    return Math.max(0.2, Math.min(score, 1));
+}
+
         function calculateNodeWeight(type, label = "") {
 
     const normalized = label.toLowerCase();
