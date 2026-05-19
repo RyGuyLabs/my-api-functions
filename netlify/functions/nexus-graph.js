@@ -23,6 +23,55 @@ exports.handler = async (event) => {
         const nodes = [];
         const links = [];
 
+        function calculateNodeWeight(type, label = "") {
+
+    const normalized = label.toLowerCase();
+
+    let base = 0.7;
+
+    switch(type) {
+
+        case "signal":
+            base = 0.55;
+            break;
+
+        case "insight":
+            base = 0.82;
+            break;
+
+        case "opportunity":
+            base = 1;
+            break;
+
+        case "action":
+            base = 0.74;
+            break;
+    }
+
+    // Intelligence amplification
+    if (
+        normalized.includes("ai") ||
+        normalized.includes("automation") ||
+        normalized.includes("infrastructure") ||
+        normalized.includes("security") ||
+        normalized.includes("systems")
+    ) {
+        base += 0.12;
+    }
+
+    // Market scarcity amplification
+    if (
+        normalized.includes("rare") ||
+        normalized.includes("high leverage") ||
+        normalized.includes("strategic")
+    ) {
+        base += 0.08;
+    }
+
+    // Clamp
+    return Math.max(0.45, Math.min(base, 1.2));
+}
+
         // SIGNALS
         data.signals.forEach((signal, i) => {
 
@@ -32,7 +81,7 @@ exports.handler = async (event) => {
                 id: signalId,
                 type: "signal",
                 label: signal,
-                weight: 0.7
+                weight: calculateNodeWeight("signal", signal)
             });
 
             // CONNECT TO INSIGHTS
@@ -46,7 +95,7 @@ exports.handler = async (event) => {
                         id: insightId,
                         type: "insight",
                         label: insight,
-                        weight: 0.9
+                        weight: calculateNodeWeight("insight", insight)
                     });
 
                 }
@@ -70,7 +119,7 @@ exports.handler = async (event) => {
                 id: oppId,
                 type: "opportunity",
                 label: data.opportunity,
-                weight: 1
+                weight: calculateNodeWeight("opportunity", data.opportunity)
             });
 
             data.insight.forEach((_, j) => {
@@ -94,7 +143,7 @@ exports.handler = async (event) => {
                 id: actionId,
                 type: "action",
                 label: action,
-                weight: 0.8
+                weight: calculateNodeWeight("action", action)
             });
 
             links.push({
