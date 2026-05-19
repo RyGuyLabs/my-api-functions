@@ -152,7 +152,7 @@ exports.handler = async (event) => {
                 links.push({
                     source: signalId,
                     target: insightId,
-                    strength: 0.6
+                    strength: calculateRelationshipStrength(signal, insight)
                 });
 
             });
@@ -176,7 +176,10 @@ exports.handler = async (event) => {
                 links.push({
                     source: `insight_${j}`,
                     target: oppId,
-                    strength: 0.9
+                    strength: calculateRelationshipStrength(
+                    data.insight[j],
+                    data.opportunity
+            )
                 });
 
             });
@@ -198,7 +201,10 @@ exports.handler = async (event) => {
             links.push({
                 source: "opportunity_main",
                 target: actionId,
-                strength: 0.7
+                strength: calculateRelationshipStrength(
+                data.opportunity,
+                action
+                )
             });
 
         });
