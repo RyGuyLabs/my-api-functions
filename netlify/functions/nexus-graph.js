@@ -244,27 +244,33 @@ const data = {
         }
 
         // ACTIONS
-        data.actions.forEach((action, i) => {
+        // ACTIONS
+data.actions.forEach((action, i) => {
 
-            const actionId = `action_${i}`;
+    const actionId = `action_${i}`;
 
-            nodeMap.set(actionId, {
-    id: actionId,
-    type: "action",
-    label: action,
-    weight: calculateNodeWeight("action", action)
-});
+    nodeMap.set(actionId, {
+        id: actionId,
+        type: "action",
+        label: action,
+        weight: calculateNodeWeight("action", action)
+    });
 
-            links.push({
-                source: "opportunity_main",
-                target: actionId,
-                strength: calculateRelationshipStrength(
+    // ONLY LINK IF OPPORTUNITY EXISTS
+    if (data.opportunity) {
+
+        links.push({
+            source: "opportunity_main",
+            target: actionId,
+            strength: calculateRelationshipStrength(
                 data.opportunity,
                 action
-                )
-            });
-
+            )
         });
+
+    }
+
+});
 
     function buildStrategicPaths(nodes, links) {
 
