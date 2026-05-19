@@ -107,20 +107,15 @@ const data = {
     const connectedLinks = links.filter(link => {
 
     const sourceId =
-        typeof link.source === "object"
-            ? link.source.id
-            : link.source;
+        typeof link.source === "object" ? link.source.id : link.source;
 
     const targetId =
-        typeof link.target === "object"
-            ? link.target.id
-            : link.target;
+        typeof link.target === "object" ? link.target.id : link.target;
 
-    return (
-        sourceId === node.id ||
-        targetId === node.id
-    );
+    const nodeId =
+        typeof node.id === "object" ? node.id.id : node.id;
 
+    return sourceId === nodeId || targetId === nodeId;
 });
 
     score += connectedLinks.length * 6;
@@ -298,13 +293,13 @@ nodes.forEach(node => {
 });
 
         return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                nodes,
-                links
-            })
-        };
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+        nodes: Array.from(nodeMap.values()),
+        links
+    })
+};
 
     } catch (error) {
 
