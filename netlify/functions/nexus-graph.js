@@ -184,12 +184,12 @@ const data = {
 
             const signalId = `signal_${i}`;
 
-            nodes.push({
-                id: signalId,
-                type: "signal",
-                label: signal,
-                weight: calculateNodeWeight("signal", signal)
-            });
+            nodeMap.set(signalId, {
+    id: signalId,
+    type: "signal",
+    label: signal,
+    weight: calculateNodeWeight("signal", signal)
+});
 
             // CONNECT TO INSIGHTS
             data.insight.forEach((insight, j) => {
