@@ -198,14 +198,14 @@ const data = {
 
                 if (!nodeMap.has(insightId)) {
 
-                    nodes.push({
-                        id: insightId,
-                        type: "insight",
-                        label: insight,
-                        weight: calculateNodeWeight("insight", insight)
-                    });
+    nodeMap.set(insightId, {
+        id: insightId,
+        type: "insight",
+        label: insight,
+        weight: calculateNodeWeight("insight", insight)
+    });
 
-                }
+}
 
                 links.push({
                     source: signalId,
@@ -249,12 +249,12 @@ const data = {
 
             const actionId = `action_${i}`;
 
-            nodes.push({
-                id: actionId,
-                type: "action",
-                label: action,
-                weight: calculateNodeWeight("action", action)
-            });
+            nodeMap.set(actionId, {
+    id: actionId,
+    type: "action",
+    label: action,
+    weight: calculateNodeWeight("action", action)
+});
 
             links.push({
                 source: "opportunity_main",
@@ -268,7 +268,7 @@ const data = {
         });
 
         // STRATEGIC INTELLIGENCE SCORING
-nodes.forEach(node => {
+Array.from(nodeMap.values()).forEach(node => {
 
     node.strategicScore = calculateStrategicScore(node, links);
 
