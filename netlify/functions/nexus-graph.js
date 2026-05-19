@@ -217,33 +217,42 @@ const data = {
         });
 
         // OPPORTUNITY
-        if (data.opportunity) {
+        // OPPORTUNITY
+const oppId = "opportunity_main";
 
-            const oppId = "opportunity_main";
+if (data.opportunity && data.opportunity.trim() !== "") {
 
-            nodeMap.set(oppId, {
-                id: oppId,
-                type: "opportunity",
-                label: data.opportunity,
-                weight: calculateNodeWeight("opportunity", data.opportunity)
-            });
+    nodeMap.set(oppId, {
+        id: oppId,
+        type: "opportunity",
+        label: data.opportunity,
+        weight: calculateNodeWeight(
+            "opportunity",
+            data.opportunity
+        )
+    });
 
-            data.insight.forEach((_, j) => {
+    data.insight.forEach((insight, j) => {
 
-                links.push({
-                    source: `insight_${j}`,
-                    target: oppId,
-                    strength: calculateRelationshipStrength(
-                    data.insight[j],
+        const insightId = `insight_${j}`;
+
+        if (nodeMap.has(insightId)) {
+
+            links.push({
+                source: insightId,
+                target: oppId,
+                strength: calculateRelationshipStrength(
+                    insight,
                     data.opportunity
-            )
-                });
-
+                )
             });
 
         }
 
-        // ACTIONS
+    });
+
+}
+
         // ACTIONS
 data.actions.forEach((action, i) => {
 
