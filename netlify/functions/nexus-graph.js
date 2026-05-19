@@ -27,7 +27,6 @@ const data = {
     opportunity: typeof raw.opportunity === "string" ? raw.opportunity : ""
 };
 
-        const nodes = [];
         const links = [];
         const nodeMap = new Map();
 
