@@ -266,6 +266,124 @@ const data = {
 
         });
 
+    function buildStrategicPaths(nodes, links) {
+
+    const pathways = [];
+
+    const nodeRegistry = {};
+
+    nodes.forEach(node => {
+        nodeRegistry[node.id] = node;
+    });
+
+    const signals = nodes.filter(n => n.type === "signal");
+
+    signals.forEach(signal => {
+
+        const signalLinks = links.filter(link => {
+
+            const sourceId =
+                typeof link.source === "object"
+                    ? link.source.id
+                    : link.source;
+
+            return sourceId === signal.id;
+        });
+
+        signalLinks.forEach(signalLink => {
+
+            const insightId =
+                typeof signalLink.target === "object"
+                    ? signalLink.target.id
+                    : signalLink.target;
+
+            const insightNode = nodeRegistry[insightId];
+
+            if (!insightNode) return;
+
+            const insightLinks = links.filter(link => {
+
+                const sourceId =
+                    typeof link.source === "object"
+                        ? link.source.id
+                        : link.source;
+
+                return sourceId === insightNode.id;
+            });
+
+            insightLinks.forEach(insightLink => {
+
+                const opportunityId =
+                    typeof insightLink.target === "object"
+                        ? insightLink.target.id
+                        : insightLink.target;
+
+                const opportunityNode = nodeRegistry[opportunityId];
+
+                if (!opportunityNode) return;
+
+                const opportunityLinks = links.filter(link => {
+
+                    const sourceId =
+                        typeof link.source === "object"
+                            ? link.source.id
+                            : link.source;
+
+                    return sourceId === opportunityNode.id;
+                });
+
+                opportunityLinks.forEach(opportunityLink => {
+
+                    const actionId =
+                        typeof opportunityLink.target === "object"
+                            ? opportunityLink.target.id
+                            : opportunityLink.target;
+
+                    const actionNode = nodeRegistry[actionId];
+
+                    if (!actionNode) return;
+
+                    const totalStrength =
+                        signalLink.strength +
+                        insightLink.strength +
+                        opportunityLink.strength;
+
+                    const pathwayScore = Math.round(
+                        (
+                            totalStrength +
+                            signal.weight +
+                            insightNode.weight +
+                            opportunityNode.weight +
+                            actionNode.weight
+                        ) * 25
+                    );
+
+                    pathways.push({
+                        signal: signal.label,
+                        insight: insightNode.label,
+                        opportunity: opportunityNode.label,
+                        action: actionNode.label,
+                        score: pathwayScore
+                    });
+
+                });
+
+            });
+
+        });
+
+    });
+
+    return pathways
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+}
+
+        const strategicPaths = buildStrategicPaths(
+    Array.from(nodeMap.values()),
+    links
+);
+        
         // STRATEGIC INTELLIGENCE SCORING
 Array.from(nodeMap.values()).forEach(node => {
 
