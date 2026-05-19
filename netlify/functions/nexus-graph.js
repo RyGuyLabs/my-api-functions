@@ -251,6 +251,31 @@ exports.handler = async (event) => {
 
         });
 
+        // STRATEGIC INTELLIGENCE SCORING
+nodes.forEach(node => {
+
+    node.strategicScore = calculateStrategicScore(node, links);
+
+    if (node.strategicScore >= 85) {
+
+        node.rank = "Dominant";
+
+    } else if (node.strategicScore >= 70) {
+
+        node.rank = "Strategic";
+
+    } else if (node.strategicScore >= 50) {
+
+        node.rank = "Relevant";
+
+    } else {
+
+        node.rank = "Peripheral";
+
+    }
+
+});
+
         return {
             statusCode: 200,
             headers,
