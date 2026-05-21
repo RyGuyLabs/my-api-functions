@@ -1,11 +1,12 @@
 exports.handler = async (event) => {
 
     // CORS HEADERS
-    const headers = {
+    const CORS_HEADERS = {
     "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Max-Age": "86400"
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
 };
 
     // HANDLE PREFLIGHT
