@@ -410,9 +410,6 @@ links.push({
 
 });
 
-// ======================================================
-// ACTION NODES
-// ======================================================
 
 data.actions.forEach((action, i) => {
 
@@ -425,15 +422,31 @@ data.actions.forEach((action, i) => {
         weight: calculateNodeWeight("action", action)
     });
 
-    // ALWAYS LINK TO OPPORTUNITY
-    links.push({
-        source: oppId,
-        target: actionId,
-        strength: calculateRelationshipStrength(
-            data.opportunity || "Strategic Opportunity",
-            action
+    const relationshipStrength =
+    calculateRelationshipStrength(
+        data.opportunity || "Strategic Opportunity",
+        action
+    );
+
+links.push({
+
+    source: oppId,
+
+    target: actionId,
+
+    strength: relationshipStrength,
+
+    relationship:
+        relationshipStrength >= 0.72
+            ? "executes"
+            : relationshipStrength >= 0.5
+                ? "enables"
+                : "tentative",
+
+    confidence:
+        Math.round(
+            relationshipStrength * 100
         )
-    });
 
 });
 
