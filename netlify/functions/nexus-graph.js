@@ -940,16 +940,14 @@ else {
 
 });
 
-        return {
+        return withCors({
     statusCode: 200,
-    headers,
     body: JSON.stringify({
-    nodes: Array.from(nodeMap.values()),
-    links,
-    strategicPaths: propagatedPaths,
-    hiddenClusters
-})
-};
+        nodes: Array.from(nodeMap.values()),
+        links,
+        strategicPaths
+    })
+});
 
     } catch (error) {
 
@@ -959,13 +957,12 @@ else {
     error.stack
 );
 
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({
-                error: "Failed to construct Nexus graph."
-            })
-        };
+        return withCors({
+    statusCode: 500,
+    body: JSON.stringify({
+        error: "Failed to construct Nexus graph."
+    })
+});
 
     }
 
