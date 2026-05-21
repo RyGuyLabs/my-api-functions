@@ -314,14 +314,32 @@ const data = {
 
 }
 
-                links.push({
+                const relationshipStrength =
+    calculateRelationshipStrength(
+        signal,
+        insight
+    );
+
+links.push({
+
     source: signalId,
+
     target: insightId,
-    strength: calculateRelationshipStrength(signal, insight),
-    relationship: "supports",
-    polarity: "positive",
-    confidence: 82,
-    momentum: "accelerating"
+
+    strength: relationshipStrength,
+
+    relationship:
+        relationshipStrength >= 0.7
+            ? "reinforces"
+            : relationshipStrength >= 0.45
+                ? "correlates"
+                : "weak-association",
+
+    confidence:
+        Math.round(
+            relationshipStrength * 100
+        )
+
 });
 
             });
