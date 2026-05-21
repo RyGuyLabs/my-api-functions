@@ -10,12 +10,12 @@ exports.handler = async (event) => {
 
     // HANDLE PREFLIGHT
     if (event.httpMethod === "OPTIONS") {
-        return {
-            statusCode: 200,
-            headers,
-            body: ""
-        };
-    }
+    return {
+        statusCode: 204,
+        headers,
+        body: "OK"
+    };
+}
 
     try {
 
@@ -40,10 +40,6 @@ const data = {
         String(targetLabel || "").toLowerCase();
 
     let score = 0.22;
-
-    // =========================================
-    // STRATEGIC TERM MATCHING
-    // =========================================
 
     const strategicTerms = [
 
