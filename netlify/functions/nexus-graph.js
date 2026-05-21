@@ -9,6 +9,16 @@ exports.handler = async (event) => {
     "Vary": "Origin"
 };
 
+function withCors(response) {
+    return {
+        ...response,
+        headers: {
+            ...CORS_HEADERS,
+            ...(response.headers || {})
+        }
+    };
+}
+    
     // HANDLE PREFLIGHT
     if (event.httpMethod === "OPTIONS") {
     return {
