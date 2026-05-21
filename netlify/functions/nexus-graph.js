@@ -914,8 +914,9 @@ else {
     body: JSON.stringify({
     nodes: Array.from(nodeMap.values()),
     links,
-    strategicPaths
-    })
+    strategicPaths: propagatedPaths,
+    hiddenClusters
+})
 };
 
     } catch (error) {
