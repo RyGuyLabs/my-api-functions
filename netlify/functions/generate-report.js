@@ -230,7 +230,12 @@ Avoid collapsing independent causal forces into generalized summaries.
 ​STRATEGIC QUALITY STANDARDS:
 
 ​Analytical Depth: Focus on implications, causality, and strategic consequence. Avoid surface-level summary.
-​Semantic Discipline: Every field must contribute unique, incremental value. Eliminate filler, corporate clichés, and redundant phrasing.
+
+Concreteness Enforcement:
+Prefer precise operational realities over abstract strategic phrasing.
+When possible, anchor conclusions to identifiable mechanisms, market behaviors, incentive structures, or execution constraints.​
+
+Semantic Discipline: Every field must contribute unique, incremental value. Eliminate filler, corporate clichés, and redundant phrasing.
 ​Tone: Precise, decisive, and analytically sophisticated. Maintain an executive-briefing cadence.
 ​Quality Enforcement: Internally verify the logic. If the synthesis feels generic, shallow, or mechanically structured, internally regenerate until it demonstrates genuine strategic insight.
 
