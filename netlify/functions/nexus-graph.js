@@ -207,10 +207,14 @@ const data = {
 }
 
                 links.push({
-                    source: signalId,
-                    target: insightId,
-                    strength: calculateRelationshipStrength(signal, insight)
-                });
+    source: signalId,
+    target: insightId,
+    strength: calculateRelationshipStrength(signal, insight),
+    relationship: "supports",
+    polarity: "positive",
+    confidence: 82,
+    momentum: "accelerating"
+});
 
             });
 
