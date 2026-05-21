@@ -748,9 +748,6 @@ function calculateSemanticGravity(node, links) {
     );
 }
 
-// ======================================================
-// HIDDEN CLUSTER EMERGENCE
-// ======================================================
 
 function detectHiddenClusters(nodes, links) {
 
@@ -820,9 +817,6 @@ function detectHiddenClusters(nodes, links) {
     return clusters;
 }
 
-// ======================================================
-// DYNAMIC TRAJECTORY PROPAGATION
-// ======================================================
 
 function propagateTrajectoryStrength(paths) {
 
@@ -858,6 +852,28 @@ function propagateTrajectoryStrength(paths) {
     });
 
 }
+
+
+Array.from(nodeMap.values()).forEach(node => {
+
+    node.gravity =
+        calculateSemanticGravity(
+            node,
+            links
+        );
+
+});
+
+const hiddenClusters =
+    detectHiddenClusters(
+        Array.from(nodeMap.values()),
+        links
+    );
+
+const propagatedPaths =
+    propagateTrajectoryStrength(
+        strategicPaths
+    );
         
         // STRATEGIC INTELLIGENCE SCORING
 Array.from(nodeMap.values()).forEach(node => {
