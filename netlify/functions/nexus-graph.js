@@ -302,19 +302,40 @@ data.actions.forEach((action, i) => {
         nodeRegistry[node.id] = node;
     });
 
+    const outgoingMap = {};
+    const incomingMap = {};
+
+    links.forEach(link => {
+
+        const sourceId =
+            typeof link.source === "object"
+                ? link.source.id
+                : link.source;
+
+        const targetId =
+            typeof link.target === "object"
+                ? link.target.id
+                : link.target;
+
+        if (!outgoingMap[sourceId]) {
+            outgoingMap[sourceId] = [];
+        }
+
+        if (!incomingMap[targetId]) {
+            incomingMap[targetId] = [];
+        }
+
+        outgoingMap[sourceId].push(link);
+        incomingMap[targetId].push(link);
+
+    });
+
     const signals = nodes.filter(n => n.type === "signal");
 
     signals.forEach(signal => {
 
-        const signalLinks = links.filter(link => {
-
-            const sourceId =
-                typeof link.source === "object"
-                    ? link.source.id
-                    : link.source;
-
-            return sourceId === signal.id;
-        });
+        const signalLinks =
+            outgoingMap[signal.id] || [];
 
         signalLinks.forEach(signalLink => {
 
@@ -323,19 +344,13 @@ data.actions.forEach((action, i) => {
                     ? signalLink.target.id
                     : signalLink.target;
 
-            const insightNode = nodeRegistry[insightId];
+            const insightNode =
+                nodeRegistry[insightId];
 
             if (!insightNode) return;
 
-            const insightLinks = links.filter(link => {
-
-                const sourceId =
-                    typeof link.source === "object"
-                        ? link.source.id
-                        : link.source;
-
-                return sourceId === insightNode.id;
-            });
+            const insightLinks =
+                outgoingMap[insightNode.id] || [];
 
             insightLinks.forEach(insightLink => {
 
@@ -344,19 +359,13 @@ data.actions.forEach((action, i) => {
                         ? insightLink.target.id
                         : insightLink.target;
 
-                const opportunityNode = nodeRegistry[opportunityId];
+                const opportunityNode =
+                    nodeRegistry[opportunityId];
 
                 if (!opportunityNode) return;
 
-                const opportunityLinks = links.filter(link => {
-
-                    const sourceId =
-                        typeof link.source === "object"
-                            ? link.source.id
-                            : link.source;
-
-                    return sourceId === opportunityNode.id;
-                });
+                const opportunityLinks =
+                    outgoingMap[opportunityNode.id] || [];
 
                 opportunityLinks.forEach(opportunityLink => {
 
@@ -365,31 +374,129 @@ data.actions.forEach((action, i) => {
                             ? opportunityLink.target.id
                             : opportunityLink.target;
 
-                    const actionNode = nodeRegistry[actionId];
+                    const actionNode =
+                        nodeRegistry[actionId];
 
                     if (!actionNode) return;
 
-                    const totalStrength =
-                        signalLink.strength +
-                        insightLink.strength +
-                        opportunityLink.strength;
+                    // =====================================
+                    // STRUCTURAL INTELLIGENCE ENGINE
+                    // =====================================
 
-                    const pathwayScore = Math.round(
+                    const signalStrength =
+                        signalLink.strength || 0.3;
+
+                    const insightStrength =
+                        insightLink.strength || 0.3;
+
+                    const actionStrength =
+                        opportunityLink.strength || 0.3;
+
+                    const chainStrength =
                         (
-                            totalStrength +
-                            signal.weight +
-                            insightNode.weight +
-                            opportunityNode.weight +
-                            actionNode.weight
-                        ) * 25
-                    );
+                            signalStrength +
+                            insightStrength +
+                            actionStrength
+                        ) / 3;
+
+                    // NODE STRATEGIC MASS
+                    const nodeMass =
+                        (
+                            (signal.strategicScore || 50) +
+                            (insightNode.strategicScore || 50) +
+                            (opportunityNode.strategicScore || 50) +
+                            (actionNode.strategicScore || 50)
+                        ) / 4;
+
+                    // CONVERGENCE DETECTION
+                    const convergenceFactor =
+                        (
+                            (incomingMap[insightNode.id]?.length || 1) +
+                            (incomingMap[opportunityNode.id]?.length || 1)
+                        );
+
+                    // OPPORTUNITY EXECUTION ALIGNMENT
+                    const executionAlignment =
+                        (
+                            (opportunityNode.weight || 1) *
+                            (actionNode.weight || 1)
+                        );
+
+                    // ASYMMETRIC LEVERAGE MODEL
+                    let leverageMultiplier = 1;
+
+                    if (
+                        opportunityNode.rank === "Dominant" &&
+                        actionNode.rank === "Dominant"
+                    ) {
+                        leverageMultiplier += 0.55;
+                    }
+                    else if (
+                        opportunityNode.rank === "Strategic"
+                    ) {
+                        leverageMultiplier += 0.28;
+                    }
+
+                    // SIGNAL RARITY AMPLIFICATION
+                    const rarityBoost =
+                        Math.min(
+                            1.35,
+                            1 + (
+                                (
+                                    signal.weight || 0.5
+                                ) * 0.4
+                            )
+                        );
+
+                    // FINAL PATHWAY SCORE
+                    let pathwayScore =
+                        (
+                            (chainStrength * 30) +
+                            (nodeMass * 0.42) +
+                            (convergenceFactor * 4.5) +
+                            (executionAlignment * 18)
+                        ) * leverageMultiplier * rarityBoost;
+
+                    pathwayScore =
+                        Math.round(
+                            Math.min(pathwayScore, 100)
+                        );
+
+                    // PATHWAY CLASSIFICATION
+                    let trajectoryType =
+                        "Emergent";
+
+                    if (pathwayScore >= 88) {
+                        trajectoryType = "Dominant Strategic Trajectory";
+                    }
+                    else if (pathwayScore >= 74) {
+                        trajectoryType = "High-Leverage Expansion Path";
+                    }
+                    else if (pathwayScore >= 58) {
+                        trajectoryType = "Stable Operational Vector";
+                    }
 
                     pathways.push({
+
                         signal: signal.label,
+
                         insight: insightNode.label,
+
                         opportunity: opportunityNode.label,
+
                         action: actionNode.label,
-                        score: pathwayScore
+
+                        score: pathwayScore,
+
+                        trajectoryType,
+
+                        convergenceFactor,
+
+                        leverageMultiplier:
+                            Number(
+                                leverageMultiplier.toFixed(2)
+                            )
+
                     });
 
                 });
@@ -400,9 +507,34 @@ data.actions.forEach((action, i) => {
 
     });
 
-    return pathways
+    // REMOVE DUPLICATE TRAJECTORIES
+    const deduped = [];
+
+    const seen = new Set();
+
+    pathways.forEach(path => {
+
+        const signature =
+            [
+                path.signal,
+                path.insight,
+                path.opportunity,
+                path.action
+            ].join("|");
+
+        if (!seen.has(signature)) {
+
+            seen.add(signature);
+
+            deduped.push(path);
+
+        }
+
+    });
+
+    return deduped
         .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
+        .slice(0, 12);
 }
 
         const strategicPaths = buildStrategicPaths(
