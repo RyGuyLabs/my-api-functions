@@ -537,10 +537,7 @@ links.push({
 
                     if (!actionNode) return;
 
-                    // =====================================
-                    // STRUCTURAL INTELLIGENCE ENGINE
-                    // =====================================
-
+                    
                     const signalStrength =
                         signalLink.strength || 0.3;
 
@@ -699,6 +696,168 @@ links.push({
     Array.from(nodeMap.values()),
     links
 );
+
+    // ======================================================
+// SEMANTIC GRAVITY ENGINE
+// ======================================================
+
+function calculateSemanticGravity(node, links) {
+
+    const connected = links.filter(link => {
+
+        const sourceId =
+            typeof link.source === "object"
+                ? link.source.id
+                : link.source;
+
+        const targetId =
+            typeof link.target === "object"
+                ? link.target.id
+                : link.target;
+
+        return (
+            sourceId === node.id ||
+            targetId === node.id
+        );
+    });
+
+    let gravity = 0;
+
+    connected.forEach(link => {
+
+        gravity += (
+            (link.strength || 0.3) * 18
+        );
+
+    });
+
+    gravity += (
+        (node.weight || 0.5) * 40
+    );
+
+    if (node.type === "opportunity") {
+        gravity += 22;
+    }
+
+    if (node.type === "insight") {
+        gravity += 12;
+    }
+
+    return Math.round(
+        Math.min(gravity, 100)
+    );
+}
+
+// ======================================================
+// HIDDEN CLUSTER EMERGENCE
+// ======================================================
+
+function detectHiddenClusters(nodes, links) {
+
+    const clusters = [];
+
+    const visited = new Set();
+
+    nodes.forEach(node => {
+
+        if (visited.has(node.id)) return;
+
+        const connectedLinks = links.filter(link => {
+
+            const sourceId =
+                typeof link.source === "object"
+                    ? link.source.id
+                    : link.source;
+
+            const targetId =
+                typeof link.target === "object"
+                    ? link.target.id
+                    : link.target;
+
+            return (
+                sourceId === node.id ||
+                targetId === node.id
+            );
+        });
+
+        const clusterNodes = new Set();
+
+        connectedLinks.forEach(link => {
+
+            const sourceId =
+                typeof link.source === "object"
+                    ? link.source.id
+                    : link.source;
+
+            const targetId =
+                typeof link.target === "object"
+                    ? link.target.id
+                    : link.target;
+
+            clusterNodes.add(sourceId);
+            clusterNodes.add(targetId);
+        });
+
+        if (clusterNodes.size >= 3) {
+
+            const clusterArray =
+                Array.from(clusterNodes);
+
+            clusterArray.forEach(id =>
+                visited.add(id)
+            );
+
+            clusters.push({
+                id: `cluster_${clusters.length}`,
+                members: clusterArray,
+                density:
+                    connectedLinks.length /
+                    clusterArray.length
+            });
+        }
+    });
+
+    return clusters;
+}
+
+// ======================================================
+// DYNAMIC TRAJECTORY PROPAGATION
+// ======================================================
+
+function propagateTrajectoryStrength(paths) {
+
+    return paths.map(path => {
+
+        let momentum = path.score;
+
+        if (
+            path.opportunity
+                .toLowerCase()
+                .includes("automation")
+        ) {
+            momentum += 12;
+        }
+
+        if (
+            path.action
+                .toLowerCase()
+                .includes("scale")
+        ) {
+            momentum += 8;
+        }
+
+        return {
+            ...path,
+            momentum:
+                Math.min(
+                    Math.round(momentum),
+                    100
+                )
+        };
+
+    });
+
+}
         
         // STRATEGIC INTELLIGENCE SCORING
 Array.from(nodeMap.values()).forEach(node => {
