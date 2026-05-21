@@ -2,10 +2,11 @@ exports.handler = async (event) => {
 
     // CORS HEADERS
     const headers = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS"
-    };
+    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400"
+};
 
     // HANDLE PREFLIGHT
     if (event.httpMethod === "OPTIONS") {
