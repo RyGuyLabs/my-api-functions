@@ -1,32 +1,56 @@
 exports.handler = async (event) => {
 
-    // CORS HEADERS
-    const CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin"
-};
+    // =====================================================
+    // PRODUCTION CORS LAYER
+    // =====================================================
 
-function withCors(response) {
-    return {
-        ...response,
-        headers: {
-            ...CORS_HEADERS,
-            ...(response.headers || {})
-        }
+    const CORS_HEADERS = {
+        "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Max-Age": "86400",
+        "Vary": "Origin"
     };
-}
-    
-    // HANDLE PREFLIGHT
+
+    function withCors(response) {
+
+        return {
+            ...response,
+            headers: {
+                ...CORS_HEADERS,
+                ...(response.headers || {})
+            }
+        };
+
+    }
+
+    // =====================================================
+    // PREFLIGHT REQUEST HANDLER
+    // =====================================================
+
     if (event.httpMethod === "OPTIONS") {
-    return {
-        statusCode: 204,
-        headers: CORS_HEADERS,
-        body: ""
-    };
-}
+
+        return withCors({
+            statusCode: 204,
+            body: ""
+        });
+
+    }
+
+    // =====================================================
+    // METHOD VALIDATION
+    // =====================================================
+
+    if (event.httpMethod !== "POST") {
+
+        return withCors({
+            statusCode: 405,
+            body: JSON.stringify({
+                error: "Method Not Allowed"
+            })
+        });
+
+    }
 
     try {
 
