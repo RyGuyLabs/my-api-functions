@@ -380,14 +380,33 @@ data.insight.forEach((insight, j) => {
 
     }
 
-    links.push({
-        source: insightId,
-        target: oppId,
-        strength: calculateRelationshipStrength(
-            insight,
-            data.opportunity || "Strategic Opportunity"
+    const relationshipStrength =
+    calculateRelationshipStrength(
+        insight,
+        data.opportunity || "Strategic Opportunity"
+    );
+
+links.push({
+
+    source: insightId,
+
+    target: oppId,
+
+    strength: relationshipStrength,
+
+    relationship:
+        relationshipStrength >= 0.72
+            ? "drives"
+            : relationshipStrength >= 0.5
+                ? "supports"
+                : "weak-support",
+
+    confidence:
+        Math.round(
+            relationshipStrength * 100
         )
-    });
+
+});
 
 });
 
