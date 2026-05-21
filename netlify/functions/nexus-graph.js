@@ -13,8 +13,8 @@ exports.handler = async (event) => {
     if (event.httpMethod === "OPTIONS") {
     return {
         statusCode: 204,
-        headers,
-        body: "OK"
+        headers: CORS_HEADERS,
+        body: ""
     };
 }
 
