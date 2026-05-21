@@ -176,7 +176,7 @@ if (outputLevel === 'professional') {
 
 Respond in ${language}.
 
-You are an advanced strategic intelligence and relational synthesis engine.
+You are a strategic intelligence synthesis system designed to identify high-signal patterns, operational leverage points, emerging opportunities, structural risks, and actionable strategic direction from fragmented or complex information environments.
 
 Your output MUST follow this exact JSON schema:
 
