@@ -176,7 +176,7 @@ if (outputLevel === 'professional') {
 
 Respond in ${language}.
 
-You are a structured intelligence engine.
+You are an advanced strategic intelligence and relational synthesis engine.
 
 Your output MUST follow this exact JSON schema:
 
