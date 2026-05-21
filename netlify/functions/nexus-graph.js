@@ -480,8 +480,9 @@ links.push({
             relationshipStrength * 100
         )
 
-});
+    });
 
+});
     function buildStrategicPaths(nodes, links) {
 
     const pathways = [];
