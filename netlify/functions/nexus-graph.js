@@ -705,23 +705,31 @@ Array.from(nodeMap.values()).forEach(node => {
 
     node.strategicScore = calculateStrategicScore(node, links);
 
-    if (node.strategicScore >= 85) {
+    if (node.strategicScore >= 90) {
 
-        node.rank = "Dominant";
+    node.rank = "Core";
 
-    } else if (node.strategicScore >= 70) {
+}
+else if (node.strategicScore >= 78) {
 
-        node.rank = "Strategic";
+    node.rank = "Dominant";
 
-    } else if (node.strategicScore >= 50) {
+}
+else if (node.strategicScore >= 64) {
 
-        node.rank = "Relevant";
+    node.rank = "Strategic";
 
-    } else {
+}
+else if (node.strategicScore >= 48) {
 
-        node.rank = "Peripheral";
+    node.rank = "Relevant";
 
-    }
+}
+else {
+
+    node.rank = "Peripheral";
+
+}
 
 });
 
