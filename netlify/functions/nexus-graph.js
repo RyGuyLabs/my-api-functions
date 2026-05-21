@@ -32,53 +32,161 @@ const data = {
 
         function calculateRelationshipStrength(sourceLabel = "", targetLabel = "") {
 
-    const source = String(sourceLabel || "").toLowerCase();
-    const target = String(targetLabel || "").toLowerCase();
+    const source =
+        String(sourceLabel || "").toLowerCase();
 
-    let score = 0.35;
+    const target =
+        String(targetLabel || "").toLowerCase();
+
+    let score = 0.22;
+
+    // =========================================
+    // STRATEGIC TERM MATCHING
+    // =========================================
 
     const strategicTerms = [
+
         "ai",
         "automation",
-        "systems",
-        "security",
-        "network",
         "infrastructure",
-        "intelligence",
-        "finance",
+        "platform",
+        "systems",
         "analytics",
-        "data",
-        "strategy",
+        "intelligence",
+        "security",
+        "market",
         "growth",
-        "scaling"
+        "scaling",
+        "optimization",
+        "network",
+        "enterprise",
+        "revenue",
+        "data",
+        "sales",
+        "engineering",
+        "workflow",
+        "cloud",
+        "saas"
+
     ];
 
     strategicTerms.forEach(term => {
 
-        if (source.includes(term) && target.includes(term)) {
-            score += 0.12;
+        if (
+            source.includes(term) &&
+            target.includes(term)
+        ) {
+            score += 0.16;
         }
 
     });
 
-    // Shared word amplification
-    const sourceWords = source.split(" ");
-    const targetWords = target.split(" ");
+    // =========================================
+    // SHARED TOKEN ANALYSIS
+    // =========================================
+
+    const sourceWords =
+        source.split(/\s+/);
+
+    const targetWords =
+        target.split(/\s+/);
 
     sourceWords.forEach(word => {
 
         if (
-            word.length > 3 &&
+            word.length > 4 &&
             targetWords.includes(word)
         ) {
-            score += 0.08;
+            score += 0.1;
         }
 
     });
 
-    return Math.max(0.2, Math.min(score, 1));
-}
+    // =========================================
+    // STRUCTURAL ALIGNMENT DETECTION
+    // =========================================
 
+    const alignmentPairs = [
+
+        ["sales", "engineering"],
+        ["automation", "workflow"],
+        ["ai", "data"],
+        ["cloud", "infrastructure"],
+        ["security", "compliance"],
+        ["growth", "revenue"],
+        ["analytics", "optimization"]
+
+    ];
+
+    alignmentPairs.forEach(pair => {
+
+        const [a, b] = pair;
+
+        const aligned =
+            (
+                source.includes(a) &&
+                target.includes(b)
+            ) ||
+            (
+                source.includes(b) &&
+                target.includes(a)
+            );
+
+        if (aligned) {
+            score += 0.18;
+        }
+
+    });
+
+    // =========================================
+    // CONTRADICTION DETECTION
+    // =========================================
+
+    const contradictionPairs = [
+
+        ["growth", "decline"],
+        ["automation", "manual"],
+        ["scarcity", "oversupply"],
+        ["expansion", "contraction"],
+        ["centralized", "decentralized"]
+
+    ];
+
+    contradictionPairs.forEach(pair => {
+
+        const [a, b] = pair;
+
+        const contradiction =
+            (
+                source.includes(a) &&
+                target.includes(b)
+            ) ||
+            (
+                source.includes(b) &&
+                target.includes(a)
+            );
+
+        if (contradiction) {
+            score -= 0.22;
+        }
+
+    });
+
+    const lengthDelta =
+        Math.abs(
+            sourceWords.length -
+            targetWords.length
+        );
+
+    if (lengthDelta <= 2) {
+        score += 0.05;
+    }
+
+    return Math.max(
+        0.08,
+        Math.min(score, 1)
+    );
+}
         function calculateStrategicScore(node, links) {
 
     let score = 0;
