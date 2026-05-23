@@ -1,8 +1,5 @@
 exports.handler = async (event) => {
 
-    // =====================================================
-    // PRODUCTION CORS LAYER
-    // =====================================================
 
     const CORS_HEADERS = {
         "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
@@ -24,9 +21,6 @@ exports.handler = async (event) => {
 
     }
 
-    // =====================================================
-    // PREFLIGHT REQUEST HANDLER
-    // =====================================================
 
     if (event.httpMethod === "OPTIONS") {
 
@@ -113,9 +107,6 @@ const data = {
 
     });
 
-    // =========================================
-    // SHARED TOKEN ANALYSIS
-    // =========================================
 
     const sourceWords =
         source.split(/\s+/);
@@ -134,10 +125,7 @@ const data = {
 
     });
 
-    // =========================================
-    // STRUCTURAL ALIGNMENT DETECTION
-    // =========================================
-
+    
     const alignmentPairs = [
 
         ["sales", "engineering"],
@@ -170,10 +158,7 @@ const data = {
 
     });
 
-    // =========================================
-    // CONTRADICTION DETECTION
-    // =========================================
-
+            
     const contradictionPairs = [
 
         ["growth", "decline"],
@@ -730,9 +715,6 @@ links.push({
     links
 );
 
-    // ======================================================
-// SEMANTIC GRAVITY ENGINE
-// ======================================================
 
 function calculateSemanticGravity(node, links) {
 
