@@ -75,17 +75,24 @@ exports.handler = async (event) => {
         const ip = event.headers["x-nf-client-connection-ip"] || "unknown";
 
         // SAVE TO FIRESTORE
-        const docRef = await db.collection("career_interactions").add({
-            ...body,
-            userIp: ip,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
+       const userEmail = body.userEmail;
 
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({ success: true, id: docRef.id })
-        };
+await db.collection("career_profiles")
+    .doc(userEmail)
+    .set({
+        careers: body.careers,
+        primary: body.primary,
+        userIp: ip,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+        success: true
+    })
+};
 
     } catch (err) {
         console.error("Save error:", err);
