@@ -244,3 +244,58 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     };
   }
 };
+
+function clamp(value) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function calculateConfidence(text) {
+  let score = 50;
+
+  if (text.length > 120) score += 10;
+  if (!text.includes("maybe")) score += 10;
+  if (!text.includes("uncertain")) score += 10;
+  if (text.includes("weak")) score -= 15;
+
+  return clamp(score);
+}
+
+function calculateClarity(text) {
+  let score = 50;
+
+  if (text.length < 200) score += 10;
+  if (!text.includes("...")) score += 5;
+  if (text.split(" ").length < 60) score += 10;
+
+  return clamp(score);
+}
+
+function calculatePressureResistance(text) {
+  let score = 50;
+
+  if (!text.includes("hesitant")) score += 10;
+  if (!text.includes("uncertain")) score += 10;
+  if (text.includes("challenge")) score += 5;
+
+  return clamp(score);
+}
+
+function calculateAuthoritySignal(text) {
+  let score = 50;
+
+  if (text.includes("must")) score += 10;
+  if (text.includes("will")) score += 10;
+  if (text.includes("should")) score -= 5;
+
+  return clamp(score);
+}
+
+function calculateHesitationIndex(text) {
+  let score = 50;
+
+  if (text.includes("maybe")) score += 10;
+  if (text.includes("I think")) score += 10;
+  if (text.includes("not sure")) score += 15;
+
+  return clamp(score);
+}
