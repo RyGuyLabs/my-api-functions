@@ -217,12 +217,19 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
       statusCode: 200,
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
       body: JSON.stringify({
-        personaResponse: data.personaResponse || "No response generated.",
-        anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
-        tacticalCorrection: data.tacticalCorrection || "No correction provided.",
-        stressLevel: data.stressLevel || "Medium",
-        careerTitle: data.careerTitle || careerPath
-      })
+  personaResponse: data.personaResponse || "No response generated.",
+  anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
+  tacticalCorrection: data.tacticalCorrection || "No correction provided.",
+  stressLevel: data.stressLevel || "Medium",
+  careerTitle: data.careerTitle || careerPath,
+
+  // 🧠 BEHAVIORAL INTELLIGENCE LAYER (NEW)
+  confidence: calculateConfidence(data.personaResponse || ""),
+  clarity: calculateClarity(data.personaResponse || ""),
+  pressureResistance: calculatePressureResistance(data.anxietyAnalysis || ""),
+  authoritySignal: calculateAuthoritySignal(data.tacticalCorrection || ""),
+  hesitationIndex: calculateHesitationIndex(data.anxietyAnalysis || "")
+})
     };
 
   } catch (error) {
