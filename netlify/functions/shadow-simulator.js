@@ -202,6 +202,17 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     try {
       const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
       data = JSON.parse(cleanJson);
+
+  const performanceScore = Math.round(
+    (
+      (data.confidence || 50) +
+      (data.clarity || 50) +
+      (data.pressureResistance || 50) +
+      (data.authoritySignal || 50) -
+      (data.hesitationIndex || 50)
+    ) / 4
+  );
+      
     } catch (e) {
       console.error("JSON Parse Error:", e);
       data = {
