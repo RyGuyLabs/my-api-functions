@@ -196,22 +196,66 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     const end = rawText.lastIndexOf('}');
     if (start === -1 || end === -1) throw new Error("Invalid AI format");
 
-    const jsonString = rawText.substring(start, end + 1);
-    let data;
+const jsonString = rawText.substring(start, end + 1);
 
-    try {
-      const cleanJson = jsonString.replace(/```json/g, "").replace(/```/g, "").trim();
-      data = JSON.parse(cleanJson);
+let data;
 
-  const performanceScore = Math.round(
-    (
-      (data.confidence || 50) +
-      (data.clarity || 50) +
-      (data.pressureResistance || 50) +
-      (data.authoritySignal || 50) -
-      (data.hesitationIndex || 50)
-    ) / 4
-  );
+try {
+
+  const cleanJson = jsonString
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  data = JSON.parse(cleanJson);
+
+} catch (e) {
+
+  console.error("JSON Parse Error:", e);
+
+  data = {
+    personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
+    anxietyAnalysis: "Neural link formatting error. No tactical data available.",
+    tacticalCorrection: "Re-initialize and speak with more authority.",
+    stressLevel: "High",
+    careerTitle: careerPath
+  };
+
+}
+
+// 🧠 BEHAVIORAL INTELLIGENCE SCORES
+
+const confidence = calculateConfidence(
+  data.personaResponse || ""
+);
+
+const clarity = calculateClarity(
+  data.personaResponse || ""
+);
+
+const pressureResistance = calculatePressureResistance(
+  data.anxietyAnalysis || ""
+);
+
+const authoritySignal = calculateAuthoritySignal(
+  data.tacticalCorrection || ""
+);
+
+const hesitationIndex = calculateHesitationIndex(
+  data.anxietyAnalysis || ""
+);
+
+// 🧠 MASTER PERFORMANCE SCORE
+
+const performanceScore = Math.round(
+  (
+    confidence +
+    clarity +
+    pressureResistance +
+    authoritySignal -
+    hesitationIndex
+  ) / 4
+);
       
     } catch (e) {
       console.error("JSON Parse Error:", e);
