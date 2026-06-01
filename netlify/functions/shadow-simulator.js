@@ -36,6 +36,8 @@ exports.handler = async (event, context) => {
     const careerPath = body.careerPath || "Professional";
     const industry = body.industry || "General";    
 
+    const previousPerformanceScore = body.previousPerformanceScore || 50;
+
     if (!persona || typeof persona !== "string") {
       return {
         statusCode: 400,
@@ -113,6 +115,26 @@ REALISM RULES:
 ESCALATION SYSTEM:
 - If the user shows repeated hesitation (e.g., "I think," "sorry," "just"), increase your skepticism and questioning of their fit for the role.
 - If the user improves, escalate to more complex, high-level business challenges.
+
+ADAPTIVE PERFORMANCE SYSTEM:
+
+Current User Performance Score:
+${previousPerformanceScore}
+
+BEHAVIOR RULES:
+
+If score is 0–40:
+- Apply high pressure
+- Interrupt weak logic
+- Challenge confidence aggressively
+
+If score is 41–75:
+- Maintain skeptical executive tone
+- Probe for weaknesses
+
+If score is 76–100:
+- Treat user as high-level candidate
+- Introduce strategic complexity
 
 YOUR MISSION:
 1. If IS_FIRST_TURN is true:
