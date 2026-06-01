@@ -256,38 +256,48 @@ const performanceScore = Math.round(
     hesitationIndex
   ) / 4
 );
-      
-    } catch (e) {
-      console.error("JSON Parse Error:", e);
-      data = {
-        personaResponse: "The gatekeeper remains silent. Your signal is weak. Try again.",
-        anxietyAnalysis: "Neural link formatting error. No tactical data available.",
-        tacticalCorrection: "Re-initialize and speak with more authority.",
-        stressLevel: "High",
-        careerTitle: careerPath
-      };
-    }
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": accessControlOrigin },
-      body: JSON.stringify({
-  personaResponse: data.personaResponse || "No response generated.",
-  anxietyAnalysis: data.anxietyAnalysis || "No analysis provided.",
-  tacticalCorrection: data.tacticalCorrection || "No correction provided.",
-  stressLevel: data.stressLevel || "Medium",
-  careerTitle: data.careerTitle || careerPath,
+// ✅ SUCCESS RESPONSE
 
-  // 🧠 BEHAVIORAL INTELLIGENCE LAYER (NEW)
-  confidence: calculateConfidence(data.personaResponse || ""),
-  clarity: calculateClarity(data.personaResponse || ""),
-  pressureResistance: calculatePressureResistance(data.anxietyAnalysis || ""),
-  authoritySignal: calculateAuthoritySignal(data.tacticalCorrection || ""),
-  hesitationIndex: calculateHesitationIndex(data.anxietyAnalysis || "")
-})
-    };
+return {
 
-  } catch (error) {
+  statusCode: 200,
+
+  headers: {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": accessControlOrigin
+  },
+
+  body: JSON.stringify({
+
+    personaResponse:
+      data.personaResponse || "No response generated.",
+
+    anxietyAnalysis:
+      data.anxietyAnalysis || "No analysis provided.",
+
+    tacticalCorrection:
+      data.tacticalCorrection || "No correction provided.",
+
+    stressLevel:
+      data.stressLevel || "Medium",
+
+    careerTitle:
+      data.careerTitle || careerPath,
+
+    confidence,
+    clarity,
+    pressureResistance,
+    authoritySignal,
+    hesitationIndex,
+
+    performanceScore
+
+  })
+
+};
+
+} catch (error) {
     console.error("Backend Error:", error.message); // 🛡️ SECURE LOG
     return {
       statusCode: 500,
