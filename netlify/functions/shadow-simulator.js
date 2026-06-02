@@ -1,3 +1,4 @@
+const requestLog = {};
 exports.handler = async (event, context) => {
   // 1. DYNAMIC ORIGIN CHECK (Handles www vs non-www)
   const allowedOrigins = ["https://www.ryguylabs.com", "https://ryguylabs.com"];
@@ -21,7 +22,47 @@ exports.handler = async (event, context) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
 
-  // ✅ FIX: start try block in correct place
+// 🛡️ RATE LIMITING SYSTEM
+
+const ip =
+  event.headers["x-forwarded-for"] ||
+  event.headers["client-ip"] ||
+  "unknown";
+
+const currentTime = Date.now();
+
+const WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS = 20;
+
+if (!requestLog[ip]) {
+  requestLog[ip] = [];
+}
+
+// Remove expired timestamps
+requestLog[ip] = requestLog[ip].filter(
+  timestamp => currentTime - timestamp < WINDOW_MS
+);
+
+// Block excessive requests
+if (requestLog[ip].length >= MAX_REQUESTS) {
+
+  return {
+    statusCode: 429,
+
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": accessControlOrigin
+    },
+
+    body: JSON.stringify({
+      error: "Too many requests. Slow down."
+    })
+  };
+}
+
+// Log current request
+requestLog[ip].push(currentTime);
+  
   try {
 
     // 🛡️ PRODUCTION SAFEGUARD: Payload Size Limit
@@ -81,7 +122,7 @@ exports.handler = async (event, context) => {
     const apiKey = process.env.SHADOW_SIM_KEY;
     if (!apiKey) throw new Error("Missing SHADOW_SIM_KEY");
 
-    const safeHistory = Array.isArray(history) ? history.slice(-20) : [];
+    const safeHistory = Array.isArray(history) ? history.slice(-8) : [];
     
     // 1️⃣ FIRST-TURN MESSAGE FALLBACK
     const defaultMessages = [
