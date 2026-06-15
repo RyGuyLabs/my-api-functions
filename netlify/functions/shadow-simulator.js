@@ -72,6 +72,18 @@ requestLog[ip].push(currentTime);
 
     const body = event.body ? (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) : {};
     const message = body.message || "";
+    // 🛡️ INPUT LENGTH GUARD (token protection lite)
+const MAX_INPUT_CHARS = 4000;
+
+if (message.length > MAX_INPUT_CHARS) {
+  return {
+    statusCode: 413,
+    headers,
+    body: JSON.stringify({
+      error: "Input too long. Please shorten your response."
+    })
+  };
+}
     const history = Array.isArray(body.history) ? body.history : [];
     const persona = body.persona || "Aggressive CEO";
     const careerPath = body.careerPath || "Professional";
