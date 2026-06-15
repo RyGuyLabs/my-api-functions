@@ -438,52 +438,71 @@ function clamp(value) {
 }
 
 function calculateConfidence(text) {
-  let score = 50;
 
-  if (text.length > 120) score += 10;
-  if (!text.includes("maybe")) score += 10;
-  if (!text.includes("uncertain")) score += 10;
-  if (text.includes("weak")) score -= 15;
+  let score = 60;
+
+  if (/maybe|perhaps|i guess|hopefully/i.test(text))
+    score -= 15;
+
+  if (/i can|i will|i have|i did|i led/i.test(text))
+    score += 10;
 
   return clamp(score);
 }
 
 function calculateClarity(text) {
+
   let score = 50;
 
-  if (text.length < 200) score += 10;
-  if (!text.includes("...")) score += 5;
-  if (text.split(" ").length < 60) score += 10;
+  const words = text.trim().split(/\s+/);
+
+  if (words.length >= 10)
+    score += 15;
+
+  if (words.length > 80)
+    score -= 10;
 
   return clamp(score);
 }
 
 function calculatePressureResistance(text) {
+
   let score = 50;
 
-  if (!text.includes("hesitant")) score += 10;
-  if (!text.includes("uncertain")) score += 10;
-  if (text.includes("challenge")) score += 5;
+  if (/challenge|problem|solution|result/i.test(text))
+    score += 15;
+
+  if (/sorry|not sure|don't know/i.test(text))
+    score -= 15;
 
   return clamp(score);
 }
 
 function calculateAuthoritySignal(text) {
+
   let score = 50;
 
-  if (text.includes("must")) score += 10;
-  if (text.includes("will")) score += 10;
-  if (text.includes("should")) score -= 5;
+  if (/will|must|achieved|delivered|generated|improved/i.test(text))
+    score += 20;
+
+  if (/should|might|could maybe/i.test(text))
+    score -= 10;
 
   return clamp(score);
 }
 
 function calculateHesitationIndex(text) {
-  let score = 50;
 
-  if (text.includes("maybe")) score += 10;
-  if (text.includes("I think")) score += 10;
-  if (text.includes("not sure")) score += 15;
+  let score = 20;
+
+  if (/i think/i.test(text))
+    score += 15;
+
+  if (/maybe/i.test(text))
+    score += 15;
+
+  if (/not sure/i.test(text))
+    score += 20;
 
   return clamp(score);
 }
