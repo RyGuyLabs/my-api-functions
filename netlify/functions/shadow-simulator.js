@@ -421,16 +421,32 @@ return {
 };
 
 } catch (error) {
-    console.error("Backend Error:", error.message); // 🛡️ SECURE LOG
-    return {
-      statusCode: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": accessControlOrigin
-      },
-      body: JSON.stringify({ error: "Service temporarily unavailable. Re-establish link." })
-    };
-  }
+  console.error("Backend Error:", error.message); // secure log
+
+  return {
+    statusCode: 200, // IMPORTANT: never hard-fail UI in production chat tools
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": accessControlOrigin
+    },
+    body: JSON.stringify({
+      personaResponse: "SYSTEM INTERRUPT: Response engine unstable. Reattempting clarity.",
+      anxietyAnalysis: "Unable to complete analysis due to system degradation.",
+      tacticalCorrection: "Re-state your message with clearer intent and fewer filler words.",
+      stressLevel: "Medium",
+      careerTitle: careerPath,
+
+      confidence: 50,
+      clarity: 50,
+      pressureResistance: 50,
+      authoritySignal: 50,
+      hesitationIndex: 50,
+
+      performanceScore: 50,
+      degraded: true
+    })
+  };
+}
 };
 
 function clamp(value) {
