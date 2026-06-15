@@ -215,6 +215,9 @@ Return a VALID JSON object. Do NOT include markdown, backticks, or any extra tex
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
+    // 🛡️ SAFE RESPONSE FALLBACK (prevents crash if API fails)
+let response;
+    
     let response;
 
     try {
