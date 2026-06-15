@@ -294,7 +294,6 @@ try {
       performanceScore: 50
     })
   };
-}
 
     if (result.promptFeedback) {
       console.error("BLOCKED RESPONSE:", result.promptFeedback.blockReason); // 🛡️ SECURE LOG
