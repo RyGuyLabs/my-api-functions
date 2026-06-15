@@ -91,6 +91,22 @@ if (message.length > MAX_INPUT_CHARS) {
 
     const previousPerformanceScore = body.previousPerformanceScore || 50;
 
+    // 🛡️ TOKEN / PAYLOAD CONTROL (CRITICAL FOR COST CONTROL)
+
+const MAX_HISTORY_ITEMS = 8;
+const MAX_MESSAGE_LENGTH = 800;
+
+// Trim + protect history
+const safeHistory = Array.isArray(history)
+  ? history.slice(-MAX_HISTORY_ITEMS)
+  : [];
+
+// Hard truncate user input
+const safeUserMessage =
+  typeof message === "string"
+    ? message.slice(0, MAX_MESSAGE_LENGTH)
+    : "";
+    
     if (!persona || typeof persona !== "string") {
       return {
         statusCode: 400,
