@@ -134,7 +134,12 @@ if (message.length > MAX_INPUT_CHARS) {
     const apiKey = process.env.SHADOW_SIM_KEY;
     if (!apiKey) throw new Error("Missing SHADOW_SIM_KEY");
 
-    const safeHistory = Array.isArray(history) ? history.slice(-8) : [];
+    // 🛡️ STRICT HISTORY LIMIT (cost control)
+const MAX_HISTORY = 6;
+
+const safeHistory = Array.isArray(history)
+  ? history.slice(-MAX_HISTORY)
+  : [];
     
     // 1️⃣ FIRST-TURN MESSAGE FALLBACK
     const defaultMessages = [
