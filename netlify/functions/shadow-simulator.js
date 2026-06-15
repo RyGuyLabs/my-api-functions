@@ -249,12 +249,32 @@ let response;
       clearTimeout(timeout);
     }
 
-    let result;
-    try {
-      result = await response.json();
-    } catch (e) {
-      throw new Error("Invalid JSON response from AI API");
-    }
+let result;
+
+try {
+  result = await response.json();
+} catch (e) {
+  console.error("JSON PARSE FAILURE:", e);
+
+  // 🟡 SAFE FALLBACK (prevents frontend crash)
+  return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+      personaResponse: "System error occurred. Re-run your last response.",
+      anxietyAnalysis: "Unable to analyze response due to system interruption.",
+      tacticalCorrection: "Focus on clarity and retry your statement.",
+      stressLevel: "Medium",
+      careerTitle: careerPath,
+      confidence: 50,
+      clarity: 50,
+      pressureResistance: 50,
+      authoritySignal: 50,
+      hesitationIndex: 50,
+      performanceScore: 50
+    })
+  };
+}
 
     if (result.promptFeedback) {
       console.error("BLOCKED RESPONSE:", result.promptFeedback.blockReason); // 🛡️ SECURE LOG
