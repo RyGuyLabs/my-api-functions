@@ -337,26 +337,20 @@ try {
 }
 
 // 🧠 BEHAVIORAL INTELLIGENCE SCORES
+const confidence =
+  calculateConfidence(userMessage);
 
-const confidence = calculateConfidence(
-  data.personaResponse || ""
-);
+const clarity =
+  calculateClarity(userMessage);
 
-const clarity = calculateClarity(
-  data.personaResponse || ""
-);
+const pressureResistance =
+  calculatePressureResistance(userMessage);
 
-const pressureResistance = calculatePressureResistance(
-  data.anxietyAnalysis || ""
-);
+const authoritySignal =
+  calculateAuthoritySignal(userMessage);
 
-const authoritySignal = calculateAuthoritySignal(
-  data.tacticalCorrection || ""
-);
-
-const hesitationIndex = calculateHesitationIndex(
-  data.anxietyAnalysis || ""
-);
+const hesitationIndex =
+  calculateHesitationIndex(userMessage);
 
 // 🧠 MASTER PERFORMANCE SCORE
 
