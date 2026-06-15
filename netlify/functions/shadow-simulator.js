@@ -167,7 +167,11 @@ const safeHistory = Array.isArray(history)
     ];
 
     // If message is empty on first turn, pick a default
-    const userMessage = message || (safeHistory.length === 0 ? defaultMessages[Math.floor(Math.random() * defaultMessages.length)] : "");
+    const userMessage =
+  safeUserMessage ||
+  (safeHistory.length === 0
+    ? defaultMessages[Math.floor(Math.random() * defaultMessages.length)]
+    : "");
     
     const systemPrompt = `You are the "Shadow Execution Simulator" by RyGuyLabs.
 The user is training to overcome social anxiety and professional hesitation for the career path: ${careerPath} in the ${industry} industry.
