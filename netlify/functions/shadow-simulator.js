@@ -267,7 +267,6 @@ try {
 } catch (e) {
   console.error("JSON PARSE FAILURE:", e);
 
-  // 🟡 SAFE FALLBACK (prevents frontend crash)
   return {
     statusCode: 200,
     headers,
@@ -285,6 +284,7 @@ try {
       performanceScore: 50
     })
   };
+}
 
     if (result.promptFeedback) {
       console.error("BLOCKED RESPONSE:", result.promptFeedback.blockReason); // 🛡️ SECURE LOG
