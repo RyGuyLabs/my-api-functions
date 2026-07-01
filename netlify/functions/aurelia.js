@@ -185,6 +185,12 @@ const cacheVerifiedMutations = intentIR.transitions.filter(t => {
 
 });
 
+        const executableMutations =
+    globalState.execution_mode === "EXECUTING" ||
+    globalState.execution_mode === "CRISIS"
+        ? cacheVerifiedMutations
+        : [];
+
         // 6. Atomic Isolation Execution Layer (The Compiler)
         await db.runTransaction(async (tx) => {
             const doubleVerifiedMutations = [];
