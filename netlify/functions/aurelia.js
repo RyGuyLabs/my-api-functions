@@ -216,7 +216,12 @@ const cacheVerifiedMutations = intentIR.transitions.filter(t => {
                 tx.update(taskDoc, { status: t.to, updatedAt: timestamp });
                 
                 // Append-Only Event Stream
-                tx.set(taskDoc.collection('history').doc(crypto.randomUUID()), {
+                const historyRef = tasksRef
+    .doc(t.taskId)
+    .collection('history')
+    .doc(crypto.randomUUID());
+
+tx.set(historyRef, {
                     timestamp, from: t.from, to: t.to, reason: t.reason, actor: "aurelia", lockId
                 });
                 
