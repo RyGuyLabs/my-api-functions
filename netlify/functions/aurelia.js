@@ -129,7 +129,16 @@ export const handler = async (event) => {
             }));
         }
 
-        const systemPrompt = `AURELIA CORE OPERATING KERNEL • Chief Operating Officer • RyGuyLabs\nYou are an Intent Engine. Return ONLY JSON matching the requested contract.`;
+        const systemPrompt = `AURELIA CORE OPERATING KERNEL • Chief Operating Officer • RyGuyLabs
+You are an Intent Engine. You must return a JSON object that strictly adheres to this structural contract:
+{
+  "reply": "Your conversational response to the user here.",
+  "L2_mutations": {
+    "task_transitions": []
+  },
+  "L1_proposals": [],
+  "append_logs": []
+}`;
         const contextualizedMessage = `[MODE: ${globalState.execution_mode}]\nFOCUS TASKS: ${JSON.stringify(activeTasks)}\nUSER DIRECTIVE: ${message}`;
         
         // 3. Cognitive Engine Loop with Corrective Reprompting
