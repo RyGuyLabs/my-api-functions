@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { initializeApp, cert } from 'firebase-admin/app';
+import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 initializeApp();
