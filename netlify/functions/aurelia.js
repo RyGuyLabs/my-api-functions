@@ -249,19 +249,25 @@ You are an Intent Engine. You must return a JSON object that strictly adheres to
             // Process L1 Proposals
             (intentIR.proposals || []).forEach(p => {
                 tx.set(db.collection('proposals').doc(crypto.randomUUID()), {
-                    id: crypto.randomUUID(), type: p.type, content: p.content || {},
-                    justification: p.justification || "", status: "pending", createdAt: timestamp
+                    id: crypto.randomUUID(), 
+                    type: p.type || "GENERAL_PROPOSAL", // Fallback protects against Firestore crash
+                    content: p.content || {},
+                    justification: p.justification || "", 
+                    status: "pending", 
+                    createdAt: timestamp
                 });
             });
 
             // Process Append-Only Decision Logs
             (intentIR.logs || []).forEach(log => {
                 tx.set(globalRef.collection('decisions').doc(crypto.randomUUID()), {
-                    decision: log.decision, rationale: log.rationale,
-                    impactArea: log.impactArea, timestamp, author: "aurelia"
+                    decision: log.decision || "No decision stated", 
+                    rationale: log.rationale || "No rationale provided",
+                    impactArea: log.impactArea || "General", 
+                    timestamp, 
+                    author: "aurelia"
                 });
             });
-
             // Write Telemetry State Log inside transaction scope
             telemetryData.status = telemetryData.errors.length > 0 ? "completed_with_faults" : "success";
             tx.set(telemetryRef, telemetryData);
