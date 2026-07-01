@@ -155,14 +155,35 @@ export const handler = async (event) => {
         // 4. Normalization Layer
         const intentIR = normalizeAndEnforce(parsedPayload);
         
-        // 5. Cache Pre-Filter (Saves unneeded transactional DB reads)
-        const cacheVerifiedMutations = intentIR.transitions.filter(t => {
-            const existsInCache = globalState.task_registry_cache?.[t.taskId];
-            if (!existsInCache) {
-                telemetryData.errors.push(`Pre-Filter Skip: Task ${t.taskId} is absent from registry cache.`);
-            }
-            return !!existsInCache;
-        });
+        // 5. Cache Pre-Filter
+
+const cacheVerifiedMutations = intentIR.transitions.filter(t => {
+
+    const cachedTask = globalState.task_registry_cache?.[t.taskId];
+
+    if (!cachedTask) {
+
+        telemetryData.errors.push(
+            `Pre-Filter Skip: Task ${t.taskId} is absent from registry cache.`
+        );
+
+        return false;
+    }
+
+    if (
+        cachedTask.status !== t.from &&
+        cachedTask.status !== t.to
+    ) {
+
+        telemetryData.errors.push(
+            `Registry state drift detected for ${t.taskId}.`
+        );
+
+    }
+
+    return true;
+
+});
 
         // 6. Atomic Isolation Execution Layer (The Compiler)
         await db.runTransaction(async (tx) => {
