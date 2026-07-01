@@ -4,7 +4,15 @@ import { getFirestore, FieldPath } from 'firebase-admin/firestore';
 import crypto from 'crypto';
 
 // --- SYSTEM INITIALIZATION --- //
-initializeApp();
+import { cert } from 'firebase-admin/app';
+
+initializeApp({
+    credential: cert({
+        projectId: process.env.GCLOUD_PROJECT || 'ryguylabs-dreamos-db',
+        clientEmail: process.env.AURELIA_CLIENT_EMAIL,
+        privateKey: process.env.AURELIA_PRIVATE_KEY ? process.env.AURELIA_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined
+    })
+});
 const db = getFirestore();
 const ai = new GoogleGenAI({ apiKey: process.env.AURELIA_API_KEY });
 
