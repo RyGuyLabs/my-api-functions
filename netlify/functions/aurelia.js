@@ -238,7 +238,7 @@ tx.set(historyRef, {
             });
 
             // Process L1 Proposals
-            intentIR.proposals.forEach(p => {
+            (intentIR.proposals || []).forEach(p => {
                 tx.set(db.collection('proposals').doc(crypto.randomUUID()), {
                     id: crypto.randomUUID(), type: p.type, content: p.content || {},
                     justification: p.justification || "", status: "pending", createdAt: timestamp
