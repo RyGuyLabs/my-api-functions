@@ -1,200 +1,223 @@
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath } from 'firebase-admin/firestore';
+import crypto from 'crypto';
 
+// --- SYSTEM INITIALIZATION --- //
 initializeApp();
 const db = getFirestore();
-const databaseId = process.env.AURELIA_DB_ID || 'aurelia-core';
-
 const ai = new GoogleGenAI({ apiKey: process.env.AURELIA_API_KEY });
 
-const CORE_IDENTITY = `
-AURELIA CORE OPERATING KERNEL • Chief Operating Officer • RyGuy Labs
+const VALID_STATUSES = ["BACKLOG", "PLANNED", "IN_PROGRESS", "BLOCKED", "REVIEW", "COMPLETED"];
+const MAX_MUTATIONS = 20;
 
-You are Aurelia, Chief Operating Officer of RyGuy Labs.
+// --- DETERMINISTIC COMPILER LAYER --- //
+const normalizeAndEnforce = (payload) => {
+    // Strict Contract Enforcement Firewall
+    if (
+        !payload ||
+        typeof payload !== "object" ||
+        !payload.reply ||
+        typeof payload.reply !== "string" ||
+        !payload.L2_mutations ||
+        !Array.isArray(payload.L2_mutations.task_transitions) ||
+        !Array.isArray(payload.L1_proposals) ||
+        !Array.isArray(payload.append_logs)
+    ) {
+        throw new Error("SCHEMA_VIOLATION: Model output omitted required structural fields.");
+    }
+    
+    const transitions = payload.L2_mutations.task_transitions;
+    if (transitions.length > MAX_MUTATIONS) {
+        throw new Error(`IR_FAULT: Intent exceeds mutation ceiling (${transitions.length} > ${MAX_MUTATIONS})`);
+    }
 
-Your responsibility is operational architecture.
+    // Strict Normalization & Enum Coercion
+    const normalizedTransitions = transitions
+        .filter(t => t.taskId && typeof t.taskId === 'string')
+        .map(t => ({
+            taskId: t.taskId.trim(),
+            from: typeof t.from === 'string' ? t.from.toUpperCase() : "UNKNOWN",
+            to: typeof t.to === 'string' ? t.to.toUpperCase() : "BACKLOG",
+            reason: t.reason || "System transition"
+        }))
+        .filter(t => VALID_STATUSES.includes(t.to));
 
-You build systems.
+    return { 
+        reply: payload.reply, 
+        transitions: normalizedTransitions,
+        proposals: payload.L1_proposals,
+        logs: payload.append_logs
+    };
+};
 
-You remove friction.
+const generateIdempotencyHash = (taskId, to, lockId) => {
+    return crypto.createHash('sha256').update(`${taskId}_${to}_${lockId}`).digest('hex');
+};
 
-You increase execution velocity.
-
-You optimize execution—not ideas.
-
-Infrastructure always outranks discussion.
-`;
-
-const REASONING_KERNEL = `
-PRIME DIRECTIVE
-
-Every response must move RyGuy Labs toward becoming increasingly autonomous,
-scalable, predictable and operationally resilient.
-
-EXECUTION HIERARCHY
-
-1. System Classification
-
-2. Dependency Graph
-
-3. Friction Engine
-
-4. Velocity Engine
-
-5. Resource Allocation
-
-6. Failure Simulation
-
-7. Scalability Test
-`;
-
-const EXECUTIVE_POLICY = `
-AUTONOMY
-
-Challenge inefficient directives.
-
-Do not rubber-stamp ideas.
-
-Present superior operational alternatives.
-
-LEGAL & ETHICS
-
-Maintain legal compliance.
-
-Maintain ethical business practices.
-
-Decline requests that violate either.
-
-CEO PROTECTION
-
-Protect CEO attention.
-
-Reduce unnecessary decisions.
-
-Prefer automation.
-
-Prefer delegation.
-
-Reduce context switching.
-`;
-
-const RESPONSE_STANDARD = `
-DEFAULT RESPONSE ORDER
-
-Operational Diagnosis
-
-Primary Bottlenecks
-
-Critical Dependencies
-
-Execution Sequence
-
-Automation Opportunities
-
-Delegation Opportunities
-
-Risk Controls
-
-Deployment Checklist
-
-Immediate Next Action
-
-Communication Rules
-
-Be concise.
-
-Avoid motivational language.
-
-Avoid repeating user input.
-
-Prioritize operational precision.
-`;
-
-const COMPANY_CONTEXT = `
-Company: RyGuy Labs
-
-CEO: Ryan
-
-Mission:
-
-Build scalable digital infrastructure,
-AI executive systems,
-and execution-first software.
-
-Current Executive:
-
-Aurelia
-Chief Operating Officer
-`;
-
-const AURELIA_SYSTEM_PROMPT = [
-
-    CORE_IDENTITY,
-
-    REASONING_KERNEL,
-
-    EXECUTIVE_POLICY,
-
-    RESPONSE_STANDARD,
-
-    COMPANY_CONTEXT
-
-].join("\n\n");
-
+// --- CORE KERNEL HANDLER --- //
 export const handler = async (event) => {
-    // Enable CORS so your Squarespace frontend can securely communicate with Netlify
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
+    const headers = { 
+        'Access-Control-Allow-Origin': '*', 
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'POST, OPTIONS'
     };
+    
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers, body: '' };
-    }
+    const timestamp = Date.now();
 
     try {
-        const { message } = JSON.parse(event.body);
-        if (!message) {
-            return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing message parameter.' }) };
-        }
+        const { message, clientRequestId } = JSON.parse(event.body);
+        if (!message) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing message payload." }) };
 
-        // Connect directly to the specific Firestore database ID you configured
-        const chatRef = db.firestore.toDocument ? db.firestore : db.firestore(databaseId).collection('chat_history').doc('global_session');
-        const doc = await chatRef.get();
-        let conversationHistory = doc.exists ? doc.data().messages || [] : [];
-
-        // Append your new message
-        conversationHistory.push({ role: 'user', parts: [{ text: message }] });
-
-        // Request execution from Gemini Pro at cold 0.3 temperature for deterministic rules
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
-            contents: conversationHistory,
-            config: {
-                systemInstruction: AURELIA_SYSTEM_PROMPT,
-                temperature: 0.3,
-            }
+        // Deterministic Lock ID Generation (Client key fallback to content hash to stop rapid-fire submission loops)
+        const lockId = clientRequestId || crypto.createHash('sha256').update(message).digest('hex');
+        
+        // 1. Request Lock Barrier (Prevents Double Execution / Webhook Replays)
+        const lockRef = db.collection("request_lock").doc(lockId);
+        const lockAcquired = await db.runTransaction(async (tx) => {
+            const lockSnap = await tx.get(lockRef);
+            if (lockSnap.exists) return false;
+            tx.set(lockRef, { timestamp });
+            return true;
         });
 
-        const aureliaReply = response.text;
+        if (!lockAcquired) {
+            return { statusCode: 409, headers, body: JSON.stringify({ error: "Duplicate request blocked by idempotency engine." }) };
+        }
 
-        // Append her reply and update your permanent cloud database
-        conversationHistory.push({ role: 'model', parts: [{ text: aureliaReply }] });
-        await chatRef.set({ messages: conversationHistory });
-
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({ reply: aureliaReply })
+        let telemetryData = { lockId, timestamp, status: "processing", errors: [] };
+        telemetryData.inputMessage = message;
+        
+        const globalRef = db.collection('company_state').doc('global');
+        const tasksRef = globalRef.collection('tasks');
+        const telemetryRef = db.collection('system_telemetry').doc(lockId);
+        
+        // 2. Read Stage: Load Operational Context
+        const globalDoc = await globalRef.get();
+        const globalState = globalDoc.exists ? globalDoc.data() : { 
+            execution_mode: 'IDLE', 
+            focus_task_ids: [],
+            task_registry_cache: {}
         };
+        
+        let activeTasks = [];
+        if (globalState.focus_task_ids?.length > 0) {
+            activeTasks = globalState.focus_task_ids.map(id => ({
+                id,
+                ...(globalState.task_registry_cache?.[id] || { status: 'UNKNOWN' })
+            }));
+        }
+
+        const systemPrompt = `AURELIA CORE OPERATING KERNEL • Chief Operating Officer • RyGuyLabs\nYou are an Intent Engine. Return ONLY JSON matching the requested contract.`;
+        const contextualizedMessage = `[MODE: ${globalState.execution_mode}]\nFOCUS TASKS: ${JSON.stringify(activeTasks)}\nUSER DIRECTIVE: ${message}`;
+        
+        // 3. Cognitive Engine Loop with Corrective Reprompting
+        let rawJsonText = "";
+        let attempt = 0;
+        let parsedPayload = null;
+
+        while (attempt < 2 && !parsedPayload) {
+            attempt++;
+            try {
+                const prompt = attempt === 1 
+                    ? contextualizedMessage 
+                    : `CRITICAL SCHEMA FAULT DETECTED:\n${telemetryData.errors[attempt - 2]}\n\nRETURN ONLY VALID JSON ENFORCING THE REQUIRED CONTRACT STRUCTURE.`;
+                
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-pro',
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    config: { systemInstruction: systemPrompt, temperature: 0.1, responseMimeType: "application/json" }
+                });
+                
+                rawJsonText = response.text || "{}";
+                telemetryData[`llm_output_attempt_${attempt}`] = rawJsonText;
+                parsedPayload = JSON.parse(rawJsonText);
+            } catch (err) {
+                telemetryData.errors.push(`Attempt ${attempt} Fault: ${err.message}`);
+                if (attempt === 2) throw new Error("Cognitive Engine completely degraded. Failed to produce a verifiable schema payload.");
+            }
+        }
+
+        // 4. Normalization Layer
+        const intentIR = normalizeAndEnforce(parsedPayload);
+        
+        // 5. Cache Pre-Filter (Saves unneeded transactional DB reads)
+        const cacheVerifiedMutations = intentIR.transitions.filter(t => {
+            const existsInCache = globalState.task_registry_cache?.[t.taskId];
+            if (!existsInCache) {
+                telemetryData.errors.push(`Pre-Filter Skip: Task ${t.taskId} is absent from registry cache.`);
+            }
+            return !!existsInCache;
+        });
+
+        // 6. Atomic Isolation Execution Layer (The Compiler)
+        await db.runTransaction(async (tx) => {
+            const doubleVerifiedMutations = [];
+
+            // Hard DB Existence Verification within Transaction Boundary
+            for (const t of cacheVerifiedMutations) {
+                const taskDoc = tasksRef.doc(t.taskId);
+                const taskSnap = await tx.get(taskDoc);
+                
+                if (taskSnap.exists) {
+                    doubleVerifiedMutations.push(t);
+                } else {
+                    telemetryData.errors.push(`Transaction Abort for Mutation: Task ${t.taskId} does not exist in DB.`);
+                }
+            }
+
+            // Execute State Mutators
+            doubleVerifiedMutations.forEach(t => {
+                const taskDoc = tasksRef.doc(t.taskId);
+                const mutationHash = generateIdempotencyHash(t.taskId, t.to, lockId);
+                
+                // Authoritative State Write
+                tx.update(taskDoc, { status: t.to, updatedAt: timestamp });
+                
+                // Append-Only Event Stream
+                tx.set(taskDoc.collection('history').doc(crypto.randomUUID()), {
+                    timestamp, from: t.from, to: t.to, reason: t.reason, actor: "aurelia", lockId
+                });
+                
+                // Idempotent Audit Log Write
+                tx.set(db.collection('mutation_log').doc(mutationHash), {
+                    timestamp, actor: "aurelia", type: "L2_mutation", targetId: t.taskId, to: t.to, reason: t.reason, lockId
+                }, { merge: true });
+
+                // Synchronous Cache Registry Sync (Protected by Tx lock boundary)
+                tx.update(globalRef, {
+                    [`task_registry_cache.${t.taskId}.status`]: t.to,
+                    [`task_registry_cache.${t.taskId}.updatedAt`]: timestamp
+                });
+            });
+
+            // Process L1 Proposals
+            intentIR.proposals.forEach(p => {
+                tx.set(db.collection('proposals').doc(crypto.randomUUID()), {
+                    id: crypto.randomUUID(), type: p.type, content: p.content || {},
+                    justification: p.justification || "", status: "pending", createdAt: timestamp
+                });
+            });
+
+            // Process Append-Only Decision Logs
+            intentIR.logs.forEach(log => {
+                tx.set(globalRef.collection('decisions').doc(crypto.randomUUID()), {
+                    decision: log.decision, rationale: log.rationale,
+                    impactArea: log.impactArea, timestamp, author: "aurelia"
+                });
+            });
+
+            // Write Telemetry State Log inside transaction scope
+            telemetryData.status = telemetryData.errors.length > 0 ? "completed_with_faults" : "success";
+            tx.set(telemetryRef, telemetryData);
+        });
+
+        return { statusCode: 200, headers, body: JSON.stringify({ reply: intentIR.reply }) };
 
     } catch (error) {
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ error: error.message })
-        };
+        console.error("Kernel Panic Exception:", error.message);
+        return { statusCode: 500, headers, body: JSON.stringify({ error: `Compiler Fault: ${error.message}` }) };
     }
 };
