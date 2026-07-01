@@ -32,16 +32,28 @@ const normalizeAndEnforce = (payload) => {
         throw new Error(`IR_FAULT: Intent exceeds mutation ceiling (${transitions.length} > ${MAX_MUTATIONS})`);
     }
 
-    // Strict Normalization & Enum Coercion
-    const normalizedTransitions = transitions
-        .filter(t => t.taskId && typeof t.taskId === 'string')
-        .map(t => ({
-            taskId: t.taskId.trim(),
-            from: typeof t.from === 'string' ? t.from.toUpperCase() : "UNKNOWN",
-            to: typeof t.to === 'string' ? t.to.toUpperCase() : "BACKLOG",
-            reason: t.reason || "System transition"
-        }))
-        .filter(t => VALID_STATUSES.includes(t.to));
+    const normalizedTransitions = [];
+
+for (const t of transitions) {
+    if (!t.taskId || typeof t.taskId !== "string") continue;
+
+    const to =
+        typeof t.to === "string"
+            ? t.to.toUpperCase()
+            : "BACKLOG";
+
+    if (!VALID_STATUSES.includes(to)) continue;
+
+    normalizedTransitions.push({
+        taskId: t.taskId.trim(),
+        from:
+            typeof t.from === "string"
+                ? t.from.toUpperCase()
+                : "UNKNOWN",
+        to,
+        reason: t.reason || "System transition"
+    });
+}
 
     return { 
         reply: payload.reply, 
