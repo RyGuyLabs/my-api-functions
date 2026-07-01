@@ -246,7 +246,7 @@ tx.set(historyRef, {
             });
 
             // Process Append-Only Decision Logs
-            intentIR.logs.forEach(log => {
+            (intentIR.logs || []).forEach(log => {
                 tx.set(globalRef.collection('decisions').doc(crypto.randomUUID()), {
                     decision: log.decision, rationale: log.rationale,
                     impactArea: log.impactArea, timestamp, author: "aurelia"
