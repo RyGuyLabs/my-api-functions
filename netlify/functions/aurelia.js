@@ -196,7 +196,7 @@ const cacheVerifiedMutations = intentIR.transitions.filter(t => {
             const doubleVerifiedMutations = [];
 
             // Hard DB Existence Verification within Transaction Boundary
-            for (const t of cacheVerifiedMutations) {
+            for (const t of executableMutations) {
                 const taskDoc = tasksRef.doc(t.taskId);
                 const taskSnap = await tx.get(taskDoc);
                 
