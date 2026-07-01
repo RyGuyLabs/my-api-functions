@@ -6,12 +6,11 @@ import crypto from 'crypto';
 // --- SYSTEM INITIALIZATION --- //
 import { cert } from 'firebase-admin/app';
 
+// Automatically parse the existing service account string to clear space
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 initializeApp({
-    credential: cert({
-        projectId: process.env.GCLOUD_PROJECT || 'ryguylabs-dreamos-db',
-        clientEmail: process.env.AURELIA_CLIENT_EMAIL,
-        privateKey: process.env.AURELIA_PRIVATE_KEY ? process.env.AURELIA_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined
-    })
+    credential: cert(serviceAccount)
 });
 const db = getFirestore();
 const ai = new GoogleGenAI({ apiKey: process.env.AURELIA_API_KEY });
@@ -42,26 +41,26 @@ const normalizeAndEnforce = (payload) => {
 
     const normalizedTransitions = [];
 
-for (const t of transitions) {
-    if (!t.taskId || typeof t.taskId !== "string") continue;
+    for (const t of transitions) {
+        if (!t.taskId || typeof t.taskId !== "string") continue;
 
-    const to =
-        typeof t.to === "string"
-            ? t.to.toUpperCase()
-            : "BACKLOG";
+        const to =
+            typeof t.to === "string"
+                ? t.to.toUpperCase()
+                : "BACKLOG";
 
-    if (!VALID_STATUSES.includes(to)) continue;
+        if (!VALID_STATUSES.includes(to)) continue;
 
-    normalizedTransitions.push({
-        taskId: t.taskId.trim(),
-        from:
-            typeof t.from === "string"
-                ? t.from.toUpperCase()
-                : "UNKNOWN",
-        to,
-        reason: t.reason || "System transition"
-    });
-}
+        normalizedTransitions.push({
+            taskId: t.taskId.trim(),
+            from:
+                typeof t.from === "string"
+                    ? t.from.toUpperCase()
+                    : "UNKNOWN",
+            to,
+            reason: t.reason || "System transition"
+        });
+    }
 
     return { 
         reply: payload.reply, 
@@ -164,40 +163,33 @@ export const handler = async (event) => {
         const intentIR = normalizeAndEnforce(parsedPayload);
         
         // 5. Cache Pre-Filter
+        const cacheVerifiedMutations = intentIR.transitions.filter(t => {
+            const cachedTask = globalState.task_registry_cache?.[t.taskId];
 
-const cacheVerifiedMutations = intentIR.transitions.filter(t => {
+            if (!cachedTask) {
+                telemetryData.errors.push(
+                    `Pre-Filter Skip: Task ${t.taskId} is absent from registry cache.`
+                );
+                return false;
+            }
 
-    const cachedTask = globalState.task_registry_cache?.[t.taskId];
+            if (
+                cachedTask.status !== t.from &&
+                cachedTask.status !== t.to
+            ) {
+                telemetryData.errors.push(
+                    `Registry state drift detected for ${t.taskId}.`
+                );
+            }
 
-    if (!cachedTask) {
-
-        telemetryData.errors.push(
-            `Pre-Filter Skip: Task ${t.taskId} is absent from registry cache.`
-        );
-
-        return false;
-    }
-
-    if (
-        cachedTask.status !== t.from &&
-        cachedTask.status !== t.to
-    ) {
-
-        telemetryData.errors.push(
-            `Registry state drift detected for ${t.taskId}.`
-        );
-
-    }
-
-    return true;
-
-});
+            return true;
+        });
 
         const executableMutations =
-    globalState.execution_mode === "EXECUTING" ||
-    globalState.execution_mode === "CRISIS"
-        ? cacheVerifiedMutations
-        : [];
+            globalState.execution_mode === "EXECUTING" ||
+            globalState.execution_mode === "CRISIS"
+                ? cacheVerifiedMutations
+                : [];
 
         // 6. Atomic Isolation Execution Layer (The Compiler)
         await db.runTransaction(async (tx) => {
@@ -225,11 +217,11 @@ const cacheVerifiedMutations = intentIR.transitions.filter(t => {
                 
                 // Append-Only Event Stream
                 const historyRef = tasksRef
-    .doc(t.taskId)
-    .collection('history')
-    .doc(crypto.randomUUID());
+                    .doc(t.taskId)
+                    .collection('history')
+                    .doc(crypto.randomUUID());
 
-tx.set(historyRef, {
+                tx.set(historyRef, {
                     timestamp, from: t.from, to: t.to, reason: t.reason, actor: "aurelia", lockId
                 });
                 
