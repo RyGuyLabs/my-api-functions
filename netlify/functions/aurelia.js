@@ -2,11 +2,9 @@ import { GoogleGenAI } from '@google/genai';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldPath } from 'firebase-admin/firestore';
 import crypto from 'crypto';
-
-// --- SYSTEM INITIALIZATION --- //
 import { cert } from 'firebase-admin/app';
 
-// Automatically parse the existing service account string to clear space
+// --- SYSTEM INITIALIZATION --- //
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 initializeApp({
@@ -20,7 +18,6 @@ const MAX_MUTATIONS = 20;
 
 // --- DETERMINISTIC COMPILER LAYER --- //
 const normalizeAndEnforce = (payload) => {
-    // Strict Contract Enforcement Firewall
     if (
         !payload ||
         typeof payload !== "object" ||
@@ -78,11 +75,22 @@ const generateIdempotencyHash = (taskId, to, lockId) => {
 export const handler = async (event) => {
     const headers = { 
         'Access-Control-Allow-Origin': '*', 
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Allow-Methods': 'POST, OPTIONS'
     };
     
     if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
+
+    // ─── SECURITY FIREWALL ───────────────────────────────────────────
+    // Validates that incoming client traffic possesses administrative clearance
+    const requestAuth = event.headers['authorization'] || event.headers['Authorization'];
+    const expectedAuth = `Bearer ${process.env.AURELIA_SYSTEM_TOKEN}`;
+    
+    if (!requestAuth || requestAuth !== expectedAuth) {
+        console.warn("Security Alert: Unauthorized entry vector blocked at gateway boundary.");
+        return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized access path." }) };
+    }
+    // ──────────────────────────────────────────────────────────────────
 
     const timestamp = Date.now();
 
@@ -90,10 +98,8 @@ export const handler = async (event) => {
         const { message, clientRequestId } = JSON.parse(event.body);
         if (!message) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing message payload." }) };
 
-        // Deterministic Lock ID Generation (Client key fallback to content hash to stop rapid-fire submission loops)
         const lockId = clientRequestId || crypto.createHash('sha256').update(message).digest('hex');
         
-        // 1. Request Lock Barrier (Prevents Double Execution / Webhook Replays)
         const lockRef = db.collection("request_lock").doc(lockId);
         const lockAcquired = await db.runTransaction(async (tx) => {
             const lockSnap = await tx.get(lockRef);
@@ -113,7 +119,6 @@ export const handler = async (event) => {
         const tasksRef = globalRef.collection('tasks');
         const telemetryRef = db.collection('system_telemetry').doc(lockId);
         
-        // 2. Read Stage: Load Operational Context
         const globalDoc = await globalRef.get();
         const globalState = globalDoc.exists ? globalDoc.data() : { 
             execution_mode: 'IDLE', 
@@ -393,7 +398,6 @@ Arrays must exist even when empty.
         await db.runTransaction(async (tx) => {
             const doubleVerifiedMutations = [];
 
-            // Hard DB Existence Verification within Transaction Boundary
             for (const t of executableMutations) {
                 const taskDoc = tasksRef.doc(t.taskId);
                 const taskSnap = await tx.get(taskDoc);
@@ -405,15 +409,12 @@ Arrays must exist even when empty.
                 }
             }
 
-            // Execute State Mutators
             doubleVerifiedMutations.forEach(t => {
                 const taskDoc = tasksRef.doc(t.taskId);
                 const mutationHash = generateIdempotencyHash(t.taskId, t.to, lockId);
                 
-                // Authoritative State Write
                 tx.update(taskDoc, { status: t.to, updatedAt: timestamp });
                 
-                // Append-Only Event Stream
                 const historyRef = tasksRef
                     .doc(t.taskId)
                     .collection('history')
@@ -423,31 +424,28 @@ Arrays must exist even when empty.
                     timestamp, from: t.from, to: t.to, reason: t.reason, actor: "aurelia", lockId
                 });
                 
-                // Idempotent Audit Log Write
                 tx.set(db.collection('mutation_log').doc(mutationHash), {
                     timestamp, actor: "aurelia", type: "L2_mutation", targetId: t.taskId, to: t.to, reason: t.reason, lockId
                 }, { merge: true });
 
-                // Synchronous Cache Registry Sync (Protected by Tx lock boundary)
                 tx.update(globalRef, {
                     [`task_registry_cache.${t.taskId}.status`]: t.to,
                     [`task_registry_cache.${t.taskId}.updatedAt`]: timestamp
                 });
             });
 
-            // Process L1 Proposals
-            //  THE FIX: Generate it once
-(intentIR.proposals || []).forEach(p => {
-    const proposalId = crypto.randomUUID();
-    tx.set(db.collection('proposals').doc(proposalId), {
-        id: proposalId,
-        type: p.type || "GENERAL_PROPOSAL",
-        content: p.content || {},
-        justification: p.justification || "", 
-        status: "pending", 
-        timestamp
-    });
-});
+            // Process L1 Proposals (UUID Mismatch Fixed)
+            (intentIR.proposals || []).forEach(p => {
+                const proposalId = crypto.randomUUID();
+                tx.set(db.collection('proposals').doc(proposalId), {
+                    id: proposalId, 
+                    type: p.type || "GENERAL_PROPOSAL", 
+                    content: p.content || {},
+                    justification: p.justification || "", 
+                    status: "pending", 
+                    createdAt: timestamp
+                });
+            });
 
             // Process Append-Only Decision Logs
             (intentIR.logs || []).forEach(log => {
@@ -459,7 +457,7 @@ Arrays must exist even when empty.
                     author: "aurelia"
                 });
             });
-            // Write Telemetry State Log inside transaction scope
+
             telemetryData.status = telemetryData.errors.length > 0 ? "completed_with_faults" : "success";
             tx.set(telemetryRef, telemetryData);
         });
