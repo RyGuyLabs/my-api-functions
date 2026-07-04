@@ -83,12 +83,20 @@ export const handler = async (event) => {
 
     // ─── SECURITY FIREWALL ───────────────────────────────────────────
     // Validates that incoming client traffic possesses administrative clearance
-    // Extracts token regardless of casing, strips 'Bearer', and normalizes spaces
     const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
-    const incomingToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-    const systemToken = (process.env.AURELIA_SYSTEM_TOKEN || '').trim();
+    
+    // Normalize: Strip 'Bearer ', strip wrapping quotes, strip trailing spaces
+    const incomingToken = authHeader.replace(/^Bearer\s+/i, '').replace(/^["']|["']$/g, '').trim();
+    const systemToken = (process.env.AURELIA_SYSTEM_TOKEN || '').replace(/^["']|["']$/g, '').trim();
     
     if (!incomingToken || incomingToken !== systemToken) {
+        // SAFE DIAGNOSTIC LOGGING - Does not print raw secrets
+        console.warn(`[SECURITY DIAGNOSTIC] Verification Failure:`);
+        console.warn(`-> Netlify Env Var Configured: ${!!process.env.AURELIA_SYSTEM_TOKEN}`);
+        console.warn(`-> Cloud Token Length: ${systemToken.length} chars`);
+        console.warn(`-> Incoming Token Length: ${incomingToken.length} chars`);
+        console.warn(`-> Auth Header Exists: ${!!authHeader}`);
+        
         console.warn("Security Alert: Unauthorized entry vector blocked at gateway boundary.");
         return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized access path." }) };
     }
