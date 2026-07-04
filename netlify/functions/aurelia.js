@@ -74,7 +74,7 @@ const generateIdempotencyHash = (taskId, to, lockId) => {
 // --- CORE KERNEL HANDLER --- //
 export const handler = async (event) => {
     const headers = { 
-        'Access-Control-Allow-Origin': '*', 
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com', 
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Allow-Methods': 'POST, OPTIONS'
     };
@@ -83,10 +83,12 @@ export const handler = async (event) => {
 
     // ─── SECURITY FIREWALL ───────────────────────────────────────────
     // Validates that incoming client traffic possesses administrative clearance
-    const requestAuth = event.headers['authorization'] || event.headers['Authorization'];
-    const expectedAuth = `Bearer ${process.env.AURELIA_SYSTEM_TOKEN}`;
+    // Extracts token regardless of casing, strips 'Bearer', and normalizes spaces
+    const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
+    const incomingToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const systemToken = (process.env.AURELIA_SYSTEM_TOKEN || '').trim();
     
-    if (!requestAuth || requestAuth !== expectedAuth) {
+    if (!incomingToken || incomingToken !== systemToken) {
         console.warn("Security Alert: Unauthorized entry vector blocked at gateway boundary.");
         return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized access path." }) };
     }
