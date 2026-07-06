@@ -222,7 +222,7 @@ Analyze this market:
     try {
       result = await Promise.race([
         resultPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 25000))
       ]);
     } catch (err) {
       console.error("GEMINI REQUEST FAILURE:", {
