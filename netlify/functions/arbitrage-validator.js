@@ -115,7 +115,14 @@ if (allowedOrigins.includes(requestOrigin)) {
     if (!asset) throw new Error("Missing asset");
 
     const apiKey = process.env.FIRST_API_KEY;
-    if (!apiKey) throw new Error("Missing API key");
+
+console.log("GEMINI KEY CHECK:", {
+  exists: Boolean(apiKey),
+  firstCharacters: apiKey ? apiKey.substring(0, 8) : "NONE",
+  length: apiKey ? apiKey.length : 0
+});
+
+if (!apiKey) throw new Error("Missing API key");
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
