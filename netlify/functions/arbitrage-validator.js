@@ -256,6 +256,10 @@ Analyze this market:
 
     const rawText = result.response.text().trim();
 
+    if (!rawText) {
+  throw new Error("Gemini returned empty response");
+}
+
     let cleaned = rawText
   .replace(/```json/g, '')
   .replace(/```/g, '')
