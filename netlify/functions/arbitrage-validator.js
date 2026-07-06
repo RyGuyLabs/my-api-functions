@@ -228,7 +228,6 @@ Analyze this market:
 
     const resultPromise = model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7 }
     });
 
     let result;
