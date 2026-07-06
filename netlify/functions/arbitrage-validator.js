@@ -298,7 +298,10 @@ if (firstBrace !== -1 && lastBrace !== -1) {
           throw new Error("No JSON structure found");
         }
       } catch (err2) {
-        console.error("PARSE FAILURE:", rawText);
+        console.error("PARSE FAILURE:", {
+  requestId,
+  responseLength: rawText?.length || 0
+});
 
         parsed = {
           verdict: "UNREADABLE RESPONSE",
