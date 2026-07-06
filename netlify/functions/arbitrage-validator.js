@@ -227,7 +227,7 @@ Analyze this market:
 `;
 
     const resultPromise = model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
     });
 
     let result;
