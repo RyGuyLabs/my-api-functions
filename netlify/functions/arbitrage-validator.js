@@ -116,13 +116,9 @@ if (allowedOrigins.includes(requestOrigin)) {
 
     const apiKey = process.env.FIRST_API_KEY;
 
-console.log("GEMINI KEY CHECK:", {
-  exists: Boolean(apiKey),
-  firstCharacters: apiKey ? apiKey.substring(0, 8) : "NONE",
-  length: apiKey ? apiKey.length : 0
-});
-
-if (!apiKey) throw new Error("Missing API key");
+if (!apiKey) {
+  throw new Error("Missing Gemini API configuration");
+}
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
