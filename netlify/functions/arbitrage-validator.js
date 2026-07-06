@@ -215,7 +215,10 @@ Analyze this market:
         new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 15000))
       ]);
     } catch (err) {
-      console.error("AI TIMEOUT OR FAILURE:", err.message);
+      console.error("GEMINI REQUEST FAILURE:", {
+  message: err.message,
+  status: err.status || "unknown"
+});
 
       const fallback = {
         verdict: "MARKET UNCLEAR",
