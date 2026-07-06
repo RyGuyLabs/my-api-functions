@@ -116,8 +116,8 @@ if (allowedOrigins.includes(requestOrigin)) {
 
     const apiKey = process.env.FIRST_API_KEY;
 
-if (!apiKey) {
-  throw new Error("Missing Gemini API configuration");
+if (!validateGeminiKey(apiKey)) {
+  throw new Error("Invalid Gemini API configuration");
 }
 
     const genAI = new GoogleGenerativeAI(apiKey);
