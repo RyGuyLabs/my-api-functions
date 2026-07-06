@@ -168,10 +168,6 @@ Schema:
   "3 aggressive, immediate money-making actions (under 30 minutes each)"
 ],
 "costOfInaction": "Dollar-based loss per day and month if ignored"
-  "Specific monetization angle",
-  "Underserved niche to target",
-  "Pricing arbitrage opportunity",
-  "Distribution or acquisition hack"
 }
 
 Guidelines:
