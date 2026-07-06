@@ -230,10 +230,11 @@ Analyze this market:
         new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 25000))
       ]);
     } catch (err) {
-      console.error("GEMINI REQUEST FAILURE:", {
-  message: err.message,
-  status: err.status || "unknown"
-});
+  console.error("GEMINI REQUEST FAILURE:", {
+    message: err.message,
+    status: err.status || "unknown",
+    timestamp: new Date().toISOString()
+  });
 
       const fallback = {
         verdict: "MARKET UNCLEAR",
