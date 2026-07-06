@@ -62,6 +62,10 @@ function validateJSON(raw) {
 
 exports.handler = async (event) => {
 
+  const requestId = Date.now().toString();
+
+  console.log("REQUEST START:", requestId);
+
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
