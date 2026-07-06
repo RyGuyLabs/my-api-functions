@@ -131,6 +131,10 @@ if (allowedOrigins.includes(requestOrigin)) {
     const apiKey = process.env.FIRST_API_KEY;
 
 if (!validateGeminiKey(apiKey)) {
+  console.error("Gemini API key validation failed", {
+    exists: !!apiKey
+  });
+
   throw new Error("Invalid Gemini API configuration");
 }
 
