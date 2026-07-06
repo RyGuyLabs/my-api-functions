@@ -143,7 +143,12 @@ if (!validateGeminiKey(apiKey)) {
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 const model = genAI.getGenerativeModel({
-  model: GEMINI_MODEL
+  model: GEMINI_MODEL,
+  generationConfig: {
+    temperature: 0.7,
+    maxOutputTokens: 4096,
+    responseMimeType: "application/json"
+  }
 });
 
     const prompt = `
