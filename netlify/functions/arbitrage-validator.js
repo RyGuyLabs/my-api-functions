@@ -1,5 +1,15 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+
 const rateLimitStore = new Map();
+
+function validateGeminiKey(key) {
+  if (!key) return false;
+
+  return (
+    key.startsWith("AIza") &&
+    key.length >= 30
+  );
+}
 
 const headers = {
   "Access-Control-Allow-Origin": "https://www.ryguylabs.com",
