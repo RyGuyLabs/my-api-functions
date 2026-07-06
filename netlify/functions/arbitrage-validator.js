@@ -135,7 +135,12 @@ if (!validateGeminiKey(apiKey)) {
 }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+const GEMINI_MODEL = "gemini-2.5-flash";
+
+const model = genAI.getGenerativeModel({
+  model: GEMINI_MODEL
+});
 
     const prompt = `
 You are a market insight engine. Generate output **EXACTLY as JSON**, nothing else.  
