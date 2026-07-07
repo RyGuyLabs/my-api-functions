@@ -277,6 +277,7 @@ Execution Roadmap Rules:
   - Outreach
   - Setup
   - Delivery
+  - Other
 
 - Research = market research, pricing analysis, competitor discovery
 - Outreach = cold email, LinkedIn, calls, proposals
