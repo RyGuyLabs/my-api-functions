@@ -58,10 +58,68 @@ function validateJSON(raw) {
     text: String(i.text || "")
   }));
 
-safe.steps = safe.steps.map(step => ({
-  text: String(step.text || step || "Unknown Step"),
-  category: String(step.category || "Other")
-}));
+safe.steps = safe.steps.map(step => {
+
+  const text = String(step.text || step || "Unknown Step");
+
+  let category = step.category;
+
+  if (!category) {
+
+    const lower = text.toLowerCase();
+
+    if (
+      lower.includes("research") ||
+      lower.includes("analyze") ||
+      lower.includes("audit") ||
+      lower.includes("pricing") ||
+      lower.includes("competitor")
+    ) {
+      category = "Research";
+    }
+
+    else if (
+      lower.includes("contact") ||
+      lower.includes("email") ||
+      lower.includes("call") ||
+      lower.includes("reach") ||
+      lower.includes("proposal") ||
+      lower.includes("linkedin")
+    ) {
+      category = "Outreach";
+    }
+
+    else if (
+      lower.includes("create") ||
+      lower.includes("build") ||
+      lower.includes("setup") ||
+      lower.includes("portfolio") ||
+      lower.includes("website") ||
+      lower.includes("profile")
+    ) {
+      category = "Setup";
+    }
+
+    else if (
+      lower.includes("deliver") ||
+      lower.includes("fulfill") ||
+      lower.includes("implement") ||
+      lower.includes("complete") ||
+      lower.includes("ship")
+    ) {
+      category = "Delivery";
+    }
+
+    else {
+      category = "Other";
+    }
+  }
+
+  return {
+    text,
+    category
+  };
+});
   
   safe.exploits = safe.exploits.slice(0, 5).map(e => String(e));
   safe.firstMoves = safe.firstMoves.slice(0, 3).map(m => String(m));
