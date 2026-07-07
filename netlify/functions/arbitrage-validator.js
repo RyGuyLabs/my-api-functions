@@ -25,7 +25,12 @@ function normalizeResponse(raw) {
     matrix: Array.isArray(raw.matrix) ? raw.matrix : [{ task: "No data", value: "$0" }],
     logistics: Array.isArray(raw.logistics) ? raw.logistics : [],
     risks: Array.isArray(raw.risks) ? raw.risks : [],
-    steps: Array.isArray(raw.steps) ? raw.steps : ["Retry with more specific input"],
+    steps: Array.isArray(raw.steps)
+  ? raw.steps
+  : [{
+      text: "Retry with more specific input",
+      category: "Other"
+    }],
     comparisons: Array.isArray(raw.comparisons) ? raw.comparisons : [],
     insights: Array.isArray(raw.insights) ? raw.insights : [],
     exploits: Array.isArray(raw.exploits) ? raw.exploits : [],
