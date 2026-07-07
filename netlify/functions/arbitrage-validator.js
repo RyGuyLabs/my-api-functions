@@ -198,6 +198,25 @@ Guidelines:
 - costOfInaction MUST include real dollar estimates per day and month
 - Tie costOfInaction to missed deals, pricing gaps, or demand inefficiencies
 
+Execution Roadmap Rules:
+
+- Every step MUST contain:
+  - text
+  - category
+
+- Allowed categories ONLY:
+  - Research
+  - Outreach
+  - Setup
+  - Delivery
+
+- Research = market research, pricing analysis, competitor discovery
+- Outreach = cold email, LinkedIn, calls, proposals
+- Setup = portfolio creation, profiles, systems, assets
+- Delivery = fulfillment, implementation, client work
+
+- Never create any category outside those four values.
+
 Opportunity rules:
 - Must be directly monetizable within 24–72 hours
 - Must describe a gap, inefficiency, or arbitrage angle
