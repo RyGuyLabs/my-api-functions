@@ -268,6 +268,15 @@ Guidelines:
 
 Execution Roadmap Rules:
 
+- Generate between 8 and 12 total execution steps.
+- Include at least:
+  - 2 Research steps
+  - 2 Outreach steps
+  - 2 Setup steps
+  - 2 Delivery steps
+- Additional steps may be categorized as Other.
+- Steps should be ordered from fastest revenue generation to longest-term leverage.
+
 - Every step MUST contain:
   - text
   - category
