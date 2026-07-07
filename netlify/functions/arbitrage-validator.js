@@ -170,7 +170,12 @@ Schema:
 ],
   "roi": "Estimated $/hr range",
   "matrix": [{"task":"simple task name","value":"$/hr"}],
-  "steps": ["Very actionable step, 1 per bullet"],
+  "steps": [
+  {
+    "text": "Actionable execution step",
+    "category": "Research | Outreach | Setup | Delivery"
+  }
+],
   "comparisons": [{"market":"name","roi":"$/hr","delta":"% difference"}],
 "exploits": [
   "Specific monetization angle",
