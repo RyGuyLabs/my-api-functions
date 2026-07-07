@@ -58,6 +58,11 @@ function validateJSON(raw) {
     text: String(i.text || "")
   }));
 
+safe.steps = safe.steps.map(step => ({
+  text: String(step.text || step || "Unknown Step"),
+  category: String(step.category || "Other")
+}));
+  
   safe.exploits = safe.exploits.slice(0, 5).map(e => String(e));
   safe.firstMoves = safe.firstMoves.slice(0, 3).map(m => String(m));
   safe.costOfInaction = String(safe.costOfInaction || "");
