@@ -208,7 +208,7 @@ if (!validateGeminiKey(apiKey)) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
-const GEMINI_MODEL = "models/gemini-1.5-flash"
+const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
 
 const model = genAI.getGenerativeModel({
   model: GEMINI_MODEL,
