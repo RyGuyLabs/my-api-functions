@@ -160,7 +160,7 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
         try {
           const parsedResult = JSON.parse(responseBody);
           
-          if (res.statusCode !== 200) {
+          if ([429,500,503].includes(res.statusCode)) {
             console.error('[Gemini API Error]', responseBody);
             return resolve({
               statusCode: res.statusCode,
