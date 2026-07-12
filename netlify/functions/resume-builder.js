@@ -107,9 +107,12 @@ RULES FOR WRITING:
     }
   };
 
-  // We make a direct node https post request to target the latest stable Gemini 3.5 Flash engine
-  const postData = JSON.stringify(apiPayload);
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+  // Configurable Gemini model selection
+const postData = JSON.stringify(apiPayload);
+
+const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+
+const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   return new Promise((resolve) => {
     const req = https.request(geminiUrl, {
