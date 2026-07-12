@@ -6,7 +6,8 @@ exports.handler = async (event, context) => {
     'Access-Control-Allow-Origin': '*', // Allows calls from any local frontend dev or netlify domains
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Vary': 'Origin'
   };
 
   // Handle preflight OPTIONS requests immediately
