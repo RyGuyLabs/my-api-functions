@@ -2,13 +2,23 @@ const https = require('https');
 
 exports.handler = async (event, context) => {
   // Setup standard headers for CORS & JSON output
-  const headers = {
-    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json',
-    'Vary': 'Origin'
-  };
+  const allowedOrigins = [
+  'https://www.ryguylabs.com',
+  'https://ryguylabs.com',
+  'http://localhost:8888'
+];
+
+const requestOrigin = event.headers.origin;
+
+const headers = {
+  'Access-Control-Allow-Origin':
+    allowedOrigins.includes(requestOrigin)
+      ? requestOrigin
+      : 'https://www.ryguylabs.com',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json'
+};
 
   // Handle preflight OPTIONS requests immediately
   if (event.httpMethod === 'OPTIONS') {
