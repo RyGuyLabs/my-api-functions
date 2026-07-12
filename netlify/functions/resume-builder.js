@@ -166,7 +166,7 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
               statusCode: res.statusCode,
               headers,
               body: JSON.stringify({ 
-                error: 'Upstream Model Failure', 
+                error: 'Temporary AI processing failure. Please retry.' 
                 details: parsedResult.error?.message || 'Unknown API Exception' 
               })
             });
