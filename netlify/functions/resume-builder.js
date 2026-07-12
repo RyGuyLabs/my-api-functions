@@ -3,7 +3,7 @@ const https = require('https');
 exports.handler = async (event, context) => {
   // Setup standard headers for CORS & JSON output
   const headers = {
-    'Access-Control-Allow-Origin': '*', // Allows calls from any local frontend dev or netlify domains
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
