@@ -184,21 +184,22 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
 
           const elevatedText = parsedResult.candidates?.[0]?.content?.parts?.[0]?.text;
 
+if (!elevatedText) {
+  throw new Error('API returned an empty content candidate structure.');
+}
+
 if (
   elevatedText.includes("I cannot") ||
   elevatedText.includes("I am unable")
 ) {
   return resolve({
-    statusCode:400,
+    statusCode: 400,
     headers,
-    body:JSON.stringify({
-      error:"AI generation did not produce a usable resume enhancement."
+    body: JSON.stringify({
+      error: "AI generation did not produce a usable resume enhancement."
     })
   });
 }
-          if (!elevatedText) {
-            throw new Error('API returned an empty content candidate structure.');
-          }
 
           resolve({
             statusCode: 200,
