@@ -172,9 +172,20 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
             });
           }
 
-          // Extract the generated text from Gemini's response structure
           const elevatedText = parsedResult.candidates?.[0]?.content?.parts?.[0]?.text;
-          
+
+          if (
+  elevatedText.includes("I cannot") ||
+  elevatedText.includes("I am unable")
+) {
+  return resolve({
+    statusCode:400,
+    headers,
+    body:JSON.stringify({
+      error:"AI generation did not produce a usable resume enhancement."
+    })
+  });
+}
           if (!elevatedText) {
             throw new Error('API returned an empty content candidate structure.');
           }
