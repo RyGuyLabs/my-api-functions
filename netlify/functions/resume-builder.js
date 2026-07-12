@@ -63,7 +63,14 @@ const headers = {
     };
   }
 
-  const { userInput, targetRole, alignmentTheme, field } = payload;
+  const { 
+  mode = "ENHANCE_BULLET",
+  userInput,
+  targetRole,
+  alignmentTheme,
+  field,
+  jobDescription
+} = payload;
 
   const MAX_INPUT_LENGTH = 3000;
 
