@@ -76,7 +76,7 @@ DEPARTMENT THEME: ${defaultTheme}
 RULES FOR WRITING:
 1. Strip all passive language (e.g. "Responsible for", "Worked on", "Helped with").
 2. Begin every bullet point with an aggressive, forward-moving action verb (e.g. "Architected", "Engineered", "Orchestrated", "Catalyzed").
-3. Connect the action directly to a systemic project or friction solved, and append a plausible, quantified result (e.g. "optimizing system scale by 24%", "saving 12 hours of weekly operational friction").
+3. Connect the action directly to business impact. Only include numbers, percentages, financial figures, or measurable outcomes when the user explicitly provides them. Never invent metrics.
 4. Translate basic terminology into high-tier metrics:
    - "Warehouse loading/Moving boxes" -> "Logistical operations, resource throughput, and flow mechanics."
    - "Answering calls/Customer service" -> "Routing vital stakeholder signals and strategic communication delivery."
