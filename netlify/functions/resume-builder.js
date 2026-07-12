@@ -55,6 +55,18 @@ exports.handler = async (event, context) => {
 
   const { userInput, targetRole, alignmentTheme, field } = payload;
 
+  const MAX_INPUT_LENGTH = 3000;
+
+if (typeof userInput !== 'string' || userInput.length > MAX_INPUT_LENGTH) {
+  return {
+    statusCode: 400,
+    headers,
+    body: JSON.stringify({
+      error: `Input exceeds maximum allowed length of ${MAX_INPUT_LENGTH} characters.`
+    })
+  };
+}
+  
   if (!userInput) {
     return {
       statusCode: 400,
