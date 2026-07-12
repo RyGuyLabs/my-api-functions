@@ -79,6 +79,14 @@ if (typeof userInput !== 'string' || userInput.length > MAX_INPUT_LENGTH) {
   const defaultTarget = targetRole || "Operational Specialist";
   const defaultTheme = alignmentTheme || "Process Scale and Systemic Velocity";
 
+  const sanitizeInput = (text) => {
+  return text
+    .replace(/[<>]/g, '')
+    .trim();
+};
+
+const sanitizedInput = sanitizeInput(userInput);
+  
   const systemPrompt = `You are the Reach Career Architect, a high-authority diagnostic engine built within the RyGuy Reach ecosystem. 
 Your ultimate function is to take raw, low-confidence, plain-English labor summaries and elevate them into bullet points that reflect executive authority, fiscal value, and structural impact.
 
