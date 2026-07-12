@@ -9,9 +9,9 @@ exports.handler = async (event, context) => {
 ];
 
 const requestOrigin =
-  event.headers.origin ||
-  event.headers.Origin ||
-  '';
+  event.headers?.origin ||
+event.headers?.Origin ||
+'';
   
 const headers = {
   'Access-Control-Allow-Origin':
