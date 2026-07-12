@@ -109,7 +109,7 @@ RULES FOR WRITING:
       {
         parts: [
           {
-            text: `Translate this user input into a single premium authority statement for a target role of ${defaultTarget}: "${userInput}"`
+            text: `Translate this user input into a single premium authority statement for a target role of ${defaultTarget}: "${sanitizedInput}"`
           }
         ]
       }
