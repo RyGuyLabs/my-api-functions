@@ -8,8 +8,11 @@ exports.handler = async (event, context) => {
   'http://localhost:8888'
 ];
 
-const requestOrigin = event.headers.origin;
-
+const requestOrigin =
+  event.headers.origin ||
+  event.headers.Origin ||
+  '';
+  
 const headers = {
   'Access-Control-Allow-Origin':
     allowedOrigins.includes(requestOrigin)
