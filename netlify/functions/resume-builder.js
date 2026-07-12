@@ -181,7 +181,11 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
 
           const elevatedText = parsedResult.candidates?.[0]?.content?.parts?.[0]?.text;
 
-          if (
+if (!elevatedText) {
+  throw new Error('API returned an empty content candidate structure.');
+}
+
+if (
   elevatedText.includes("I cannot") ||
   elevatedText.includes("I am unable")
 ) {
