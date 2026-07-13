@@ -77,23 +77,19 @@ const headers = {
 
   const MAX_INPUT_LENGTH = 3000;
 
-if (typeof userInput !== 'string' || userInput.length > MAX_INPUT_LENGTH) {
+if (
+  typeof userInput !== 'string' ||
+  userInput.trim().length === 0 ||
+  userInput.length > MAX_INPUT_LENGTH
+) {
   return {
     statusCode: 400,
     headers,
     body: JSON.stringify({
-      error: `Input exceeds maximum allowed length of ${MAX_INPUT_LENGTH} characters.`
+      error: `userInput must be between 1 and ${MAX_INPUT_LENGTH} characters.`
     })
   };
 }
-  
-  if (!userInput) {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'Missing field: userInput is required.' })
-    };
-  }
 
   // Construct a prompt context that forces the AI to adopt the "RyGuy Edge"
   const defaultTarget = targetRole || "Operational Specialist";
