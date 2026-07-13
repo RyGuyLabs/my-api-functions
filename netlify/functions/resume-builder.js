@@ -20,7 +20,8 @@ const headers = {
       : 'https://www.ryguylabs.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json'
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store'
 };
 
   // Handle preflight OPTIONS requests immediately
