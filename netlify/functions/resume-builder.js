@@ -98,6 +98,7 @@ if (
   const sanitizeInput = (text) => {
   return text
     .replace(/[<>]/g, '')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
     .trim();
 };
 
