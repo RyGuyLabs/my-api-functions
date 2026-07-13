@@ -240,8 +240,11 @@ const elevatedText =
 }
 
 if (
-  elevatedText.includes("I cannot") ||
-  elevatedText.includes("I am unable")
+  typeof elevatedText === 'string' &&
+  (
+    elevatedText.includes('I cannot') ||
+    elevatedText.includes('I am unable')
+  )
 ) {
   return resolve({
     statusCode: 400,
