@@ -51,6 +51,34 @@ const headers = {
       body: JSON.stringify({ error: 'Method Not Allowed. Use POST.' })
     };
   }
+  const authHeader =
+  event.headers.authorization ||
+  event.headers.Authorization;
+
+if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  return {
+    statusCode: 401,
+    headers,
+    body: JSON.stringify({
+      error: 'Authentication required.'
+    })
+  };
+}
+
+const firebaseToken =
+  authHeader.replace('Bearer ', '');
+
+try {
+  await admin.auth().verifyIdToken(firebaseToken);
+} catch (err) {
+  return {
+    statusCode: 401,
+    headers,
+    body: JSON.stringify({
+      error: 'Invalid Firebase token.'
+    })
+  };
+}
 
 const clientIP = (
   event.headers['x-forwarded-for'] ||
