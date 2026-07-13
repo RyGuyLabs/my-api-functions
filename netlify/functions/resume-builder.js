@@ -272,8 +272,15 @@ if (
       resolve({
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: 'Failed to communicate with secure AI network.', details: err.message })
-      });
+        console.error('[Request Connection Error]', err);
+
+resolve({
+  statusCode: 500,
+  headers,
+  body: JSON.stringify({
+    error: 'Failed to communicate with secure AI network.'
+  })
+});
     });
 
     req.on('timeout', () => {
