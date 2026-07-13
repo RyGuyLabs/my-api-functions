@@ -42,10 +42,11 @@ const headers = {
     };
   }
 
-const clientIP =
+const clientIP = (
   event.headers['x-forwarded-for'] ||
   event.headers['client-ip'] ||
-  'unknown';
+  'unknown'
+).split(',')[0].trim();
 
 console.log('[Client IP]', clientIP);
   
