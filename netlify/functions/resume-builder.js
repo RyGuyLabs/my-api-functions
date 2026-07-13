@@ -65,10 +65,10 @@ console.log('[Client IP]', clientIP);
   // Parse the input payload from the client-side fetch
   let payload;
   try {
-    payload = JSON.parse(event.body);
-    console.log('[Reach Request]', {
+   payload = JSON.parse(event.body);
+
+console.log('[Reach Request]', {
   timestamp: new Date().toISOString(),
-  mode,
   origin: requestOrigin
 });
   } catch (err) {
