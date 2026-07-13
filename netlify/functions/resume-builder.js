@@ -52,9 +52,9 @@ const headers = {
       body: JSON.stringify({ error: 'Method Not Allowed. Use POST.' })
     };
   }
-  const authHeader =
-  event.headers.authorization ||
-  event.headers.Authorization;
+const authHeader =
+  event.headers?.authorization ||
+  event.headers?.Authorization;
 
 if (!authHeader || !authHeader.startsWith('Bearer ')) {
   return {
