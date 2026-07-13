@@ -212,6 +212,10 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
           const candidate = parsedResult.candidates?.[0];
 
 if (!candidate) {
+  console.error(
+    '[Gemini Candidate Missing]',
+    parsedResult.promptFeedback || parsedResult
+  );
   return resolve({
     statusCode: 500,
     headers,
