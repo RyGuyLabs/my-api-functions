@@ -59,6 +59,11 @@ const headers = {
   let payload;
   try {
     payload = JSON.parse(event.body);
+    console.log('[Reach Request]', {
+  timestamp: new Date().toISOString(),
+  mode,
+  origin: requestOrigin
+});
   } catch (err) {
     return {
       statusCode: 400,
