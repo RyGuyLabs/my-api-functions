@@ -88,6 +88,8 @@ console.log('[Reach Request]', {
   jobDescription
 } = payload;
 
+  console.log('[Reach Mode]', mode);
+
 const allowedModes = [
   'ENHANCE_BULLET'
 ];
