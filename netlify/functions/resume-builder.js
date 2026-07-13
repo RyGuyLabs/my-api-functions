@@ -42,6 +42,13 @@ const headers = {
     };
   }
 
+const clientIP =
+  event.headers['x-forwarded-for'] ||
+  event.headers['client-ip'] ||
+  'unknown';
+
+console.log('[Client IP]', clientIP);
+  
   // Retrieve the secret API key securely from environment variables
   const apiKey = process.env.FIRST_API_KEY;
   if (!apiKey) {
