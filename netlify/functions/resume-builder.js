@@ -75,6 +75,20 @@ const headers = {
   jobDescription
 } = payload;
 
+const allowedModes = [
+  'ENHANCE_BULLET'
+];
+
+if (!allowedModes.includes(mode)) {
+  return {
+    statusCode: 400,
+    headers,
+    body: JSON.stringify({
+      error: 'Invalid processing mode.'
+    })
+  };
+}
+  
   const MAX_INPUT_LENGTH = 3000;
 
 if (
