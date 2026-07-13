@@ -147,10 +147,10 @@ RULES FOR WRITING:
    - "Warehouse loading/Moving boxes" -> "Logistical operations, resource throughput, and flow mechanics."
    - "Answering calls/Customer service" -> "Routing vital stakeholder signals and strategic communication delivery."
    - "Retail/Cashier" -> "Direct capital processing and transaction audits."
-5. Return ONLY the elevated text. Do not provide greetings, conversation, or placeholders. Speak in the third person or direct bullet-point active voice.`;
+5. Return ONLY the elevated text. Do not provide greetings, conversation, or placeholders. Speak in the third person or direct bullet-point active voice.
 6. Elevate terminology without exaggerating scope, authority, management responsibility, financial ownership, or leadership level.
 7. Never invent metrics, percentages, budgets, teams managed, or strategic ownership.
-8. Preserve factual accuracy above prestige.
+8. Preserve factual accuracy above prestige.`;
 
   const apiPayload = {
     contents: [
