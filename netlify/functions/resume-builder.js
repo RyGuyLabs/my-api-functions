@@ -67,7 +67,7 @@ if (!authHeader || !authHeader.startsWith('Bearer ')) {
 }
 
 const firebaseToken =
-  authHeader.replace('Bearer ', '');
+  authHeader.split('Bearer ')[1];
 
 try {
   await admin.auth().verifyIdToken(firebaseToken);
