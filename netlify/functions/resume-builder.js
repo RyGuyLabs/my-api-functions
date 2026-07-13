@@ -194,10 +194,29 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
             });
           }
 
-          const elevatedText = parsedResult.candidates?.[0]?.content?.parts?.[0]?.text;
+          const candidate = parsedResult.candidates?.[0];
 
-if (!elevatedText) {
-  throw new Error('API returned an empty content candidate structure.');
+if (!candidate) {
+  return resolve({
+    statusCode: 500,
+    headers,
+    body: JSON.stringify({
+      error: 'AI response did not contain a valid candidate.'
+    })
+  });
+}
+
+const elevatedText =
+  candidate.content?.parts?.[0]?.text;
+
+          if (!elevatedText) {
+  return resolve({
+    statusCode: 500,
+    headers,
+    body: JSON.stringify({
+      error: 'AI generation returned empty output.'
+    })
+  });
 }
 
 if (
