@@ -156,9 +156,9 @@ RULES FOR WRITING:
       ]
     },
     generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 256
-    }
+  temperature: 0.45,
+  maxOutputTokens: 300
+}
   };
 
   // Configurable Gemini model selection
