@@ -1,6 +1,16 @@
 const https = require('https');
 const admin = require('firebase-admin');
 
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(
+            JSON.parse(
+                process.env.FIREBASE_SERVICE_ACCOUNT
+            )
+        )
+    });
+}
+
 exports.handler = async (event, context) => {
   if (!admin.apps.length) {
   admin.initializeApp({
