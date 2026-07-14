@@ -135,6 +135,8 @@ console.log('[Client IP]', clientIP);
 payload = JSON.parse(event.body);
 
 console.log('[Reach Request]', {
+  requestId,
+  uid,
   timestamp: new Date().toISOString(),
   origin: requestOrigin
 });
