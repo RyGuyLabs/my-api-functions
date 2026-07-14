@@ -265,7 +265,7 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
       let responseBody = '';
       res.on('data', (chunk) => { responseBody += chunk; });
       
-      res.on('end', () => {
+      res.on('end', async () => {
         try {
           const parsedResult = JSON.parse(responseBody);
           
