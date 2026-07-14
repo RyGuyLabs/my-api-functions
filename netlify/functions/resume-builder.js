@@ -356,39 +356,37 @@ if (
   });
 }
 
-          await usageRef.set(
-  {
-    date: today,
-    count:
-      usageData.date === today
-        ? (usageData.count || 0) + 1
-        : 1,
-    updatedAt:
-      admin.firestore.FieldValue.serverTimestamp()
-  },
-  { merge: true }
-);
+          try {
+  await usageRef.set(
+    {
+      date: today,
+      count:
+        usageData.date === today
+          ? (usageData.count || 0) + 1
+          : 1,
+      updatedAt:
+        admin.firestore.FieldValue.serverTimestamp()
+    },
+    { merge: true }
+  );
 
-await db.collection('ai_usage_logs').add({
-  uid,
-  requestId,
-  feature: 'REACH_ENHANCE_BULLET',
-  model: modelName,
-  timestamp:
-    admin.firestore.FieldValue.serverTimestamp(),
-  success: true,
-  ip: clientIP
-});
-
-resolve({
-  statusCode: 200,
-  headers,
-  body: JSON.stringify({
-    elevatedText: elevatedText.trim(),
-    status: 'success'
-  })
-});
-
+  await db.collection('ai_usage_logs').add({
+    uid,
+    requestId,
+    feature: 'REACH_ENHANCE_BULLET',
+    model: modelName,
+    timestamp:
+      admin.firestore.FieldValue.serverTimestamp(),
+    success: true,
+    ip: clientIP
+  });
+} catch (loggingError) {
+  console.error(
+    '[USAGE LOG FAILURE]',
+    requestId,
+    loggingError
+  );
+}
         } catch (err) {
           console.error('[Parsing Error]', err);
           resolve({
