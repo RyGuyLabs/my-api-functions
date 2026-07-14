@@ -99,7 +99,7 @@ console.log('[AUTH SUCCESS]', {
 });
 
 const clientIP = (
-  event.headers['x-forwarded-for'] ||
+  event.headers?.['x-forwarded-for'] ||
   event.headers['client-ip'] ||
   'unknown'
 ).split(',')[0].trim();
