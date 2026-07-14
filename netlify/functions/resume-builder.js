@@ -306,11 +306,10 @@ const elevatedText =
 }
 
 if (
-  typeof elevatedText === 'string' &&
-  (
-    elevatedText.includes('I cannot') ||
-    elevatedText.includes('I am unable')
-  )
+  elevatedText.length > 700 ||
+  elevatedText.includes('I cannot') ||
+  elevatedText.includes('I am unable') ||
+  elevatedText.includes('As an AI')
 ) {
   return resolve({
     statusCode: 400,
