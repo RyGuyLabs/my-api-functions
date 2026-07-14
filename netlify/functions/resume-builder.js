@@ -12,6 +12,14 @@ if (!admin.apps.length) {
 }
 
 exports.handler = async (event, context) => {
+
+  const requestId = crypto.randomUUID();
+
+  console.log('[REQUEST START]', {
+    requestId,
+    timestamp: new Date().toISOString()
+  });
+
   // Setup standard headers for CORS & JSON output
   const allowedOrigins = [
   'https://www.ryguylabs.com',
