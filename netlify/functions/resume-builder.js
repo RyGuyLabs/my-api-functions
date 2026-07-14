@@ -369,10 +369,34 @@ await db.collection('ai_usage_logs').add({
   success: true
 });
 
+await usageRef.set(
+  {
+    date: today,
+    count:
+      usageData.date === today
+        ? (usageData.count || 0) + 1
+        : 1,
+    updatedAt:
+      admin.firestore.FieldValue.serverTimestamp()
+  },
+  { merge: true }
+);
+
+await db.collection('ai_usage_logs').add({
+  uid,
+  requestId,
+  feature: 'REACH_ENHANCE_BULLET',
+  model: modelName,
+  timestamp:
+    admin.firestore.FieldValue.serverTimestamp(),
+  success: true,
+  ip: clientIP
+});
+
 resolve({
   statusCode: 200,
   headers,
-  body: JSON.stringify({ 
+  body: JSON.stringify({
     elevatedText: elevatedText.trim(),
     status: 'success'
   })
