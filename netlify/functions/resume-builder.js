@@ -60,7 +60,12 @@ const headers = {
       body: JSON.stringify({ error: 'Method Not Allowed. Use POST.' })
     };
   }
-const authHeader =
+
+    const appCheckToken =
+  event.headers?.['x-firebase-appcheck'] ||
+  event.headers?.['X-Firebase-AppCheck'];
+    
+    const authHeader =
   event.headers?.authorization ||
   event.headers?.Authorization;
 
