@@ -85,7 +85,25 @@ const firebaseToken =
 let decodedUser;
 
 try {
-  decodedUser = await admin.auth().verifyIdToken(firebaseToken);
+
+  if (!appCheckToken) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({
+        error: 'Missing App Check token.'
+      })
+    };
+  }
+
+  await admin.appCheck().verifyToken(
+    appCheckToken
+  );
+
+  decodedUser =
+    await admin.auth()
+      .verifyIdToken(firebaseToken);
+
 } catch (err) {
   return {
     statusCode: 401,
