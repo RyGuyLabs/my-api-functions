@@ -91,6 +91,13 @@ try {
   };
 }
 
+const uid = decodedUser.uid;
+
+console.log('[AUTH SUCCESS]', {
+  uid,
+  requestId
+});
+
 const clientIP = (
   event.headers['x-forwarded-for'] ||
   event.headers['client-ip'] ||
