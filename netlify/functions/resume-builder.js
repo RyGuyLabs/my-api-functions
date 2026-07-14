@@ -303,7 +303,11 @@ STYLE REQUIREMENTS:
       {
         parts: [
           {
-            text: `Translate this user input into a single premium authority statement for a target role of ${defaultTarget}: "${sanitizedInput}"`
+            text: `User experience summary:
+
+${sanitizedInput}
+
+Rewrite this into exactly one ATS-optimized resume bullet for a ${defaultTarget} position aligned with ${defaultTheme}. Preserve factual accuracy and do not invent metrics or responsibilities.`
           }
         ]
       }
