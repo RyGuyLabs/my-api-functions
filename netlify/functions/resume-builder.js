@@ -2,7 +2,6 @@ const https = require('https');
 const crypto = require('crypto');
 const admin = require('firebase-admin');
 
-// FIX 1: Try/Catch wrap to prevent global execution crash if env var is malformed
 try {
   if (!admin.apps.length && process.env.FIREBASE_SERVICE_ACCOUNT) {
     admin.initializeApp({
@@ -135,7 +134,6 @@ exports.handler = async (event, context) => {
     };
   }
     
-  // FIX 2: Pre-increment Firestore limit BEFORE calling the Gemini API to prevent race condition abuses
   try {
     await usageRef.set(
       {
