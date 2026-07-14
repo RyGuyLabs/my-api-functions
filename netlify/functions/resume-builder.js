@@ -100,7 +100,7 @@ console.log('[AUTH SUCCESS]', {
 
 const db = admin.firestore();
 
-const db = admin.firestore();
+    const DAILY_LIMIT = 25;
     
 const clientIP = (
   event.headers?.['x-forwarded-for'] ||
