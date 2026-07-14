@@ -324,14 +324,23 @@ if (
   });
 }
 
-          resolve({
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({ 
-              elevatedText: elevatedText.trim(),
-              status: 'success'
-            })
-          });
+          await db.collection('ai_usage_logs').add({
+  uid,
+  requestId,
+  feature: 'REACH_ENHANCE_BULLET',
+  model: modelName,
+  timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  success: true
+});
+
+resolve({
+  statusCode: 200,
+  headers,
+  body: JSON.stringify({ 
+    elevatedText: elevatedText.trim(),
+    status: 'success'
+  })
+});
 
         } catch (err) {
           console.error('[Parsing Error]', err);
