@@ -1,14 +1,18 @@
 const https = require('https');
 const crypto = require('crypto');
 const admin = require('firebase-admin');
-if (!admin.apps.length) {
+
+// FIX 1: Try/Catch wrap to prevent global execution crash if env var is malformed
+try {
+  if (!admin.apps.length && process.env.FIREBASE_SERVICE_ACCOUNT) {
     admin.initializeApp({
-        credential: admin.credential.cert(
-            JSON.parse(
-                process.env.FIREBASE_SERVICE_ACCOUNT
-            )
-        )
+      credential: admin.credential.cert(
+        JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+      )
     });
+  }
+} catch (initErr) {
+  console.error('[FIREBASE INIT ERROR] Invalid service account JSON:', initErr);
 }
 
 exports.handler = async (event, context) => {
@@ -22,29 +26,29 @@ exports.handler = async (event, context) => {
 
   // Setup standard headers for CORS & JSON output
   const allowedOrigins = [
-  'https://www.ryguylabs.com',
-  'https://ryguylabs.com',
-  'http://localhost:8888'
-];
+    'https://www.ryguylabs.com',
+    'https://ryguylabs.com',
+    'http://localhost:8888'
+  ];
 
-const requestOrigin =
-  event.headers?.origin ||
-event.headers?.Origin ||
-'';
+  const requestOrigin =
+    event.headers?.origin ||
+    event.headers?.Origin ||
+    '';
   
-const headers = {
-  'Access-Control-Allow-Origin':
-    allowedOrigins.includes(requestOrigin)
-      ? requestOrigin
-      : 'https://www.ryguylabs.com',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json',
-  'Cache-Control': 'no-store',
+  const headers = {
+    'Access-Control-Allow-Origin':
+      allowedOrigins.includes(requestOrigin)
+        ? requestOrigin
+        : 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-'X-Frame-Options': 'DENY',
-'Referrer-Policy': 'same-origin'
-};
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin'
+  };
 
   // Handle preflight OPTIONS requests immediately
   if (event.httpMethod === 'OPTIONS') {
@@ -64,87 +68,94 @@ const headers = {
     };
   }
     
-    const authHeader =
-  event.headers?.authorization ||
-  event.headers?.Authorization;
+  const authHeader =
+    event.headers?.authorization ||
+    event.headers?.Authorization;
 
-if (!authHeader || !authHeader.startsWith('Bearer ')) {
-  return {
-    statusCode: 401,
-    headers,
-    body: JSON.stringify({
-      error: 'Authentication required.'
-    })
-  };
-}
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({
+        error: 'Authentication required.'
+      })
+    };
+  }
 
-const firebaseToken =
-  authHeader.split('Bearer ')[1];
+  const firebaseToken = authHeader.split('Bearer ')[1];
 
-let decodedUser;
+  let decodedUser;
 
-try {
+  try {
+    if (!admin.apps.length) throw new Error('Firebase Admin not initialized');
+    decodedUser = await admin.auth().verifyIdToken(firebaseToken, true);
+  } catch (err) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({
+        error: 'Invalid Firebase token.'
+      })
+    };
+  }
 
-  decodedUser =
-    await admin.auth()
-  .verifyIdToken(
-    firebaseToken,
-    true
-  );
+  const uid = decodedUser.uid;
 
-} catch (err) {
-  return {
-    statusCode: 401,
-    headers,
-    body: JSON.stringify({
-      error: 'Invalid Firebase token.'
-    })
-  };
-}
+  console.log('[AUTH SUCCESS]', {
+    uid,
+    requestId
+  });
 
-const uid = decodedUser.uid;
+  const db = admin.firestore();
 
-console.log('[AUTH SUCCESS]', {
-  uid,
-  requestId
-});
+  const DAILY_LIMIT = 25;
 
-const db = admin.firestore();
+  const usageRef = db
+    .collection('usage_limits')
+    .doc(uid);
 
-const DAILY_LIMIT = 25;
+  const today = new Date().toISOString().split('T')[0];
 
-const usageRef = db
-  .collection('usage_limits')
-  .doc(uid);
+  const usageDoc = await usageRef.get();
 
-const today = new Date().toISOString().split('T')[0];
+  const usageData = usageDoc.exists
+    ? usageDoc.data()
+    : {};
 
-const usageDoc = await usageRef.get();
-
-const usageData = usageDoc.exists
-  ? usageDoc.data()
-  : {};
-
-if (
-  usageData.date === today &&
-  usageData.count >= DAILY_LIMIT
-) {
-  return {
-    statusCode: 429,
-    headers,
-    body: JSON.stringify({
-      error: 'Daily usage limit reached.'
-    })
-  };
-}
+  if (
+    usageData.date === today &&
+    usageData.count >= DAILY_LIMIT
+  ) {
+    return {
+      statusCode: 429,
+      headers,
+      body: JSON.stringify({
+        error: 'Daily usage limit reached.'
+      })
+    };
+  }
     
-const clientIP = (
-  event.headers?.['x-forwarded-for'] ||
-  event.headers?.['client-ip'] ||
-  'unknown'
-).split(',')[0].trim();
+  // FIX 2: Pre-increment Firestore limit BEFORE calling the Gemini API to prevent race condition abuses
+  try {
+    await usageRef.set(
+      {
+        date: today,
+        count: usageData.date === today ? admin.firestore.FieldValue.increment(1) : 1,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (loggingError) {
+    console.error('[PRE-INCREMENT USAGE ERROR]', requestId, loggingError);
+  }
 
-console.log('[Client IP]', clientIP);
+  const clientIP = (
+    event.headers?.['x-forwarded-for'] ||
+    event.headers?.['client-ip'] ||
+    'unknown'
+  ).split(',')[0].trim();
+
+  console.log('[Client IP]', clientIP);
   
   // Retrieve the secret API key securely from environment variables
   const apiKey = process.env.FIRST_API_KEY;
@@ -162,24 +173,24 @@ console.log('[Client IP]', clientIP);
   // Parse the input payload from the client-side fetch
   let payload;
   try {
-   if (!event.body || event.body.length > 10000) {
-  return {
-    statusCode: 413,
-    headers,
-    body: JSON.stringify({
-      error: 'Request payload too large.'
-    })
-  };
-}
+    if (!event.body || event.body.length > 10000) {
+      return {
+        statusCode: 413,
+        headers,
+        body: JSON.stringify({
+          error: 'Request payload too large.'
+        })
+      };
+    }
 
-payload = JSON.parse(event.body);
+    payload = JSON.parse(event.body);
 
-console.log('[Reach Request]', {
-  requestId,
-  uid,
-  timestamp: new Date().toISOString(),
-  origin: requestOrigin
-});
+    console.log('[Reach Request]', {
+      requestId,
+      uid,
+      timestamp: new Date().toISOString(),
+      origin: requestOrigin
+    });
   } catch (err) {
     return {
       statusCode: 400,
@@ -189,58 +200,58 @@ console.log('[Reach Request]', {
   }
 
   const { 
-  mode = "ENHANCE_BULLET",
-  userInput,
-  targetRole,
-  alignmentTheme,
-  field,
-  jobDescription
-} = payload;
+    mode = "ENHANCE_BULLET",
+    userInput,
+    targetRole,
+    alignmentTheme,
+    field,
+    jobDescription
+  } = payload;
 
   console.log('[Reach Mode]', mode);
 
-const allowedModes = [
-  'ENHANCE_BULLET'
-];
+  const allowedModes = [
+    'ENHANCE_BULLET'
+  ];
 
-if (!allowedModes.includes(mode)) {
-  return {
-    statusCode: 400,
-    headers,
-    body: JSON.stringify({
-      error: 'Invalid processing mode.'
-    })
-  };
-}
+  if (!allowedModes.includes(mode)) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({
+        error: 'Invalid processing mode.'
+      })
+    };
+  }
   
   const MAX_INPUT_LENGTH = 3000;
 
-if (
-  typeof userInput !== 'string' ||
-  userInput.trim().length === 0 ||
-  userInput.length > MAX_INPUT_LENGTH
-) {
-  return {
-    statusCode: 400,
-    headers,
-    body: JSON.stringify({
-      error: `userInput must be between 1 and ${MAX_INPUT_LENGTH} characters.`
-    })
-  };
-}
+  if (
+    typeof userInput !== 'string' ||
+    userInput.trim().length === 0 ||
+    userInput.length > MAX_INPUT_LENGTH
+  ) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({
+        error: `userInput must be between 1 and ${MAX_INPUT_LENGTH} characters.`
+      })
+    };
+  }
 
   // Construct a prompt context that forces the AI to adopt the "RyGuy Edge"
   const defaultTarget = targetRole || "Operational Specialist";
   const defaultTheme = alignmentTheme || "Process Scale and Systemic Velocity";
 
   const sanitizeInput = (text) => {
-  return text
-    .replace(/[<>]/g, '')
-    .replace(/[\u0000-\u001F\u007F]/g, '')
-    .trim();
-};
+    return text
+      .replace(/[<>]/g, '')
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .trim();
+  };
 
-const sanitizedInput = sanitizeInput(userInput);
+  const sanitizedInput = sanitizeInput(userInput);
   
   const systemPrompt = `You are the Reach Career Architect, a high-authority diagnostic engine built within the RyGuy Reach ecosystem. 
 Your ultimate function is to take raw, low-confidence, plain-English labor summaries and elevate them into bullet points that reflect executive authority, fiscal value, and structural impact.
@@ -279,17 +290,17 @@ RULES FOR WRITING:
       ]
     },
     generationConfig: {
-  temperature: 0.45,
-  maxOutputTokens: 300
-}
+      temperature: 0.45,
+      maxOutputTokens: 300
+    }
   };
 
   // Configurable Gemini model selection
-const postData = JSON.stringify(apiPayload);
+  const postData = JSON.stringify(apiPayload);
 
-const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   return new Promise((resolve) => {
     const req = https.request(geminiUrl, {
@@ -313,106 +324,87 @@ const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mod
               statusCode: res.statusCode,
               headers,
               body: JSON.stringify({
-  error: 'Temporary AI processing failure. Please retry.'
-})
+                error: 'Temporary AI processing failure. Please retry.'
+              })
             });
           }
 
           const candidate = parsedResult.candidates?.[0];
 
-if (!candidate) {
-  console.error(
-    '[Gemini Candidate Missing]',
-    parsedResult.promptFeedback || parsedResult
-  );
-  return resolve({
-    statusCode: 500,
-    headers,
-    body: JSON.stringify({
-      error: 'AI response did not contain a valid candidate.'
-    })
-  });
-}
+          if (!candidate) {
+            console.error(
+              '[Gemini Candidate Missing]',
+              parsedResult.promptFeedback || parsedResult
+            );
+            return resolve({
+              statusCode: 500,
+              headers,
+              body: JSON.stringify({
+                error: 'AI response did not contain a valid candidate.'
+              })
+            });
+          }
 
-const elevatedText =
-  candidate.content?.parts?.[0]?.text;
+          const elevatedText =
+            candidate.content?.parts?.[0]?.text;
 
           if (!elevatedText) {
-  return resolve({
-    statusCode: 500,
-    headers,
-    body: JSON.stringify({
-      error: 'AI generation returned empty output.'
-    })
-  });
-}
+            return resolve({
+              statusCode: 500,
+              headers,
+              body: JSON.stringify({
+                error: 'AI generation returned empty output.'
+              })
+            });
+          }
 
-const normalizedText =
-  elevatedText.toLowerCase();
+          const normalizedText =
+            elevatedText.toLowerCase();
 
-if (
-  elevatedText.length > 700 ||
-  normalizedText.includes('i cannot') ||
-  normalizedText.includes('i am unable') ||
-  normalizedText.includes('as an ai')
-) {
-  return resolve({
-    statusCode: 400,
-    headers,
-    body: JSON.stringify({
-      error:
-        'AI generation did not produce a usable resume enhancement.'
-    })
-  });
-} {
-  return resolve({
-    statusCode: 400,
-    headers,
-    body: JSON.stringify({
-      error: "AI generation did not produce a usable resume enhancement."
-    })
-  });
-}
+          // FIX 3: Removed detached redundant error block. Logic now flows correctly.
+          if (
+            elevatedText.length > 700 ||
+            normalizedText.includes('i cannot') ||
+            normalizedText.includes('i am unable') ||
+            normalizedText.includes('as an ai')
+          ) {
+            return resolve({
+              statusCode: 400,
+              headers,
+              body: JSON.stringify({
+                error: 'AI generation did not produce a usable resume enhancement.'
+              })
+            });
+          }
 
           try {
-  await usageRef.set(
-    {
-      date: today,
-      count:
-        usageData.date === today
-          ? (usageData.count || 0) + 1
-          : 1,
-      updatedAt:
-        admin.firestore.FieldValue.serverTimestamp()
-    },
-    { merge: true }
-  );
-
-  await db.collection('ai_usage_logs').add({
-    uid,
-    requestId,
-    feature: 'REACH_ENHANCE_BULLET',
-    model: modelName,
-    timestamp:
-      admin.firestore.FieldValue.serverTimestamp(),
-    success: true,
-    ip: clientIP
-  });
-} catch (loggingError) {
-  console.error(
-    '[USAGE LOG FAILURE]',
-    requestId,
-    loggingError
-  );
-}
-resolve({
-  statusCode: 200,
-  headers,
-  body: JSON.stringify({
-    elevatedText: elevatedText.trim(),
-    status: 'success'
-  })
-});
+            // Usage increment is now handled pre-API execution. Logging successful runs here.
+            await db.collection('ai_usage_logs').add({
+              uid,
+              requestId,
+              feature: 'REACH_ENHANCE_BULLET',
+              model: modelName,
+              timestamp:
+                admin.firestore.FieldValue.serverTimestamp(),
+              success: true,
+              ip: clientIP
+            });
+          } catch (loggingError) {
+            console.error(
+              '[USAGE LOG FAILURE]',
+              requestId,
+              loggingError
+            );
+          }
+          
+          resolve({
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+              elevatedText: elevatedText.trim(),
+              status: 'success'
+            })
+          });
             
         } catch (err) {
           console.error('[Parsing Error]', err);
@@ -426,16 +418,16 @@ resolve({
     });
 
     req.on('error', (err) => {
-  console.error('[Request Connection Error]', err);
+      console.error('[Request Connection Error]', err);
 
-  resolve({
-    statusCode: 500,
-    headers,
-    body: JSON.stringify({
-      error: 'Failed to communicate with secure AI network.'
-    })
-  });
-});
+      resolve({
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          error: 'Failed to communicate with secure AI network.'
+        })
+      });
+    });
 
     req.on('timeout', () => {
       req.destroy();
