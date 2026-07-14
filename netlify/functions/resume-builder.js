@@ -40,7 +40,10 @@ const headers = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
-  'Cache-Control': 'no-store'
+  'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+'X-Frame-Options': 'DENY',
+'Referrer-Policy': 'same-origin'
 };
 
   // Handle preflight OPTIONS requests immediately
