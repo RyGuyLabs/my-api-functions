@@ -335,6 +335,15 @@ if (
   success: true
 });
 
+await db.collection('ai_usage_logs').add({
+  uid,
+  requestId,
+  feature: 'REACH_ENHANCE_BULLET',
+  model: modelName,
+  timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  success: true
+});
+
 resolve({
   statusCode: 200,
   headers,
