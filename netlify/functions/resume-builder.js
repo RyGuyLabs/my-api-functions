@@ -84,7 +84,10 @@ try {
 
   decodedUser =
     await admin.auth()
-      .verifyIdToken(firebaseToken);
+  .verifyIdToken(
+    firebaseToken,
+    true
+  );
 
 } catch (err) {
   return {
