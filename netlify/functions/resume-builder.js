@@ -347,9 +347,7 @@ const elevatedText =
   });
 }
 
-if (
-  elevatedText.length > 700 ||
-  const normalizedText =
+const normalizedText =
   elevatedText.toLowerCase();
 
 if (
@@ -357,10 +355,16 @@ if (
   normalizedText.includes('i cannot') ||
   normalizedText.includes('i am unable') ||
   normalizedText.includes('as an ai')
-) ||
-  elevatedText.includes('I am unable') ||
-  elevatedText.includes('As an AI')
 ) {
+  return resolve({
+    statusCode: 400,
+    headers,
+    body: JSON.stringify({
+      error:
+        'AI generation did not produce a usable resume enhancement.'
+    })
+  });
+} {
   return resolve({
     statusCode: 400,
     headers,
