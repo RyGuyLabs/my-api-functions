@@ -405,6 +405,15 @@ if (
     loggingError
   );
 }
+resolve({
+  statusCode: 200,
+  headers,
+  body: JSON.stringify({
+    elevatedText: elevatedText.trim(),
+    status: 'success'
+  })
+});
+            
         } catch (err) {
           console.error('[Parsing Error]', err);
           resolve({
