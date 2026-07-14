@@ -105,6 +105,8 @@ console.log('[AUTH SUCCESS]', {
 
 const db = admin.firestore();
 
+const DAILY_LIMIT = 25;
+
 const usageRef = db
   .collection('usage_limits')
   .doc(uid);
@@ -129,8 +131,6 @@ if (
     })
   };
 }
-
-    const DAILY_LIMIT = 25;
     
 const clientIP = (
   event.headers?.['x-forwarded-for'] ||
