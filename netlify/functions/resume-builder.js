@@ -107,7 +107,7 @@ console.log('[Client IP]', clientIP);
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        error: 'Backend Configuration Error: FIRST_API_KEY is not defined in environment variables.' 
+        error: 'Service temporarily unavailable.'
       })
     };
   }
