@@ -1,6 +1,6 @@
 const https = require('https');
+const crypto = require('crypto');
 const admin = require('firebase-admin');
-
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(
