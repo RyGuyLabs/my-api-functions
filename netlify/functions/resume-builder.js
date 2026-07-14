@@ -115,7 +115,17 @@ console.log('[Client IP]', clientIP);
   // Parse the input payload from the client-side fetch
   let payload;
   try {
-   payload = JSON.parse(event.body);
+   if (!event.body || event.body.length > 10000) {
+  return {
+    statusCode: 413,
+    headers,
+    body: JSON.stringify({
+      error: 'Request payload too large.'
+    })
+  };
+}
+
+payload = JSON.parse(event.body);
 
 console.log('[Reach Request]', {
   timestamp: new Date().toISOString(),
