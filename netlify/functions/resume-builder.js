@@ -349,7 +349,15 @@ const elevatedText =
 
 if (
   elevatedText.length > 700 ||
-  elevatedText.includes('I cannot') ||
+  const normalizedText =
+  elevatedText.toLowerCase();
+
+if (
+  elevatedText.length > 700 ||
+  normalizedText.includes('i cannot') ||
+  normalizedText.includes('i am unable') ||
+  normalizedText.includes('as an ai')
+) ||
   elevatedText.includes('I am unable') ||
   elevatedText.includes('As an AI')
 ) {
