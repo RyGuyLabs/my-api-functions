@@ -99,6 +99,8 @@ console.log('[AUTH SUCCESS]', {
 });
 
 const db = admin.firestore();
+
+const db = admin.firestore();
     
 const clientIP = (
   event.headers?.['x-forwarded-for'] ||
