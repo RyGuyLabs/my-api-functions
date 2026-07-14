@@ -100,6 +100,31 @@ console.log('[AUTH SUCCESS]', {
 
 const db = admin.firestore();
 
+const usageRef = db
+  .collection('usage_limits')
+  .doc(uid);
+
+const today = new Date().toISOString().split('T')[0];
+
+const usageDoc = await usageRef.get();
+
+const usageData = usageDoc.exists
+  ? usageDoc.data()
+  : {};
+
+if (
+  usageData.date === today &&
+  usageData.count >= DAILY_LIMIT
+) {
+  return {
+    statusCode: 429,
+    headers,
+    body: JSON.stringify({
+      error: 'Daily usage limit reached.'
+    })
+  };
+}
+
     const DAILY_LIMIT = 25;
     
 const clientIP = (
