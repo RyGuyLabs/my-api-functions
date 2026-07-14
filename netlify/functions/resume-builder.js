@@ -77,8 +77,10 @@ if (!authHeader || !authHeader.startsWith('Bearer ')) {
 const firebaseToken =
   authHeader.split('Bearer ')[1];
 
+let decodedUser;
+
 try {
-  await admin.auth().verifyIdToken(firebaseToken);
+  decodedUser = await admin.auth().verifyIdToken(firebaseToken);
 } catch (err) {
   return {
     statusCode: 401,
