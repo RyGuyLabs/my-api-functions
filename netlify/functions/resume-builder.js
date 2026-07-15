@@ -263,6 +263,9 @@ ${defaultTarget}
 TARGET FUNCTIONAL THEME:
 ${defaultTheme}
 
+JOB DESCRIPTION:
+${jobDescription || "Not Provided"}
+
 OUTPUT REQUIREMENTS:
 1. Return exactly one resume-ready bullet point.
 2. Return only the rewritten bullet point with no introductions, explanations, notes, or commentary.
