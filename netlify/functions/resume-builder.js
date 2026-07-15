@@ -374,6 +374,8 @@ RULES:
 - Do not invent ownership.
 - Identify the business value created by the activity.
 - Translate the work into professional terminology recognized by recruiters and ATS systems.
+- If a job description is provided, prioritize exact terminology appearing in the job description whenever factually supported by the user's experience.
+- Preserve ATS keyword parity with the target position when possible without changing the factual scope of the work.
 - Return exactly one bullet point and nothing else.`
           }
         ]
