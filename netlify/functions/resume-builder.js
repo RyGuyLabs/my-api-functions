@@ -280,14 +280,54 @@ STRICT SAFETY RULES:
 6. Preserve the original responsibility while improving wording and positioning.
 
 EXAMPLES OF ACCEPTABLE TRANSLATION:
-- "Moved boxes in warehouse"
-  -> "Coordinated inventory movement and material flow operations to support fulfillment efficiency."
 
-- "Answered customer calls"
-  -> "Managed customer communications and issue resolution to support service continuity and client satisfaction."
+Input:
+"Moved boxes in warehouse"
 
-- "Worked cashier register"
-  -> "Processed customer transactions while maintaining payment accuracy and service efficiency."
+Output:
+"Coordinated inventory movement and material flow operations to support fulfillment throughput and order accuracy."
+
+Input:
+"Answered customer calls"
+
+Output:
+"Managed inbound customer communications and issue resolution workflows to support service continuity and client satisfaction."
+
+Input:
+"Worked cashier register"
+
+Output:
+"Processed customer transactions while maintaining payment accuracy and supporting positive customer experiences."
+
+Input:
+"Stocked shelves"
+
+Output:
+"Executed inventory replenishment activities to maintain product availability and merchandising standards."
+
+Input:
+"Cleaned equipment"
+
+Output:
+"Performed equipment sanitation and readiness procedures to support operational continuity and compliance standards."
+
+Input:
+"Scheduled appointments"
+
+Output:
+"Coordinated scheduling workflows and stakeholder communications to support service delivery efficiency."
+
+Input:
+"Loaded trucks"
+
+Output:
+"Supported outbound logistics operations through accurate loading, staging, and shipment preparation activities."
+
+Input:
+"Entered paperwork"
+
+Output:
+"Maintained operational records and documentation accuracy to support administrative compliance and reporting processes."
 
 STYLE REQUIREMENTS:
 - Use executive-level language without exaggeration.
