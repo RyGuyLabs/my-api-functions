@@ -397,7 +397,7 @@ RULES:
     systemInstruction: {
       parts: [
         {
-          text: systemPrompt
+          text: activeSystemPrompt
         }
       ]
     },
