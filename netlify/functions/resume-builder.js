@@ -296,7 +296,11 @@ STYLE REQUIREMENTS:
 - Avoid clichés.
 - Keep output under 80 words.
 - Prioritize ATS readability.
-- Prefer measurable business concepts over generic task descriptions whenever supported by the input.`;
+- Translate tasks into the business function they support.
+- Prefer operational terminology over procedural terminology.
+- Favor language involving coordination, execution, workflow, throughput, quality assurance, stakeholder support, customer retention, compliance, logistics, inventory control, scheduling, documentation, fulfillment, administration, process continuity, resource allocation, issue resolution, and service delivery when factually supported.
+- If multiple interpretations are possible, choose the most professional interpretation that remains factually true.
+- Do not use generic phrases such as "responsible for", "worked on", "helped with", or "assisted with".`;
 
   const apiPayload = {
     contents: [
