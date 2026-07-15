@@ -197,14 +197,15 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const { 
-    mode = "ENHANCE_BULLET",
-    userInput,
-    targetRole,
-    alignmentTheme,
-    field,
-    jobDescription
-  } = payload;
+const {
+  mode = "ENHANCE_BULLET",
+  userInput,
+  targetRole,
+  alignmentTheme,
+  field,
+  jobDescription,
+  existingExperience = []
+} = payload;
 
   console.log('[Reach Mode]', mode);
 
