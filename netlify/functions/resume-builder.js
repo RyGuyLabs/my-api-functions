@@ -354,7 +354,13 @@ STYLE REQUIREMENTS:
       {
         parts: [
           {
-            text: `USER EXPERIENCE INPUT:
+            text: `PREVIOUS RESUME BULLETS:
+
+${existingExperience.length
+  ? existingExperience.join('\n')
+  : "None"}
+
+USER EXPERIENCE INPUT:
 
 ${sanitizedInput}
 
