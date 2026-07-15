@@ -344,8 +344,11 @@ STYLE REQUIREMENTS:
 - Prefer operational terminology over procedural terminology.
 - Favor language involving coordination, execution, workflow, throughput, quality assurance, stakeholder support, customer retention, compliance, logistics, inventory control, scheduling, documentation, fulfillment, administration, process continuity, resource allocation, issue resolution, and service delivery when factually supported.
 - If multiple interpretations are possible, choose the most professional interpretation that remains factually true.
-- Do not use generic phrases such as "responsible for", "worked on", "helped with", or "assisted with".`;
-
+- Do not use generic phrases such as "responsible for", "worked on", "helped with", or "assisted with".
+- Avoid repeating action verbs used in previous resume bullets.
+- Diversify sentence openings and writing structure across the document.
+- Maintain document-wide consistency without creating repetitive phrasing.`;
+  
   const apiPayload = {
     contents: [
       {
