@@ -210,8 +210,9 @@ const {
   console.log('[Reach Mode]', mode);
 
   const allowedModes = [
-    'ENHANCE_BULLET'
-  ];
+  'ENHANCE_BULLET',
+  'GENERATE_SUMMARY'
+];
 
   if (!allowedModes.includes(mode)) {
     return {
