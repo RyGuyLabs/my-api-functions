@@ -347,11 +347,21 @@ STYLE REQUIREMENTS:
       {
         parts: [
           {
-            text: `User experience summary:
+            text: `USER EXPERIENCE INPUT:
 
 ${sanitizedInput}
 
-Rewrite this into exactly one ATS-optimized resume bullet for a ${defaultTarget} position aligned with ${defaultTheme}. Preserve factual accuracy and do not invent metrics or responsibilities.`
+OBJECTIVE:
+Transform this experience into one premium ATS-ready resume bullet suitable for a ${defaultTarget} role aligned with ${defaultTheme}.
+
+RULES:
+- Preserve factual accuracy.
+- Do not invent metrics.
+- Do not invent leadership.
+- Do not invent ownership.
+- Identify the business value created by the activity.
+- Translate the work into professional terminology recognized by recruiters and ATS systems.
+- Return exactly one bullet point and nothing else.`
           }
         ]
       }
