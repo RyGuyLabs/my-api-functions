@@ -395,7 +395,10 @@ USER EXPERIENCE INPUT:
 ${sanitizedInput}
 
 OBJECTIVE:
-Transform this experience into one premium ATS-ready resume bullet suitable for a ${defaultTarget} role aligned with ${defaultTheme}.
+${mode === 'GENERATE_SUMMARY'
+  ? `Generate an executive resume summary for a ${defaultTarget} role aligned with ${defaultTheme}.`
+  : `Transform this experience into one premium ATS-ready resume bullet suitable for a ${defaultTarget} role aligned with ${defaultTheme}.`
+}
 
 RULES:
 - Preserve factual accuracy.
@@ -404,9 +407,12 @@ RULES:
 - Do not invent ownership.
 - Identify the business value created by the activity.
 - Translate the work into professional terminology recognized by recruiters and ATS systems.
-- Integrate exact terminology from the provided job description only when logically and factually supported by the user's input. Do not force keywords at the expense of readability.
-- Preserve ATS keyword parity with the target position when possible without changing the factual scope of the work.
-- Return exactly one bullet point and nothing else.`
+- Integrate exact terminology from the provided job description only when logically and factually supported by the user's input.
+- Preserve ATS keyword parity when possible without changing factual scope.
+${mode === 'GENERATE_SUMMARY'
+  ? '- Return exactly three sentences and nothing else.'
+  : '- Return exactly one bullet point and nothing else.'
+}
           }
         ]
       }
