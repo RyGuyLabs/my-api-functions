@@ -518,9 +518,10 @@ maxOutputTokens: 150
             statusCode: 200,
             headers,
             body: JSON.stringify({
-              elevatedText: elevatedText.trim(),
-              status: 'success'
-            })
+  output: elevatedText.trim(),
+  mode,
+  status: 'success'
+})
           });
             
         } catch (err) {
