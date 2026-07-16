@@ -38,9 +38,9 @@ exports.handler = async (event, context) => {
   // Tighter CORS fallback: return 'null' if origin isn't recognized
   const headers = {
     'Access-Control-Allow-Origin':
-      allowedOrigins.includes(requestOrigin)
-        ? requestOrigin
-        : 'null',
+  allowedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : allowedOrigins[0],
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
