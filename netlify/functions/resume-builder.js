@@ -35,11 +35,12 @@ exports.handler = async (event, context) => {
     event.headers?.Origin ||
     '';
   
+  // Tighter CORS fallback: return 'null' if origin isn't recognized
   const headers = {
     'Access-Control-Allow-Origin':
       allowedOrigins.includes(requestOrigin)
         ? requestOrigin
-        : 'https://www.ryguylabs.com',
+        : 'null',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
@@ -147,6 +148,18 @@ exports.handler = async (event, context) => {
     console.error('[PRE-INCREMENT USAGE ERROR]', requestId, loggingError);
   }
 
+  // Helper function to rollback usage credit if AI generation fails
+  const rollbackUsage = async () => {
+    try {
+      await usageRef.set(
+        { count: admin.firestore.FieldValue.increment(-1) },
+        { merge: true }
+      );
+    } catch (rollbackErr) {
+      console.error('[ROLLBACK ERROR]', requestId, rollbackErr);
+    }
+  };
+
   const clientIP = (
     event.headers?.['x-forwarded-for'] ||
     event.headers?.['client-ip'] ||
@@ -197,22 +210,22 @@ exports.handler = async (event, context) => {
     };
   }
 
-const {
-  mode = "ENHANCE_BULLET",
-  userInput,
-  targetRole,
-  alignmentTheme,
-  field,
-  jobDescription,
-  existingExperience = []
-} = payload;
+  const {
+    mode = "ENHANCE_BULLET",
+    userInput,
+    targetRole,
+    alignmentTheme,
+    field,
+    jobDescription,
+    existingExperience = []
+  } = payload;
 
   console.log('[Reach Mode]', mode);
 
   const allowedModes = [
-  'ENHANCE_BULLET',
-  'GENERATE_SUMMARY'
-];
+    'ENHANCE_BULLET',
+    'GENERATE_SUMMARY'
+  ];
 
   if (!allowedModes.includes(mode)) {
     return {
@@ -240,7 +253,6 @@ const {
     };
   }
 
-  // Construct a prompt context that forces the AI to adopt the "RyGuy Edge"
   const defaultTarget = targetRole || "Operational Specialist";
   const defaultTheme = alignmentTheme || "Process Scale and Systemic Velocity";
 
@@ -253,7 +265,7 @@ const {
 
   const sanitizedInput = sanitizeInput(userInput);
   
-  const systemPrompt = `You are Reach Career Architect, an expert resume enhancement engine operating inside the RyGuy Reach ecosystem.
+  const systemPrompt = `You are Reach Career Architect, the core Data Arch, Stacking Brick operating inside the RyGuyLabs ecosystem.
 
 MISSION:
 Transform simple, low-detail job descriptions into concise, high-value resume bullet points that communicate business impact, transferable skills, and operational contribution while remaining factually accurate.
@@ -277,6 +289,7 @@ OUTPUT REQUIREMENTS:
 7. Emphasize outcomes, operational value, efficiency, customer impact, compliance, accuracy, throughput, coordination, quality control, or process improvement when supported by the user's input.
 8. Translate low-level tasks into professional business language without changing the factual scope of the work.
 9. Preserve all factual accuracy.
+10. If the user explicitly provides raw numbers, quotas, budgets, or timeframes, position these metrics near the beginning of the bullet point to immediately anchor the business impact.
 
 STRICT SAFETY RULES:
 1. Never invent metrics, percentages, dollar values, quotas, KPIs, budgets, or growth figures.
@@ -341,6 +354,7 @@ STYLE REQUIREMENTS:
 - Avoid filler words.
 - Avoid passive voice.
 - Avoid clichés.
+- Do not use subjective, unquantifiable descriptors such as "visionary," "passionate," "synergistic," "dynamic," or "thought leader." Stick to concrete operational execution.
 - Keep output under 80 words.
 - Prioritize ATS readability.
 - Translate tasks into the business function they support.
@@ -390,7 +404,7 @@ RULES:
 - Do not invent ownership.
 - Identify the business value created by the activity.
 - Translate the work into professional terminology recognized by recruiters and ATS systems.
-- If a job description is provided, prioritize exact terminology appearing in the job description whenever factually supported by the user's experience.
+- Integrate exact terminology from the provided job description only when logically and factually supported by the user's input. Do not force keywords at the expense of readability.
 - Preserve ATS keyword parity with the target position when possible without changing the factual scope of the work.
 - Return exactly one bullet point and nothing else.`
           }
@@ -406,13 +420,12 @@ RULES:
     },
     generationConfig: {
       temperature: 0.35,
-topP: 0.85,
-topK: 30,
-maxOutputTokens: 150
+      topP: 0.85,
+      topK: 30,
+      maxOutputTokens: 150
     }
   };
 
-  // Configurable Gemini model selection
   const postData = JSON.stringify(apiPayload);
 
   const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -426,7 +439,7 @@ maxOutputTokens: 150
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(postData)
       },
-      timeout: 10000 // 10-second timeout guard
+      timeout: 15000 // Bumped to 15-second timeout guard
     }, (res) => {
       let responseBody = '';
       res.on('data', (chunk) => { responseBody += chunk; });
@@ -437,6 +450,7 @@ maxOutputTokens: 150
           
           if (res.statusCode !== 200) {
             console.error('[Gemini API Error]', responseBody);
+            await rollbackUsage();
             return resolve({
               statusCode: res.statusCode,
               headers,
@@ -453,6 +467,7 @@ maxOutputTokens: 150
               '[Gemini Candidate Missing]',
               parsedResult.promptFeedback || parsedResult
             );
+            await rollbackUsage();
             return resolve({
               statusCode: 500,
               headers,
@@ -466,6 +481,7 @@ maxOutputTokens: 150
             candidate.content?.parts?.[0]?.text;
 
           if (!elevatedText) {
+            await rollbackUsage();
             return resolve({
               statusCode: 500,
               headers,
@@ -478,13 +494,13 @@ maxOutputTokens: 150
           const normalizedText =
             elevatedText.toLowerCase();
 
-          // FIX 3: Removed detached redundant error block. Logic now flows correctly.
           if (
             elevatedText.length > 700 ||
             normalizedText.includes('i cannot') ||
             normalizedText.includes('i am unable') ||
             normalizedText.includes('as an ai')
           ) {
+            await rollbackUsage();
             return resolve({
               statusCode: 400,
               headers,
@@ -495,7 +511,6 @@ maxOutputTokens: 150
           }
 
           try {
-            // Usage increment is now handled pre-API execution. Logging successful runs here.
             await db.collection('ai_usage_logs').add({
               uid,
               requestId,
@@ -518,14 +533,15 @@ maxOutputTokens: 150
             statusCode: 200,
             headers,
             body: JSON.stringify({
-  output: elevatedText.trim(),
-  mode,
-  status: 'success'
-})
+              output: elevatedText.trim(),
+              mode,
+              status: 'success'
+            })
           });
             
         } catch (err) {
           console.error('[Parsing Error]', err);
+          await rollbackUsage();
           resolve({
             statusCode: 500,
             headers,
@@ -535,9 +551,9 @@ maxOutputTokens: 150
       });
     });
 
-    req.on('error', (err) => {
+    req.on('error', async (err) => {
       console.error('[Request Connection Error]', err);
-
+      await rollbackUsage();
       resolve({
         statusCode: 500,
         headers,
@@ -547,8 +563,9 @@ maxOutputTokens: 150
       });
     });
 
-    req.on('timeout', () => {
+    req.on('timeout', async () => {
       req.destroy();
+      await rollbackUsage();
       resolve({
         statusCode: 504,
         headers,
