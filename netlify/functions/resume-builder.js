@@ -499,7 +499,7 @@ maxOutputTokens: 150
             await db.collection('ai_usage_logs').add({
               uid,
               requestId,
-              feature: 'REACH_ENHANCE_BULLET',
+              feature: `REACH_${mode}`,
               model: modelName,
               timestamp:
                 admin.firestore.FieldValue.serverTimestamp(),
