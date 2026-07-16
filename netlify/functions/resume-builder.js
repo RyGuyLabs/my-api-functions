@@ -268,13 +268,15 @@ JOB DESCRIPTION:
 ${jobDescription || "Not Provided"}
 
 OUTPUT REQUIREMENTS:
-1. Return exactly one resume-ready bullet point.
-2. Return only the rewritten bullet point with no introductions, explanations, notes, or commentary.
-3. Begin with a strong action verb.
-4. Use concise executive-level language appropriate for modern ATS systems.
-5. Emphasize outcomes, operational value, efficiency, customer impact, compliance, accuracy, throughput, coordination, quality control, or process improvement when supported by the user's input.
-6. Translate low-level tasks into professional business language without changing the factual scope of the work.
-7. Preserve all factual accuracy.
+1. Respect the requested processing mode.
+2. ENHANCE_BULLET mode returns exactly one resume bullet.
+3. GENERATE_SUMMARY mode returns exactly three executive summary sentences.
+4. Return only the requested output with no explanations or commentary.
+5. Begin with a strong action verb.
+6. Use concise executive-level language appropriate for modern ATS systems.
+7. Emphasize outcomes, operational value, efficiency, customer impact, compliance, accuracy, throughput, coordination, quality control, or process improvement when supported by the user's input.
+8. Translate low-level tasks into professional business language without changing the factual scope of the work.
+9. Preserve all factual accuracy.
 
 STRICT SAFETY RULES:
 1. Never invent metrics, percentages, dollar values, quotas, KPIs, budgets, or growth figures.
