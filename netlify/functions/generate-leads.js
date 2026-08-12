@@ -1,6 +1,9 @@
 const { GoogleGenAI } = require('@google/genai');
 
-const LEAD_QUALIFIER_API_KEY = process.env.LEAD_QUALIFIER_API_KEY || "";
+// Sanitize the key to strip accidental whitespace or quotes added in Netlify UI
+const rawKey = process.env.LEAD_QUALIFIER_API_KEY || "";
+const LEAD_QUALIFIER_API_KEY = rawKey.replace(/^["']|["']$/g, '').trim();
+
 const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
 const leadSchema = {
@@ -88,7 +91,6 @@ exports.handler = async (event) => {
         };
     }
 
-    // FIX: Accept both camelCase and snake_case from client requests
     const industry = data.industry;
     const search_query = data.search_query || data.searchQuery;
     const quality_level = data.quality_level || data.qualityLevel || 'medium';
@@ -113,6 +115,9 @@ exports.handler = async (event) => {
         };
     }
 
+    // Diagnostic logging in Netlify function log
+    console.log(`API Key Check -> Length: ${LEAD_QUALIFIER_API_KEY.length}, Prefix: ${LEAD_QUALIFIER_API_KEY.substring(0, 4)}`);
+
     const { systemInstruction, userQuery } = buildPrompt(industry, search_query, quality_level, max_leads);
 
     let response;
@@ -134,6 +139,7 @@ exports.handler = async (event) => {
             break;
         } catch (error) {
             lastError = error;
+            console.error(`Attempt ${i + 1} failed:`, error.message);
             if (i < maxRetries - 1) {
                 const delay = Math.pow(2, i) * 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
@@ -146,7 +152,10 @@ exports.handler = async (event) => {
         return {
             statusCode: 503,
             headers,
-            body: JSON.stringify({ message: 'Failed to generate leads due to API or network error after multiple retries.', error: lastError?.message }),
+            body: JSON.stringify({ 
+                message: 'Failed to generate leads due to API or network error after multiple retries.', 
+                error: lastError?.message 
+            }),
         };
     }
    
@@ -154,7 +163,7 @@ exports.handler = async (event) => {
         const jsonText = response.text;
        
         if (!jsonText) {
-             return {
+            return {
                 statusCode: 500,
                 headers,
                 body: JSON.stringify({ message: 'AI model returned an empty response.' }),
@@ -168,7 +177,8 @@ exports.handler = async (event) => {
             headers,
             body: JSON.stringify({
                 message: 'Leads generated successfully.',
-                data: leadsData,
+                leads: leadsData, // Included so frontend's result.leads check resolves
+                data: leadsData
             }),
         };
 
