@@ -1,27 +1,8 @@
-/**
- * Netlify Function: generate-leads
- * * This function processes a POST request from the front-end form,
- * constructs a targeted prompt based on quality/volume parameters,
- * and calls the Gemini API with Google Search grounding to generate
- * a structured list of leads (companies).
- * * To deploy: Save this file at 'netlify/functions/generate-leads.js'
- * * ENVIRONMENT VARIABLE REQUIRED:
- * - LEAD_QUALIFIER_API_KEY: Your Google AI API key. (Set this in Netlify UI)
- * * NOTE: This function utilizes Gemini's built-in Google Search grounding. 
- * External search keys (like RYGUY_SEARCH_API_KEY) are NOT used here.
- */
-
 const { GoogleGenAI } = require('@google/genai');
 
-// NOTE: Netlify automatically makes environment variables available
-// The API Key is fetched from the environment variable provided by the user.
 const LEAD_QUALIFIER_API_KEY = process.env.LEAD_QUALIFIER_API_KEY || "";
 const ai = new GoogleGenAI(LEAD_QUALIFIER_API_KEY);
 
-/**
- * Defines the required structure for the lead data output.
- * We use a JSON schema to force the model to return a predictable array of leads.
- */
 const leadSchema = {
     type: "ARRAY",
     description: "A list of high-quality sales leads based on the user's criteria.",
@@ -49,14 +30,6 @@ const leadSchema = {
     }
 };
 
-/**
- * Builds the prompt and system instruction based on the user's chosen quality level.
- * @param {string} industry - The target industry.
- * @param {string} searchQuery - The specific keyword/query.
- * @param {string} qualityLevel - 'low', 'medium', or 'high'.
- * @param {number} maxLeads - Maximum number of leads requested (1-100).
- * @returns {{systemInstruction: string, userQuery: string}}
- */
 function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
     let systemInstruction = `You are an expert lead generation specialist. Your task is to perform an internet search based on the user's query and strictly return a JSON array of ${maxLeads} leads. You MUST ONLY return valid JSON that conforms exactly to the provided schema. Do not include any explanatory text, markdown notes, or code fences (e.g., \`\`\`).`;
 
