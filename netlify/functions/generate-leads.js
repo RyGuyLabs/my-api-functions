@@ -1,54 +1,25 @@
 const { GoogleGenAI } = require('@google/genai');
 
-// Sanitize the key to strip accidental whitespace or quotes added in Netlify UI
 const rawKey = process.env.LEAD_QUALIFIER_API_KEY || "";
 const LEAD_QUALIFIER_API_KEY = rawKey.replace(/^["']|["']$/g, '').trim();
 
 const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
-const leadSchema = {
-    type: "ARRAY",
-    description: "A list of high-quality sales leads based on the user's criteria.",
-    items: {
-        type: "OBJECT",
-        properties: {
-            companyName: {
-                type: "STRING",
-                description: "The full, professional name of the company."
-            },
-            website: {
-                type: "STRING",
-                description: "The root URL of the company website. Should start with http:// or https://."
-            },
-            contactEmail: {
-                type: "STRING",
-                description: "A primary contact email address (e.g., info@, sales@). Use 'N/A' if unable to find a specific contact."
-            },
-            confidenceScore: {
-                type: "STRING",
-                description: "A subjective quality score for the lead based on search results (High, Medium, Low)."
-            }
-        },
-        required: ["companyName", "website", "contactEmail", "confidenceScore"]
-    }
-};
-
 function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
-    let systemInstruction = `You are an expert lead generation specialist. Your task is to perform an internet search based on the user's query and strictly return a JSON array of ${maxLeads} leads following this structure: [{"companyName": "", "website": "", "contactEmail": "", "confidenceScore": ""}]. You MUST ONLY return valid raw JSON matching this structure. Do not include any introductory commentary, markdown formatting, or code blocks (e.g., \`\`\`json).`;
+    let systemInstruction = `You are an expert lead generation specialist. Perform an internet search and return EXACTLY a JSON array containing ${maxLeads} objects with fields: "companyName", "website", "contactEmail", "confidenceScore". Do not include extra text or markdown formatting.`;
 
     let userQuery = "";
    
     switch (qualityLevel) {
         case 'low':
-            userQuery = `Find up to ${maxLeads} diverse companies in the '${industry}' sector matching the broad term '${searchQuery}'. Prioritize quantity and speed. Focus on extracting just the company name and website.`;
+            userQuery = `Find up to ${maxLeads} diverse companies in '${industry}' matching '${searchQuery}'. Focus on extracting company name and website.`;
             break;
         case 'high':
-            userQuery = `Find the highest quality, most specific, and relevant companies (up to ${maxLeads}) in the '${industry}' sector matching the niche term '${searchQuery}'. You must attempt to find a verifiable contact email and provide a high confidence score only for exceptionally relevant results.`;
-            systemInstruction += " Be highly selective and apply strict filters. If a required field cannot be found, use 'N/A' but try hard to find it.";
+            userQuery = `Find the highest quality companies (up to ${maxLeads}) in '${industry}' matching '${searchQuery}'. Search for verifiable contact emails.`;
             break;
         case 'medium':
         default:
-            userQuery = `Find a balanced set of up to ${maxLeads} relevant companies in the '${industry}' sector matching the query '${searchQuery}'. Include website and attempt to find a primary contact email.`;
+            userQuery = `Find up to ${maxLeads} relevant companies in '${industry}' matching '${searchQuery}'. Include website and primary contact email.`;
             break;
     }
    
@@ -56,8 +27,9 @@ function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
 }
 
 exports.handler = async (event) => {
+    // Guaranteed CORS Headers attached to ALL responses
     const headers = {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
         'Access-Control-Max-Age': '86400',
@@ -65,30 +37,18 @@ exports.handler = async (event) => {
     };
 
     if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({ message: 'CORS check successful' }),
-        };
+        return { statusCode: 200, headers, body: JSON.stringify({ message: 'CORS preflight successful' }) };
     }
    
     if (event.httpMethod !== 'POST' || !event.body) {
-        return {
-            statusCode: 405,
-            headers,
-            body: JSON.stringify({ message: 'Method Not Allowed or Missing Body' }),
-        };
+        return { statusCode: 405, headers, body: JSON.stringify({ message: 'Method Not Allowed' }) };
     }
 
     let data;
     try {
         data = JSON.parse(event.body);
     } catch (error) {
-        return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({ message: 'Invalid JSON payload' }),
-        };
+        return { statusCode: 400, headers, body: JSON.stringify({ message: 'Invalid JSON payload' }) };
     }
 
     const industry = data.industry;
@@ -100,79 +60,57 @@ exports.handler = async (event) => {
         return {
             statusCode: 400,
             headers,
-            body: JSON.stringify({ 
-                message: 'Missing required parameters: industry and search_query (or searchQuery) are required.',
-                receivedPayload: data
-            }),
+            body: JSON.stringify({ message: 'Missing required parameters: industry and search_query.' })
         };
     }
    
     if (!LEAD_QUALIFIER_API_KEY) {
-         return {
+        return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ message: 'Server configuration error: LEAD_QUALIFIER_API_KEY is missing.' }),
+            body: JSON.stringify({ message: 'Server configuration error: LEAD_QUALIFIER_API_KEY is missing.' })
         };
     }
-
-    console.log(`API Key Check -> Length: ${LEAD_QUALIFIER_API_KEY.length}, Prefix: ${LEAD_QUALIFIER_API_KEY.substring(0, 4)}`);
 
     const { systemInstruction, userQuery } = buildPrompt(industry, search_query, quality_level, max_leads);
 
     let response;
-    const maxRetries = 3;
-    let lastError = null;
-
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: userQuery,
-                config: {
-                    systemInstruction: systemInstruction,
-                    tools: [{ googleSearch: {} }]
-                    // Note: responseMimeType and responseSchema omitted to allow googleSearch tool usage
-                }
-            });
-            break;
-        } catch (error) {
-            lastError = error;
-            console.error(`Attempt ${i + 1} failed:`, error.message);
-            if (i < maxRetries - 1) {
-                const delay = Math.pow(2, i) * 1000;
-                await new Promise(resolve => setTimeout(resolve, delay));
+    // Single execution (no long delays) to prevent hitting Netlify 10s timeout
+    try {
+        response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: userQuery,
+            config: {
+                systemInstruction: systemInstruction,
+                tools: [{ googleSearch: {} }]
             }
-        }
-    }
-
-    if (!response) {
-        console.error('Final API Error after retries:', lastError);
+        });
+    } catch (error) {
+        console.error("Gemini API call failed:", error.message);
         return {
-            statusCode: 503,
+            statusCode: 502,
             headers,
-            body: JSON.stringify({ 
-                message: 'Failed to generate leads due to API or network error after multiple retries.', 
-                error: lastError?.message 
-            }),
+            body: JSON.stringify({ message: 'API service error during search execution.', error: error.message })
         };
     }
-   
+
     try {
-        let jsonText = response.text;
+        const rawText = response.text || "";
        
-        if (!jsonText) {
+        // Extract array using regex to guarantee valid JSON parsing
+        const arrayMatch = rawText.match(/\[[\s\S]*\]/);
+        
+        if (!arrayMatch) {
+            console.error("Failed to extract JSON array. Raw response:", rawText);
             return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ message: 'AI model returned an empty response.' }),
+                body: JSON.stringify({ message: 'AI returned non-JSON format.', raw: rawText })
             };
         }
-       
-        // Clean out code blocks or extra whitespace from model response text
-        jsonText = jsonText.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-       
-        const leadsData = JSON.parse(jsonText);
-       
+
+        const leadsData = JSON.parse(arrayMatch[0]);
+
         return {
             statusCode: 200,
             headers,
@@ -180,19 +118,15 @@ exports.handler = async (event) => {
                 message: 'Leads generated successfully.',
                 leads: leadsData,
                 data: leadsData
-            }),
+            })
         };
 
     } catch (error) {
-        console.error('Error processing AI response:', error);
+        console.error('Error processing JSON response:', error);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({
-                message: 'Error processing AI response into final JSON.',
-                raw_response: response.text,
-                error: error.message
-            }),
+            body: JSON.stringify({ message: 'Failed to parse lead data.', error: error.message })
         };
     }
 };
