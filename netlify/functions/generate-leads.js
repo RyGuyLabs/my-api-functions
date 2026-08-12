@@ -34,7 +34,7 @@ const leadSchema = {
 };
 
 function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
-    let systemInstruction = `You are an expert lead generation specialist. Your task is to perform an internet search based on the user's query and strictly return a JSON array of ${maxLeads} leads. You MUST ONLY return valid JSON that conforms exactly to the provided schema. Do not include any explanatory text, markdown notes, or code fences (e.g., \`\`\`).`;
+    let systemInstruction = `You are an expert lead generation specialist. Your task is to perform an internet search based on the user's query and strictly return a JSON array of ${maxLeads} leads following this structure: [{"companyName": "", "website": "", "contactEmail": "", "confidenceScore": ""}]. You MUST ONLY return valid raw JSON matching this structure. Do not include any introductory commentary, markdown formatting, or code blocks (e.g., \`\`\`json).`;
 
     let userQuery = "";
    
@@ -115,7 +115,6 @@ exports.handler = async (event) => {
         };
     }
 
-    // Diagnostic logging in Netlify function log
     console.log(`API Key Check -> Length: ${LEAD_QUALIFIER_API_KEY.length}, Prefix: ${LEAD_QUALIFIER_API_KEY.substring(0, 4)}`);
 
     const { systemInstruction, userQuery } = buildPrompt(industry, search_query, quality_level, max_leads);
@@ -131,9 +130,8 @@ exports.handler = async (event) => {
                 contents: userQuery,
                 config: {
                     systemInstruction: systemInstruction,
-                    tools: [{ googleSearch: {} }],
-                    responseMimeType: "application/json",
-                    responseSchema: leadSchema
+                    tools: [{ googleSearch: {} }]
+                    // Note: responseMimeType and responseSchema omitted to allow googleSearch tool usage
                 }
             });
             break;
@@ -160,7 +158,7 @@ exports.handler = async (event) => {
     }
    
     try {
-        const jsonText = response.text;
+        let jsonText = response.text;
        
         if (!jsonText) {
             return {
@@ -170,6 +168,9 @@ exports.handler = async (event) => {
             };
         }
        
+        // Clean out code blocks or extra whitespace from model response text
+        jsonText = jsonText.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+       
         const leadsData = JSON.parse(jsonText);
        
         return {
@@ -177,7 +178,7 @@ exports.handler = async (event) => {
             headers,
             body: JSON.stringify({
                 message: 'Leads generated successfully.',
-                leads: leadsData, // Included so frontend's result.leads check resolves
+                leads: leadsData,
                 data: leadsData
             }),
         };
