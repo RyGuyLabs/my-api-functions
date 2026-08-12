@@ -1,7 +1,8 @@
 const { GoogleGenAI } = require('@google/genai');
 
 const LEAD_QUALIFIER_API_KEY = process.env.LEAD_QUALIFIER_API_KEY || "";
-const ai = new GoogleGenAI(LEAD_QUALIFIER_API_KEY);
+// 1. Pass API key inside an options object
+const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
 const leadSchema = {
     type: "ARRAY",
@@ -34,45 +35,33 @@ function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
     let systemInstruction = `You are an expert lead generation specialist. Your task is to perform an internet search based on the user's query and strictly return a JSON array of ${maxLeads} leads. You MUST ONLY return valid JSON that conforms exactly to the provided schema. Do not include any explanatory text, markdown notes, or code fences (e.g., \`\`\`).`;
 
     let userQuery = "";
-    
-    // Adjust the query complexity based on the quality level
+  
     switch (qualityLevel) {
         case 'low':
-            // High Volume, Broad Search
             userQuery = `Find up to ${maxLeads} diverse companies in the '${industry}' sector matching the broad term '${searchQuery}'. Prioritize quantity and speed. Focus on extracting just the company name and website.`;
             break;
         case 'high':
-            // Low Volume, Niche Search, High Filter
             userQuery = `Find the highest quality, most specific, and relevant companies (up to ${maxLeads}) in the '${industry}' sector matching the niche term '${searchQuery}'. You must attempt to find a verifiable contact email and provide a high confidence score only for exceptionally relevant results.`;
-            systemInstruction += " Be highly selective and apply strict filters. If a required field cannot be found, use 'N/A' but try hard to find it."
+            systemInstruction += " Be highly selective and apply strict filters. If a required field cannot be found, use 'N/A' but try hard to find it.";
             break;
         case 'medium':
         default:
-            // Balanced Approach
             userQuery = `Find a balanced set of up to ${maxLeads} relevant companies in the '${industry}' sector matching the query '${searchQuery}'. Include website and attempt to find a primary contact email.`;
             break;
     }
-    
+  
     return { systemInstruction, userQuery };
 }
 
-/**
- * The main handler for the Netlify Function.
- */
 exports.handler = async (event) => {
-    // 1. Basic CORS headers for external access (SQUARESACE/ANY ORIGIN)
-    // Using '*' here ensures the header is definitely returned, overriding potential
-    // Netlify environment/caching issues with specific domains.
     const headers = {
-        'Access-Control-Allow-Origin': '*', 
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        // EXPANDED HEADERS: Added Authorization and X-Requested-With to fix stubborn CORS preflight errors
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With', 
-        'Access-Control-Max-Age': '86400', 
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Max-Age': '86400',
         'Content-Type': 'application/json',
     };
 
-    // Handle CORS preflight requests
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -80,8 +69,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ message: 'CORS check successful' }),
         };
     }
-    
-    // Ensure it's a POST request and has a body
+  
     if (event.httpMethod !== 'POST' || !event.body) {
         return {
             statusCode: 405,
@@ -90,7 +78,6 @@ exports.handler = async (event) => {
         };
     }
 
-    // 2. Parse and Validate Input
     let data;
     try {
         data = JSON.parse(event.body);
@@ -111,8 +98,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ message: 'Missing required fields: industry, search_query, quality_level, and max_leads are required.' }),
         };
     }
-    
-    // Using the new ENV variable name
+  
     if (!LEAD_QUALIFIER_API_KEY) {
          return {
             statusCode: 500,
@@ -121,42 +107,30 @@ exports.handler = async (event) => {
         };
     }
 
-    // 3. Construct Prompt and API Payload
     const { systemInstruction, userQuery } = buildPrompt(industry, search_query, quality_level, max_leads);
-    
-    const payload = {
-        contents: [{ parts: [{ text: userQuery }] }],
-        
-        // Use Google Search for lead generation grounding
-        tools: [{ google_search: {} }],
-        
-        // Define the AI's persona and rules
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        
-        // Define the required JSON output format
-        generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: leadSchema
-        }
-    };
-    
-    // 4. Call Gemini API with Exponential Backoff
+
     let response;
     const maxRetries = 3;
     let lastError = null;
 
     for (let i = 0; i < maxRetries; i++) {
         try {
-            // Using gemini-2.5-flash-preview-05-20 for structured, grounded responses
+            // 2. Corrected SDK call structure: contents and config at root level
             response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-preview-05-20',
-                payload: payload
+                model: 'gemini-2.5-flash',
+                contents: userQuery,
+                config: {
+                    systemInstruction: systemInstruction,
+                    tools: [{ googleSearch: {} }],
+                    responseMimeType: "application/json",
+                    responseSchema: leadSchema
+                }
             });
-            break; // Success! Exit loop.
+            break;
         } catch (error) {
             lastError = error;
             if (i < maxRetries - 1) {
-                const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s delay
+                const delay = Math.pow(2, i) * 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
@@ -167,32 +141,30 @@ exports.handler = async (event) => {
         return {
             statusCode: 503,
             headers,
-            body: JSON.stringify({ message: 'Failed to generate leads due to API or network error after multiple retries.', error: lastError.message }),
+            body: JSON.stringify({ message: 'Failed to generate leads due to API or network error after multiple retries.', error: lastError?.message }),
         };
     }
-    
-    // 5. Process and Return Response
+  
     try {
-        const jsonText = response.candidates?.[0]?.content?.parts?.[0]?.text;
-        
+        // 3. Direct response text accessor provided by @google/genai
+        const jsonText = response.text;
+      
         if (!jsonText) {
              return {
                 statusCode: 500,
                 headers,
-                body: JSON.stringify({ message: 'AI model returned an unexpected or empty response.' }),
+                body: JSON.stringify({ message: 'AI model returned an empty response.' }),
             };
         }
-        
-        // The model should return raw JSON text due to the configuration
+      
         const leadsData = JSON.parse(jsonText);
-        
+      
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ 
-                message: 'Leads generated successfully.', 
+            body: JSON.stringify({
+                message: 'Leads generated successfully.',
                 data: leadsData,
-                // Optionally include grounding sources metadata here if needed for debugging
             }),
         };
 
@@ -201,9 +173,9 @@ exports.handler = async (event) => {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ 
-                message: 'Error processing AI response into final JSON.', 
-                raw_response: response.candidates?.[0]?.content?.parts?.[0]?.text,
+            body: JSON.stringify({
+                message: 'Error processing AI response into final JSON.',
+                raw_response: response.text,
                 error: error.message
             }),
         };
