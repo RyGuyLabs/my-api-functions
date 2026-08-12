@@ -7,36 +7,27 @@ const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
 function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
     let systemInstruction = `You are an elite intent-based lead generation API for RyGuyLabs. 
-Your objective is to execute live web searches to find companies or individuals ACTIVELY expressing a need for a specific service. You must scour social media indexing, forums, current news, job postings, and public threads for buying signals based on the user's keywords.
+Your objective is to execute live web searches to find companies or individuals ACTIVELY expressing a need for a specific service based on the keywords.
 
 CRITICAL TACTICS:
 1. INTENT SEARCH: Look for public posts, news, or threads like "Looking for recommendations for...", "We are struggling with...", or "Hiring a..." related to the keywords.
-2. EXTRACT & GENERATE 10 EXACT FIELDS:
-   - "companyName": Name of the individual or company.
-   - "website": Official website or primary profile URL.
-   - "contactEmail": Publicly listed email (or "N/A" if not found instantly).
-   - "phoneNumber": Publicly listed phone (or "N/A").
-   - "socialHandles": Verified profiles, e.g., "LinkedIn: /in/name, X: @name" (or "N/A").
-   - "socialSignal": The exact post, news event, or thread indicating they need the service.
-   - "leadRationale": "Why this is a good lead" - analyze their signal and explain why they are ripe for outreach.
-   - "draftPitch": A short, professional, highly customized outreach message addressing their specific pain point.
-   - "nextStep": The recommended immediate next action (e.g., "Connect on LinkedIn and engage with their recent post before pitching").
-   - "confidenceScore": "High", "Medium", or "Low" based on the strength of the buying signal.
-3. SPEED & FALLBACKS: If contact info is missing, use "N/A". Do not stall the execution. Focus heavily on finding the signal and generating the pitch.
-4. STRICT OUTPUT: You MUST return ONLY a raw JSON array containing exactly ${maxLeads} objects with the keys listed above. No markdown (\`\`\`json), no intro text, no conversational filler.`;
+2. EXTRACT 10 EXACT FIELDS: "companyName", "website", "contactEmail", "phoneNumber", "socialHandles", "socialSignal", "leadRationale", "draftPitch", "nextStep", "confidenceScore".
+3. STRICT JSON SYNTAX: You are generating text inside a JSON object. You MUST escape all double quotes inside your text values using a backslash (e.g., \\"Hello\\"). Do NOT use unescaped newlines. 
+4. SPEED: If contact info is missing, use "N/A". Keep the rationale and pitch concise (2-3 sentences max) to save processing time.
+5. STRICT OUTPUT: You MUST return ONLY a raw JSON array containing exactly ${maxLeads} objects. No markdown, no intro text.`;
 
     let userQuery = `Target Industry/Niche: '${industry}'
-Intent Keywords / Trigger Phrases: '${searchQuery}'
+Intent Keywords: '${searchQuery}'
 Lead Count: ${maxLeads}
 
-Scour the web for real individuals or companies actively signaling a need related to these keywords. Extract their contact info, summarize the signal you found, and draft a professional outreach strategy. Output strictly as the requested JSON array.`;
+Find real individuals or companies actively signaling a need related to these keywords. Extract contact info, summarize the signal, and draft a short outreach strategy. Output strictly as the requested JSON array.`;
 
     switch (qualityLevel) {
         case 'low':
-            userQuery += " Focus on speed. Broadly match the keywords to any relevant news or posts.";
+            userQuery += " Focus on speed. Broadly match the keywords.";
             break;
         case 'high':
-            userQuery += " Ensure extreme relevance. Only return leads where the buying signal or pain point is highly explicit and clear.";
+            userQuery += " Ensure extreme relevance. Only return leads with explicit buying signals.";
             break;
         case 'medium':
         default:
@@ -48,7 +39,6 @@ Scour the web for real individuals or companies actively signaling a need relate
 }
 
 exports.handler = async (event) => {
-    // Guaranteed CORS Headers attached to ALL responses
     const headers = {
         'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -75,23 +65,17 @@ exports.handler = async (event) => {
     const industry = data.industry;
     const search_query = data.search_query || data.searchQuery;
     const quality_level = data.quality_level || data.qualityLevel || 'medium';
-    // Hard-cap at 5 to prevent Netlify 10-second timeouts during complex reasoning tasks
-    const max_leads = Math.min(data.max_leads || data.maxLeads || 5, 5); 
+    
+    // REDUCED TO 3: 5 complex intent leads + pitches takes too long for a 10s Netlify limit. 
+    // We cap this at 3 to ensure the serverless function survives.
+    const max_leads = Math.min(data.max_leads || data.maxLeads || 3, 3); 
 
     if (!industry || !search_query) {
-        return {
-            statusCode: 400,
-            headers,
-            body: JSON.stringify({ message: 'Missing required parameters: industry and search_query.' })
-        };
+        return { statusCode: 400, headers, body: JSON.stringify({ message: 'Missing required parameters.' }) };
     }
 
     if (!LEAD_QUALIFIER_API_KEY) {
-        return {
-            statusCode: 500,
-            headers,
-            body: JSON.stringify({ message: 'Server configuration error: API key missing.' })
-        };
+        return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error.' }) };
     }
 
     const { systemInstruction, userQuery } = buildPrompt(industry, search_query, quality_level, max_leads);
@@ -105,8 +89,7 @@ exports.handler = async (event) => {
             config: {
                 systemInstruction: systemInstruction,
                 tools: [{ googleSearch: {} }],
-                // Slightly higher temperature (0.3) allows the AI to be more creative when drafting the pitch and rationale, while maintaining JSON structure
-                temperature: 0.3 
+                temperature: 0.2 // Lowered slightly to prioritize strict JSON formatting over extreme creativity
             }
         });
     } catch (error) {
@@ -120,7 +103,6 @@ exports.handler = async (event) => {
 
     try {
         let rawText = response.text || "";
-
         rawText = rawText.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
 
         const arrayMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
@@ -139,15 +121,13 @@ exports.handler = async (event) => {
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({
-                message: 'Leads generated successfully.',
-                leads: leadsData,
-                data: leadsData
-            })
+            body: JSON.stringify({ message: 'Leads generated successfully.', leads: leadsData, data: leadsData })
         };
 
     } catch (error) {
+        // Detailed logging to catch the exact JSON syntax error
         console.error('Error processing JSON response:', error);
+        console.error('RAW TEXT THAT FAILED:', response?.text);
         return {
             statusCode: 500,
             headers,
