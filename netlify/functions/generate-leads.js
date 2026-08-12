@@ -6,23 +6,35 @@ const LEAD_QUALIFIER_API_KEY = rawKey.replace(/^["']|["']$/g, '').trim();
 const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
 function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
-    let systemInstruction = `You are an expert lead generation specialist. Perform an internet search and return EXACTLY a JSON array containing ${maxLeads} objects with fields: "companyName", "website", "contactEmail", "confidenceScore". Do not include extra text or markdown formatting.`;
+    let systemInstruction = `You are an elite OSINT research strategist and lead generation API. 
+Your objective is to execute rapid, highly-targeted web searches to find companies and key decision-makers, outputting ONLY raw JSON data.
 
-    let userQuery = "";
-   
+CRITICAL TACTICS FOR SPEED AND COMPOSITION:
+1. MINIMIZE TOOL CALLS: Combine search queries to find all data at once. Use advanced operators (e.g., 'site:linkedin.com OR site:twitter.com OR site:instagram.com "contact" OR "email" OR "phone"').
+2. EXTRACT 6 DATA POINTS: "companyName", "website", "contactEmail", "phoneNumber", "socialHandles", "confidenceScore".
+3. SOCIAL HANDLES: Scour LinkedIn, X/Twitter, Instagram, Facebook, YouTube, and Crunchbase. Format as a single string (e.g., "LinkedIn: /company/name, X: @handle").
+4. MISSING DATA: If a specific phone number or email isn't found instantly, label it "N/A". Do not stall the execution.
+5. STRICT OUTPUT: You MUST return ONLY a raw JSON array containing exactly ${maxLeads} objects. Do not include markdown (no \`\`\`json), no introductory text, and no commentary.`;
+
+    let userQuery = `Target Sector: '${industry}'
+Search Query: '${searchQuery}'
+Lead Count: ${maxLeads}
+
+Find the most relevant leads matching the query. Cross-reference their official websites and public social media platforms to extract their direct phone numbers, publicly listed emails, and official social media handles. Output strictly as the requested JSON array.`;
+
     switch (qualityLevel) {
         case 'low':
-            userQuery = `Find up to ${maxLeads} diverse companies in '${industry}' matching '${searchQuery}'. Focus on extracting company name and website.`;
+            userQuery += " Focus strictly on speed. Broadly match the sector and extract whatever contact info is immediately visible.";
             break;
         case 'high':
-            userQuery = `Find the highest quality companies (up to ${maxLeads}) in '${industry}' matching '${searchQuery}'. Search for verifiable contact emails.`;
+            userQuery += " Ensure extreme relevance. Only award a 'High' confidence score if you can successfully verify both a direct contact email and active social media presence.";
             break;
         case 'medium':
         default:
-            userQuery = `Find up to ${maxLeads} relevant companies in '${industry}' matching '${searchQuery}'. Include website and primary contact email.`;
+            userQuery += " Balance speed with accuracy. Attempt to find at least one reliable contact method (email or phone) per lead.";
             break;
     }
-   
+
     return { systemInstruction, userQuery };
 }
 
@@ -39,7 +51,7 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers, body: JSON.stringify({ message: 'CORS preflight successful' }) };
     }
-   
+
     if (event.httpMethod !== 'POST' || !event.body) {
         return { statusCode: 405, headers, body: JSON.stringify({ message: 'Method Not Allowed' }) };
     }
@@ -63,7 +75,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ message: 'Missing required parameters: industry and search_query.' })
         };
     }
-   
+
     if (!LEAD_QUALIFIER_API_KEY) {
         return {
             statusCode: 500,
@@ -75,14 +87,15 @@ exports.handler = async (event) => {
     const { systemInstruction, userQuery } = buildPrompt(industry, search_query, quality_level, max_leads);
 
     let response;
-    // Single execution (no long delays) to prevent hitting Netlify 10s timeout
+    
     try {
         response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: userQuery,
             config: {
                 systemInstruction: systemInstruction,
-                tools: [{ googleSearch: {} }]
+                tools: [{ googleSearch: {} }],
+                temperature: 0.2 // Lower temperature reduces creative hallucination and speeds up structured formatting
             }
         });
     } catch (error) {
@@ -95,10 +108,13 @@ exports.handler = async (event) => {
     }
 
     try {
-        const rawText = response.text || "";
-       
-        // Extract array using regex to guarantee valid JSON parsing
-        const arrayMatch = rawText.match(/\[[\s\S]*\]/);
+        let rawText = response.text || "";
+
+        // Fallback cleanup: Strip markdown blocks if the model ignores the system prompt
+        rawText = rawText.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+
+        // Extract array using regex to guarantee valid JSON parsing against conversational bleed
+        const arrayMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
         
         if (!arrayMatch) {
             console.error("Failed to extract JSON array. Raw response:", rawText);
@@ -126,7 +142,7 @@ exports.handler = async (event) => {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ message: 'Failed to parse lead data.', error: error.message })
+            body: JSON.stringify({ message: 'Failed to parse lead data.', error: error.message, raw: response.text })
         };
     }
 };
