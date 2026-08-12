@@ -6,32 +6,41 @@ const LEAD_QUALIFIER_API_KEY = rawKey.replace(/^["']|["']$/g, '').trim();
 const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
 function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
-    let systemInstruction = `You are an elite lead generation specialist and OSINT researcher.
-Your goal is to execute a single, comprehensive web search to find companies, key decision-makers, and their direct contact info, outputting ONLY raw JSON data.
+    let systemInstruction = `You are an elite intent-based lead generation API for RyGuyLabs. 
+Your objective is to execute live web searches to find companies or individuals ACTIVELY expressing a need for a specific service. You must scour social media indexing, forums, current news, job postings, and public threads for buying signals based on the user's keywords.
 
 CRITICAL TACTICS:
-1. MINIMIZE SEARCH TIME: Formulate a single, natural-language search query that looks for the company, their official website, email addresses, and their LinkedIn/Twitter profiles all at once.
-2. EXTRACT 6 DATA POINTS: "companyName", "website", "contactEmail", "phoneNumber", "socialHandles", "confidenceScore".
-3. SOCIAL HANDLES: Format as a clean string (e.g., "LinkedIn: /company, X: @handle").
-4. MISSING DATA: If contact info is not instantly visible in the first sweep, label it "N/A". Speed is critical. Do not get stuck searching for one missing email.
-5. STRICT OUTPUT: You MUST return ONLY a raw JSON array containing exactly ${maxLeads} objects. No markdown (\`\`\`json), no intro text, no conversational filler.`;
+1. INTENT SEARCH: Look for public posts, news, or threads like "Looking for recommendations for...", "We are struggling with...", or "Hiring a..." related to the keywords.
+2. EXTRACT & GENERATE 10 EXACT FIELDS:
+   - "companyName": Name of the individual or company.
+   - "website": Official website or primary profile URL.
+   - "contactEmail": Publicly listed email (or "N/A" if not found instantly).
+   - "phoneNumber": Publicly listed phone (or "N/A").
+   - "socialHandles": Verified profiles, e.g., "LinkedIn: /in/name, X: @name" (or "N/A").
+   - "socialSignal": The exact post, news event, or thread indicating they need the service.
+   - "leadRationale": "Why this is a good lead" - analyze their signal and explain why they are ripe for outreach.
+   - "draftPitch": A short, professional, highly customized outreach message addressing their specific pain point.
+   - "nextStep": The recommended immediate next action (e.g., "Connect on LinkedIn and engage with their recent post before pitching").
+   - "confidenceScore": "High", "Medium", or "Low" based on the strength of the buying signal.
+3. SPEED & FALLBACKS: If contact info is missing, use "N/A". Do not stall the execution. Focus heavily on finding the signal and generating the pitch.
+4. STRICT OUTPUT: You MUST return ONLY a raw JSON array containing exactly ${maxLeads} objects with the keys listed above. No markdown (\`\`\`json), no intro text, no conversational filler.`;
 
-    let userQuery = `Target Sector: '${industry}'
-Search Query: '${searchQuery}'
+    let userQuery = `Target Industry/Niche: '${industry}'
+Intent Keywords / Trigger Phrases: '${searchQuery}'
 Lead Count: ${maxLeads}
 
-Find the most relevant leads matching this query. Rapidly cross-reference their official websites and public social media platforms to extract direct phone numbers, publicly listed emails, and official social handles. Output strictly as the requested JSON array.`;
+Scour the web for real individuals or companies actively signaling a need related to these keywords. Extract their contact info, summarize the signal you found, and draft a professional outreach strategy. Output strictly as the requested JSON array.`;
 
     switch (qualityLevel) {
         case 'low':
-            userQuery += " Focus strictly on speed. Broadly match the sector and extract whatever contact info is immediately visible.";
+            userQuery += " Focus on speed. Broadly match the keywords to any relevant news or posts.";
             break;
         case 'high':
-            userQuery += " Ensure extreme relevance. Award a 'High' confidence score only if you successfully verify a direct contact email.";
+            userQuery += " Ensure extreme relevance. Only return leads where the buying signal or pain point is highly explicit and clear.";
             break;
         case 'medium':
         default:
-            userQuery += " Balance speed with accuracy. Attempt to find at least one reliable contact method (email or phone) per lead.";
+            userQuery += " Balance speed with accuracy. Find solid signals and write highly personalized pitches.";
             break;
     }
 
@@ -66,7 +75,7 @@ exports.handler = async (event) => {
     const industry = data.industry;
     const search_query = data.search_query || data.searchQuery;
     const quality_level = data.quality_level || data.qualityLevel || 'medium';
-    // Hard-cap at 5 to prevent Netlify 10-second timeouts during heavy social searches
+    // Hard-cap at 5 to prevent Netlify 10-second timeouts during complex reasoning tasks
     const max_leads = Math.min(data.max_leads || data.maxLeads || 5, 5); 
 
     if (!industry || !search_query) {
@@ -96,13 +105,13 @@ exports.handler = async (event) => {
             config: {
                 systemInstruction: systemInstruction,
                 tools: [{ googleSearch: {} }],
-                temperature: 0.2
+                // Slightly higher temperature (0.3) allows the AI to be more creative when drafting the pitch and rationale, while maintaining JSON structure
+                temperature: 0.3 
             }
         });
     } catch (error) {
         console.error("Gemini API call failed:", error.message);
         return {
-            // Changed from 502 to 503 so Netlify doesn't hijack the error and strip CORS headers
             statusCode: 503, 
             headers,
             body: JSON.stringify({ message: 'API service error during search execution.', error: error.message })
