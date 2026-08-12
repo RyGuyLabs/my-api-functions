@@ -1,7 +1,6 @@
 const { GoogleGenAI } = require('@google/genai');
 
 const LEAD_QUALIFIER_API_KEY = process.env.LEAD_QUALIFIER_API_KEY || "";
-// 1. Pass API key inside an options object
 const ai = new GoogleGenAI({ apiKey: LEAD_QUALIFIER_API_KEY });
 
 const leadSchema = {
@@ -35,7 +34,7 @@ function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
     let systemInstruction = `You are an expert lead generation specialist. Your task is to perform an internet search based on the user's query and strictly return a JSON array of ${maxLeads} leads. You MUST ONLY return valid JSON that conforms exactly to the provided schema. Do not include any explanatory text, markdown notes, or code fences (e.g., \`\`\`).`;
 
     let userQuery = "";
-  
+   
     switch (qualityLevel) {
         case 'low':
             userQuery = `Find up to ${maxLeads} diverse companies in the '${industry}' sector matching the broad term '${searchQuery}'. Prioritize quantity and speed. Focus on extracting just the company name and website.`;
@@ -49,7 +48,7 @@ function buildPrompt(industry, searchQuery, qualityLevel, maxLeads) {
             userQuery = `Find a balanced set of up to ${maxLeads} relevant companies in the '${industry}' sector matching the query '${searchQuery}'. Include website and attempt to find a primary contact email.`;
             break;
     }
-  
+   
     return { systemInstruction, userQuery };
 }
 
@@ -69,7 +68,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ message: 'CORS check successful' }),
         };
     }
-  
+   
     if (event.httpMethod !== 'POST' || !event.body) {
         return {
             statusCode: 405,
@@ -89,16 +88,23 @@ exports.handler = async (event) => {
         };
     }
 
-    const { industry, search_query, quality_level, max_leads } = data;
+    // FIX: Accept both camelCase and snake_case from client requests
+    const industry = data.industry;
+    const search_query = data.search_query || data.searchQuery;
+    const quality_level = data.quality_level || data.qualityLevel || 'medium';
+    const max_leads = data.max_leads || data.maxLeads || 5;
 
-    if (!industry || !search_query || !quality_level || !max_leads) {
+    if (!industry || !search_query) {
         return {
             statusCode: 400,
             headers,
-            body: JSON.stringify({ message: 'Missing required fields: industry, search_query, quality_level, and max_leads are required.' }),
+            body: JSON.stringify({ 
+                message: 'Missing required parameters: industry and search_query (or searchQuery) are required.',
+                receivedPayload: data
+            }),
         };
     }
-  
+   
     if (!LEAD_QUALIFIER_API_KEY) {
          return {
             statusCode: 500,
@@ -115,7 +121,6 @@ exports.handler = async (event) => {
 
     for (let i = 0; i < maxRetries; i++) {
         try {
-            // 2. Corrected SDK call structure: contents and config at root level
             response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: userQuery,
@@ -144,11 +149,10 @@ exports.handler = async (event) => {
             body: JSON.stringify({ message: 'Failed to generate leads due to API or network error after multiple retries.', error: lastError?.message }),
         };
     }
-  
+   
     try {
-        // 3. Direct response text accessor provided by @google/genai
         const jsonText = response.text;
-      
+       
         if (!jsonText) {
              return {
                 statusCode: 500,
@@ -156,9 +160,9 @@ exports.handler = async (event) => {
                 body: JSON.stringify({ message: 'AI model returned an empty response.' }),
             };
         }
-      
+       
         const leadsData = JSON.parse(jsonText);
-      
+       
         return {
             statusCode: 200,
             headers,
