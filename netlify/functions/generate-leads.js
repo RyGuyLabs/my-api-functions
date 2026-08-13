@@ -1214,7 +1214,7 @@ OUTPUT FORMAT:
 Return ONLY valid JSON.
 Do not include any introductory text.
 Do not include markdown.
-Do not include ```json fences.
+Do not include JSON code fences.
 The response must begin with { and end with }.
 Use exactly this structure:
 
