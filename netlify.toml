@@ -4,8 +4,9 @@
 
 [functions]
   node_bundler = "esbuild"
+  timeout = 26
 
-  [functions.save-profile]
+[functions.save-profile]
   environment = ["FIREBASE_SERVICE_ACCOUNT"]
 
 [functions.vocal-coach]
