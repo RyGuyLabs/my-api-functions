@@ -1255,12 +1255,6 @@ Return up to ${maxLeads} candidates.
                 googleSearch: {}
               }
             ],
-
-            responseMimeType:
-              'application/json',
-
-            responseSchema:
-              RESPONSE_WRAPPER_SCHEMA
           }
         },
 
