@@ -1243,113 +1243,157 @@ Use exactly this structure:
 
 
     /* -------------------------------------------------------------------- */
-    /* GEMINI REQUEST                                                        */
-    /* -------------------------------------------------------------------- */
+/* GEMINI REQUEST                                                        */
+/* -------------------------------------------------------------------- */
 
-    const response =
-      await generateWithDeadline(
-        ai,
+const response =
+  await generateWithDeadline(
+    ai,
 
-        {
-          model:
-            'gemini-2.5-flash',
+    {
+      model:
+        'gemini-2.5-flash',
 
-          contents:
-            userPrompt,
+      contents:
+        userPrompt,
 
-          config: {
-            systemInstruction,
+      config: {
+        systemInstruction,
 
-            temperature:
-              0.1,
+        temperature:
+          0.1,
 
-            tools: [
-              {
-                googleSearch: {}
-              }
-            ],
+        tools: [
+          {
+            googleSearch: {}
           }
-        },
+        ]
+      }
+    },
 
-        availableForModel
-      );
+    availableForModel
+  );
 
 
-    /* -------------------------------------------------------------------- */
-    /* GROUNDING                                                             */
-    /* -------------------------------------------------------------------- */
+/* -------------------------------------------------------------------- */
+/* GROUNDING                                                             */
+/* -------------------------------------------------------------------- */
 
-    const candidate =
-      response?.candidates?.[0];
+const candidate =
+  response?.candidates?.[0];
 
-    const groundingChunks =
-      candidate
-        ?.groundingMetadata
-        ?.groundingChunks || [];
+const groundingChunks =
+  candidate
+    ?.groundingMetadata
+    ?.groundingChunks || [];
 
-    const groundingIndex =
-      buildGroundingIndex(
-        groundingChunks
-      );
+const groundingIndex =
+  buildGroundingIndex(
+    groundingChunks
+  );
 
-    console.log(
-      `[REQ-${requestId}] Grounding index contains ` +
-      `${groundingIndex.exactUrls.size} URLs and ` +
-      `${groundingIndex.domains.size} domains.`
+console.log(
+  `[REQ-${requestId}] Grounding index contains ` +
+  `${groundingIndex.exactUrls.size} URLs and ` +
+  `${groundingIndex.domains.size} domains.`
+);
+
+
+/* -------------------------------------------------------------------- */
+/* PARSE MODEL RESPONSE                                                  */
+/* -------------------------------------------------------------------- */
+
+let rawLeads = [];
+
+try {
+  const responseText =
+    typeof response?.text === 'string'
+      ? response.text.trim()
+      : '';
+
+  if (!responseText) {
+    console.error(
+      `[REQ-${requestId}] Gemini returned no text.`,
+      JSON.stringify({
+        hasCandidates:
+          Array.isArray(response?.candidates) &&
+          response.candidates.length > 0,
+
+        candidateCount:
+          response?.candidates?.length || 0,
+
+        finishReason:
+          candidate?.finishReason || 'unknown',
+
+        groundingChunkCount:
+          groundingChunks.length
+      })
     );
 
+    throw new Error(
+      'Empty model response.'
+    );
+  }
 
-    /* -------------------------------------------------------------------- */
-    /* PARSE MODEL RESPONSE                                                  */
-    /* -------------------------------------------------------------------- */
+  let parsed;
 
-    let rawLeads = [];
-
-    try {
-      const responseText =
-        typeof response?.text === 'string'
-          ? response.text
-          : '';
-
-      if (!responseText) {
-        throw new Error(
-          'Empty model response.'
-        );
-      }
-
-      const parsed =
-        JSON.parse(
-          responseText
-        );
-
-      rawLeads =
-        Array.isArray(
-          parsed?.leads
-        )
-          ? parsed.leads
-          : [];
-
-    } catch (error) {
-      console.error(
-        `[REQ-${requestId}] Invalid structured output JSON.`,
-        error
+  try {
+    parsed =
+      JSON.parse(
+        responseText
       );
+  } catch (jsonError) {
+    /*
+     * Gemini may occasionally wrap JSON in markdown
+     * despite the prompt. Remove only a surrounding
+     * code fence before attempting one final parse.
+     */
+    const cleanedText =
+      responseText
+        .replace(
+          /^```(?:json)?\s*/i,
+          ''
+        )
+        .replace(
+          /\s*```$/i,
+          ''
+        )
+        .trim();
 
-      return {
-        statusCode: 502,
+    parsed =
+      JSON.parse(
+        cleanedText
+      );
+  }
 
-        headers,
+  rawLeads =
+    Array.isArray(
+      parsed?.leads
+    )
+      ? parsed.leads
+      : [];
 
-        body: JSON.stringify({
-          message:
-            'Failed to extract valid lead intelligence.',
+} catch (error) {
+  console.error(
+    `[REQ-${requestId}] Invalid structured output JSON.`,
+    error
+  );
 
-          leads: [],
+  return {
+    statusCode: 502,
 
-          data: []
-        })
-      };
-    }
+    headers,
+
+    body: JSON.stringify({
+      message:
+        'Failed to extract valid lead intelligence.',
+
+      leads: [],
+
+      data: []
+    })
+  };
+}
 
 
     /* -------------------------------------------------------------------- */
