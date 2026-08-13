@@ -10,14 +10,10 @@ const API_KEY =
 
 const ALLOWED_ORIGIN = 'https://www.ryguylabs.com';
 
-// This is an application-level budget.
-// Your actual Lambda/API Gateway timeout must be configured separately.
 const GLOBAL_TIMEOUT_MS = 20000;
 
-// Reserve time for parsing, qualification, serialization, and response.
 const RESPONSE_RESERVE_MS = 2500;
 
-// Maximum number of candidates the frontend can request.
 const MAX_LEADS_ALLOWED = 8;
 
 const INTERNAL_LEAD_SCHEMA = {
