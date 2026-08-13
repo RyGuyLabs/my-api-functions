@@ -1309,55 +1309,159 @@ ${maxLeads}
 Requested Quality:
 ${qualityLevel}
 
-RESEARCH INSTRUCTIONS:
+RESEARCH TASK:
 
-Use Google Search grounding.
+Use Google Search grounding to conduct broad public-web research.
 
-Find real companies matching the user's request.
+Search for real companies matching the target industry and search intent.
+
+Do not rely on a single generic search.
+
+Conduct multiple search angles covering, where relevant:
+
+A. PROCUREMENT:
+- RFP
+- RFQ
+- RFI
+- tender
+- bid
+- proposal request
+- vendor request
+- contractor request
+- procurement opportunity
+
+B. PROJECT ACTIVITY:
+- new projects
+- expansions
+- launches
+- openings
+- construction
+- redevelopment
+- implementation
+- modernization
+- operational changes
+
+C. NEWS:
+- recent company news
+- local news
+- industry news
+- trade publications
+- project announcements
+- development announcements
+
+D. PUBLIC SOCIAL EVIDENCE:
+- public company posts
+- public professional posts
+- publicly indexed social posts
+- public announcements
+
+E. PUBLIC DISCUSSIONS:
+- forums
+- industry discussions
+- community boards
+- publicly indexed discussion threads
+
+F. PUBLIC REGISTRIES:
+- government records
+- procurement registries
+- business registries
+- licensing records
+- public project records
+- industry directories
+
+G. HIRING:
+- project-specific hiring
+- contractor hiring
+- specialist hiring
+- implementation hiring
+- project-management hiring
+- hiring that clearly indicates the requested commercial need
+
+SEARCH BEHAVIOR:
+
+Use the target industry and search intent as the primary context.
+
+Combine them with different intent terms and source types.
+
+Prefer recent evidence.
+
+Look for explicit evidence first.
+
+If explicit evidence is unavailable, investigate credible project-specific evidence.
+
+Do not treat generic company information as buying intent.
 
 For every candidate:
 
 1. Verify the company identity.
-2. Find the strongest available CURRENT buying-intent evidence.
-3. Identify the exact grounded URL containing that evidence.
-4. Provide a faithful quote or short excerpt from that exact source.
-5. Only provide public contact information explicitly found in retrieved evidence.
-6. Never guess missing information.
-7. Do not use generic company information as buying-intent evidence.
-8. Do not return duplicate companies.
-9. Prefer recent evidence.
-10. Prefer fewer verified prospects over numerous weak prospects.
+2. Determine whether the company genuinely matches the requested industry and search intent.
+3. Find the strongest CURRENT buying-intent evidence.
+4. Prefer explicit procurement, vendor, contractor, proposal, or project evidence.
+5. Identify the exact grounded URL containing that evidence.
+6. Provide a faithful quote or short excerpt from that exact source.
+7. Verify the evidence is recent or otherwise reasonably current.
+8. Only provide public contact information explicitly found in retrieved evidence.
+9. Never guess missing information.
+10. Do not return duplicate companies.
+11. If several sources support one company, use the strongest current source.
+12. Prefer fewer verified prospects over numerous weak prospects.
 
 QUALITY RULES:
 
 HIGH:
-Return only candidates with strong, explicit buying intent and an exact grounded source.
+Return only candidates with strong explicit current buying intent, strong evidence, and an exact grounded source URL.
 
 MEDIUM:
-Return candidates with an exact grounded source and credible commercial/project evidence.
+Return candidates with an exact grounded source and credible current commercial or project evidence.
 
 LOW:
-Return candidates with an exact grounded source, but weaker evidence may be accepted.
+Return candidates with an exact grounded source and weaker but still relevant evidence.
 
 IMPORTANT:
-Every returned lead MUST have an exact grounded signalSourceUrl.
+
+Every returned lead MUST have:
+
+- a real company;
+- an exact grounded signalSourceUrl;
+- usable evidence from that source;
+- a socialSignalQuote based on that source.
+
+Never fabricate missing information.
 
 Return up to ${maxLeads} candidates.
 
 OUTPUT FORMAT:
 
 Return ONLY valid JSON.
-Do not include any introductory text.
+
+Do not include introductory text.
+Do not include explanations outside the JSON.
 Do not include markdown.
 Do not include JSON code fences.
-The response must begin with { and end with }.
+
+The response must begin with {
+and end with }.
+
 Use exactly this structure:
 
 {
-  "leads": []
+  "leads": [
+    {
+      "companyName": "N/A",
+      "website": "N/A",
+      "contactEmail": "N/A",
+      "phoneNumber": "N/A",
+      "socialHandles": "N/A",
+      "signalSourceUrl": "N/A",
+      "socialSignalQuote": "N/A",
+      "leadRationale": "N/A",
+      "draftPitch": "N/A",
+      "nextStep": "N/A",
+      "confidenceScore": "low"
+    }
+  ]
 }
 `;
-
 
     /* -------------------------------------------------------------------- */
     /* MODEL TIME BUDGET                                                     */
