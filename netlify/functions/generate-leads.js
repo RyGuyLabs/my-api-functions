@@ -1537,6 +1537,13 @@ console.log(
   `${groundingIndex.domains.size} domains.`
 );
 
+if (
+  groundingIndex.exactUrls.size === 0
+) {
+  console.warn(
+    `[REQ-${requestId}] Google Search returned no grounded URLs.`
+  );
+}
 
 /* -------------------------------------------------------------------- */
 /* PARSE MODEL RESPONSE                                                  */
