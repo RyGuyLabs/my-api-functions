@@ -7,7 +7,7 @@ const API_KEY =
 
 const ALLOWED_ORIGIN = 'https://www.ryguylabs.com';
 
-const GLOBAL_TIMEOUT_MS = 20000;
+const GLOBAL_TIMEOUT_MS = 30000;
 const RESPONSE_RESERVE_MS = 2500;
 const MAX_LEADS_ALLOWED = 8;
 
@@ -1208,6 +1208,19 @@ IMPORTANT:
 Every returned lead MUST have an exact grounded signalSourceUrl.
 
 Return up to ${maxLeads} candidates.
+
+OUTPUT FORMAT:
+
+Return ONLY valid JSON.
+Do not include any introductory text.
+Do not include markdown.
+Do not include ```json fences.
+The response must begin with { and end with }.
+Use exactly this structure:
+
+{
+  "leads": []
+}
 `;
 
 
