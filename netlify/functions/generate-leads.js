@@ -1481,8 +1481,8 @@ Use exactly this structure:
     }
 
 
-    /* -------------------------------------------------------------------- */
-/* GEMINI REQUEST                                                        */
+/* -------------------------------------------------------------------- */
+/* GEMINI REQUEST                                                       */
 /* -------------------------------------------------------------------- */
 
 const response = await generateWithDeadline(
@@ -1493,8 +1493,7 @@ const response = await generateWithDeadline(
       config: {
         systemInstruction,
         temperature: 0.1,
-        tools: [{ googleSearch: {} }],
-        responseMimeType: 'application/json'
+        tools: [{ googleSearch: {} }]
       }
     },
     availableForModel
