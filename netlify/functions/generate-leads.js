@@ -7,7 +7,7 @@ const API_KEY =
 
 const ALLOWED_ORIGIN = 'https://www.ryguylabs.com';
 
-const GLOBAL_TIMEOUT_MS = 30000;
+const GLOBAL_TIMEOUT_MS = 45000;
 const RESPONSE_RESERVE_MS = 2000;
 const MAX_LEADS_ALLOWED = 8;
 
