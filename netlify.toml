@@ -4,13 +4,11 @@
 
 [functions]
   node_bundler = "esbuild"
-  timeout = 26
 
 [functions.save-profile]
   environment = ["FIREBASE_SERVICE_ACCOUNT"]
 
 [functions.vocal-coach]
-  timeout = 60
   environment = ["FIRST_API_KEY"]
 
 [functions.lead-qualifier]
