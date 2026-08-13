@@ -1485,596 +1485,236 @@ Use exactly this structure:
 /* GEMINI REQUEST                                                        */
 /* -------------------------------------------------------------------- */
 
-const response =
-  await generateWithDeadline(
+const response = await generateWithDeadline(
     ai,
-
     {
-      model:
-        'gemini-2.5-flash',
-
-      contents:
-        userPrompt,
-
+      model: 'gemini-2.5-flash',
+      contents: userPrompt,
       config: {
         systemInstruction,
-
-        temperature:
-          0.1,
-
-        tools: [
-          {
-            googleSearch: {}
-          }
-        ]
+        temperature: 0.1,
+        tools: [{ googleSearch: {} }],
+        responseMimeType: 'application/json'
       }
     },
-
     availableForModel
   );
 
 
-/* -------------------------------------------------------------------- */
-/* GROUNDING                                                             */
-/* -------------------------------------------------------------------- */
+  const candidate = response?.candidates?.[0];
+  const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
 
-const candidate =
-  response?.candidates?.[0];
+  const groundingIndex = buildGroundingIndex(groundingChunks);
 
-const groundingChunks =
-  candidate
-    ?.groundingMetadata
-    ?.groundingChunks || [];
-
-const groundingIndex =
-  buildGroundingIndex(
-    groundingChunks
+  console.log(
+    `[REQ-${requestId}] Grounding index contains ` +
+    `${groundingIndex?.exactUrls?.size || 0} URLs and ` +
+    `${groundingIndex?.domains?.size || 0} domains.`
   );
 
-console.log(
-  `[REQ-${requestId}] Grounding index contains ` +
-  `${groundingIndex.exactUrls.size} URLs and ` +
-  `${groundingIndex.domains.size} domains.`
-);
-
-if (
-  groundingIndex.exactUrls.size === 0
-) {
-  console.warn(
-    `[REQ-${requestId}] Google Search returned no grounded URLs.`
-  );
-}
-
-/* -------------------------------------------------------------------- */
-/* PARSE MODEL RESPONSE                                                  */
-/* -------------------------------------------------------------------- */
-
-let rawLeads = [];
-
-try {
-  const responseText =
-    typeof response?.text === 'string'
-      ? response.text.trim()
-      : '';
-
-  if (!responseText) {
-    console.error(
-      `[REQ-${requestId}] Gemini returned no text.`,
-      JSON.stringify({
-        hasCandidates:
-          Array.isArray(response?.candidates) &&
-          response.candidates.length > 0,
-
-        candidateCount:
-          response?.candidates?.length || 0,
-
-        finishReason:
-          candidate?.finishReason || 'unknown',
-
-        groundingChunkCount:
-          groundingChunks.length
-      })
-    );
-
-    throw new Error(
-      'Empty model response.'
-    );
+  if (!groundingIndex?.exactUrls?.size) {
+    console.warn(`[REQ-${requestId}] Google Search returned no grounded URLs.`);
   }
 
-  let parsed;
+
+  let rawLeads = [];
 
   try {
-    parsed =
-      JSON.parse(
-        responseText
+    const responseText = typeof response?.text === 'string' ? response.text.trim() : '';
+
+    if (!responseText) {
+      console.error(
+        `[REQ-${requestId}] Gemini returned no text.`,
+        JSON.stringify({
+          hasCandidates: Array.isArray(response?.candidates) && response.candidates.length > 0,
+          candidateCount: response?.candidates?.length || 0,
+          finishReason: candidate?.finishReason || 'unknown',
+          groundingChunkCount: groundingChunks.length
+        })
       );
-  } catch (jsonError) {
-    /*
-     * Gemini may occasionally wrap JSON in markdown
-     * despite the prompt. Remove only a surrounding
-     * code fence before attempting one final parse.
-     */
-    const cleanedText =
-      responseText
-        .replace(
-          /^```(?:json)?\s*/i,
-          ''
-        )
-        .replace(
-          /\s*```$/i,
-          ''
-        )
-        .trim();
-
-    parsed =
-      JSON.parse(
-        cleanedText
-      );
-  }
-
-  rawLeads =
-    Array.isArray(
-      parsed?.leads
-    )
-      ? parsed.leads
-      : [];
-
-} catch (error) {
-  console.error(
-    `[REQ-${requestId}] Invalid structured output JSON.`,
-    error
-  );
-
-  return {
-    statusCode: 502,
-
-    headers,
-
-    body: JSON.stringify({
-      message:
-        'Failed to extract valid lead intelligence.',
-
-      leads: [],
-
-      data: []
-    })
-  };
-}
-
-
-    /* -------------------------------------------------------------------- */
-    /* PROCESS LEADS                                                         */
-    /* -------------------------------------------------------------------- */
-
-    const processedLeads = [];
-
-    const seenCompanyDomains =
-      new Set();
-
-    const seenCompanyNames =
-      new Set();
-
-
-    for (
-      const rawLead of rawLeads
-    ) {
-      if (
-        processedLeads.length >=
-        maxLeads
-      ) {
-        break;
-      }
-
-      if (
-        !rawLead ||
-        typeof rawLead !== 'object' ||
-        Array.isArray(rawLead)
-      ) {
-        continue;
-      }
-
-
-      /* ------------------------------------------------------------------ */
-      /* COMPANY                                                             */
-      /* ------------------------------------------------------------------ */
-
-      const companyName =
-        cleanText(
-          rawLead.companyName,
-          300
-        );
-
-      if (
-        companyName === 'N/A' ||
-        companyName === 'Unknown Company'
-      ) {
-        continue;
-      }
-
-
-      /* ------------------------------------------------------------------ */
-      /* URLS                                                                */
-      /* ------------------------------------------------------------------ */
-
-      const website =
-        normalizeUrl(
-          rawLead.website
-        );
-
-      const signalSourceUrl =
-        normalizeUrl(
-          rawLead.signalSourceUrl
-        );
-
-      const websiteDomain =
-        extractDomain(
-          website
-        );
-
-      const normalizedCompanyName =
-        normalizeCompanyName(
-          companyName
-        );
-
-
-      /* ------------------------------------------------------------------ */
-      /* DUPLICATES                                                          */
-      /* ------------------------------------------------------------------ */
-
-      if (
-        websiteDomain &&
-        seenCompanyDomains.has(
-          websiteDomain
-        )
-      ) {
-        continue;
-      }
-
-      if (
-        normalizedCompanyName &&
-        seenCompanyNames.has(
-          normalizedCompanyName
-        )
-      ) {
-        continue;
-      }
-
-
-      /* ------------------------------------------------------------------ */
-      /* EVIDENCE                                                            */
-      /* ------------------------------------------------------------------ */
-
-      const evidence =
-        validateLeadEvidence(
-          rawLead,
-          groundingIndex
-        );
-
-
-      /*
-       * CRITICAL:
-       *
-       * A lead is not considered a qualified research lead unless
-       * the buying-intent source itself is grounded.
-       *
-       * A grounded company homepage can establish company identity.
-       * It cannot substitute for buying-intent evidence.
-       */
-      if (
-        !evidence.sourceGrounded
-      ) {
-        console.log(
-          `[REQ-${requestId}] Rejected ${companyName}: ` +
-          `signal source was not exactly grounded.`
-        );
-
-        continue;
-      }
-
-
-      /* ------------------------------------------------------------------ */
-      /* CONTACT DATA                                                        */
-      /* ------------------------------------------------------------------ */
-
-      const contactEmail =
-        sanitizeEmail(
-          rawLead.contactEmail
-        );
-
-      const phoneNumber =
-        sanitizePhone(
-          rawLead.phoneNumber
-        );
-
-      const socialHandles =
-        sanitizeSocialHandles(
-          rawLead.socialHandles
-        );
-
-
-      /* ------------------------------------------------------------------ */
-      /* TEXT                                                                */
-      /* ------------------------------------------------------------------ */
-
-      const socialSignalQuote =
-        cleanText(
-          rawLead.socialSignalQuote,
-          2500
-        );
-
-      const leadRationale =
-        cleanText(
-          rawLead.leadRationale,
-          3000
-        );
-
-      const draftPitch =
-        cleanText(
-          rawLead.draftPitch,
-          3000
-        );
-
-      const nextStep =
-        cleanText(
-          rawLead.nextStep,
-          1000
-        );
-
-
-      /* ------------------------------------------------------------------ */
-      /* CONFIDENCE                                                          */
-      /* ------------------------------------------------------------------ */
-
-      const modelScore =
-        typeof rawLead.confidenceScore === 'string'
-          ? rawLead.confidenceScore
-              .trim()
-              .toLowerCase()
-          : 'low';
-
-      const finalConfidence =
-        calculateConfidence({
-          modelScore,
-          evidence
-        });
-
-
-      /* ------------------------------------------------------------------ */
-      /* QUALITY FILTERS                                                     */
-      /* ------------------------------------------------------------------ */
-
-      if (
-        evidence.hasNegativeIntent
-      ) {
-        console.log(
-          `[REQ-${requestId}] Rejected ${companyName}: ` +
-          `negative intent detected.`
-        );
-
-        continue;
-      }
-
-
-      /*
-       * HIGH QUALITY:
-       *
-       * Must have:
-       * - exact grounded source
-       * - usable quote
-       * - explicit buying intent
-       */
-      if (
-        qualityLevel === 'high'
-      ) {
-        if (
-          !evidence.hasUsableQuote ||
-          !evidence.hasExplicitIntent
-        ) {
-          console.log(
-            `[REQ-${requestId}] Rejected ${companyName}: ` +
-            `insufficient high-quality intent evidence.`
-          );
-
-          continue;
-        }
-      }
-
-
-      /*
-       * MEDIUM QUALITY:
-       *
-       * Must have:
-       * - exact grounded source
-       * - usable evidence
-       */
-      if (
-        qualityLevel === 'medium'
-      ) {
-        if (
-          !evidence.hasUsableQuote
-        ) {
-          console.log(
-            `[REQ-${requestId}] Rejected ${companyName}: ` +
-            `insufficient medium-quality evidence.`
-          );
-
-          continue;
-        }
-      }
-
-
-      /*
-       * LOW QUALITY:
-       *
-       * Still requires an exact grounded source.
-       * This prevents "low quality" from becoming "unverified."
-       */
-      if (
-        qualityLevel === 'low'
-      ) {
-        if (
-          !evidence.hasUsableQuote
-        ) {
-          console.log(
-            `[REQ-${requestId}] Rejected ${companyName}: ` +
-            `no usable grounded evidence.`
-          );
-
-          continue;
-        }
-      }
-
-
-      /* ------------------------------------------------------------------ */
-      /* FINAL SOCIAL SIGNAL                                                 */
-      /* ------------------------------------------------------------------ */
-
-      let finalSocialSignal =
-        socialSignalQuote;
-
-      if (
-        finalSocialSignal === 'N/A'
-      ) {
-        continue;
-      }
-
-      /*
-       * Source is guaranteed to be grounded at this point.
-       */
-      finalSocialSignal +=
-        ` (Source: ${signalSourceUrl})`;
-
-
-      /* ------------------------------------------------------------------ */
-      /* FINAL LEAD                                                          */
-      /* ------------------------------------------------------------------ */
-
-      if (
-        websiteDomain
-      ) {
-        seenCompanyDomains.add(
-          websiteDomain
-        );
-      }
-
-      if (
-        normalizedCompanyName
-      ) {
-        seenCompanyNames.add(
-          normalizedCompanyName
-        );
-      }
-
-
-      processedLeads.push({
-        companyName,
-
-        website,
-
-        contactEmail,
-
-        phoneNumber,
-
-        socialHandles,
-
-        socialSignal:
-          finalSocialSignal,
-
-        leadRationale:
-          leadRationale !== 'N/A'
-            ? leadRationale
-            : 'N/A',
-
-        draftPitch:
-          draftPitch !== 'N/A'
-            ? draftPitch
-            : 'N/A',
-
-        nextStep:
-          nextStep !== 'N/A'
-            ? nextStep
-            : 'N/A',
-
-        confidenceScore:
-          finalConfidence
-      });
+      throw new Error('Empty model response.');
     }
 
+    let parsed;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch (jsonError) {
+      const cleanedText = responseText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
 
-    /* -------------------------------------------------------------------- */
-    /* RESPONSE                                                              */
-    /* -------------------------------------------------------------------- */
+      parsed = JSON.parse(cleanedText);
+    }
 
-    console.log(
-      `[REQ-${requestId}] Completed in ` +
-      `${Date.now() - startTime}ms. ` +
-      `Returning ${processedLeads.length} leads.`
-    );
-
-    return {
-      statusCode: 200,
-
-      headers,
-
-      body: JSON.stringify({
-        message:
-          'Leads generated successfully.',
-
-        /*
-         * Existing frontend contract.
-         */
-        leads:
-          processedLeads,
-
-        /*
-         * Existing compatibility alias.
-         */
-        data:
-          processedLeads
-      })
-    };
-
-
-  } catch (err) {
-    /* -------------------------------------------------------------------- */
-    /* ERROR HANDLING                                                        */
-    /* -------------------------------------------------------------------- */
-
-    console.error(
-      `[REQ-${requestId}] Execution error:`,
-      err
-    );
-
-    const statusCode =
-      Number.isInteger(
-        err?.statusCode
-      )
-        ? err.statusCode
-        : 500;
-
-    const clientMessage =
-      err?.clientMessage ||
-      'An error occurred while generating lead intelligence.';
+    rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
+  } catch (error) {
+    console.error(`[REQ-${requestId}] Invalid structured output JSON.`, error);
 
     return {
-      statusCode,
-
+      statusCode: 502,
       headers,
-
       body: JSON.stringify({
-        error:
-          clientMessage,
-
-        message:
-          clientMessage,
-
-        /*
-         * Preserve frontend failure contract.
-         */
+        message: 'Failed to extract valid lead intelligence.',
         leads: [],
-
         data: []
       })
     };
   }
-};
+
+  
+  const processedLeads = [];
+  const seenCompanyDomains = new Set();
+  const seenCompanyNames = new Set();
+
+  for (const rawLead of rawLeads) {
+    if (processedLeads.length >= maxLeads) break;
+
+    if (!rawLead || typeof rawLead !== 'object' || Array.isArray(rawLead)) {
+      continue;
+    }
+
+    /* --- COMPANY --- */
+    const companyName = cleanText(rawLead.companyName, 300);
+    if (companyName === 'N/A' || companyName === 'Unknown Company') {
+      continue;
+    }
+
+    /* --- URLS --- */
+    const website = normalizeUrl(rawLead.website);
+    const signalSourceUrl = normalizeUrl(rawLead.signalSourceUrl);
+    const websiteDomain = extractDomain(website);
+    const signalDomain = extractDomain(signalSourceUrl);
+    const normalizedCompanyName = normalizeCompanyName(companyName);
+
+    /* --- DUPLICATES --- */
+    if (websiteDomain && seenCompanyDomains.has(websiteDomain)) continue;
+    if (normalizedCompanyName && seenCompanyNames.has(normalizedCompanyName)) continue;
+
+    /* --- EVIDENCE & GROUNDING RESILIENCE --- */
+    const evidence = validateLeadEvidence(rawLead, groundingIndex);
+
+    // Resilient grounding check: check exact match OR domain match
+    const isExactGrounded =
+      groundingIndex?.exactUrls?.has(signalSourceUrl) ||
+      groundingIndex?.exactUrls?.has(website);
+
+    const isDomainGrounded =
+      (signalDomain && groundingIndex?.domains?.has(signalDomain)) ||
+      (websiteDomain && groundingIndex?.domains?.has(websiteDomain));
+
+    const isGrounded = isExactGrounded || isDomainGrounded || evidence.sourceGrounded;
+
+    // Hard rejection only if completely ungrounded on high quality settings
+    if (!isGrounded && qualityLevel === 'high') {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: signal source not grounded.`);
+      continue;
+    }
+
+    /* --- CONTACT DATA --- */
+    const contactEmail = sanitizeEmail(rawLead.contactEmail);
+    const phoneNumber = sanitizePhone(rawLead.phoneNumber);
+    const socialHandles = sanitizeSocialHandles(rawLead.socialHandles);
+
+    /* --- TEXT --- */
+    const socialSignalQuote = cleanText(rawLead.socialSignalQuote, 2500);
+    const leadRationale = cleanText(rawLead.leadRationale, 3000);
+    const draftPitch = cleanText(rawLead.draftPitch, 3000);
+    const nextStep = cleanText(rawLead.nextStep, 1000);
+
+    /* --- CONFIDENCE --- */
+    const modelScore =
+      typeof rawLead.confidenceScore === 'string'
+        ? rawLead.confidenceScore.trim().toLowerCase()
+        : 'low';
+
+    let finalConfidence = calculateConfidence({
+      modelScore,
+      evidence
+    });
+
+    if (!isExactGrounded && finalConfidence === 'high') {
+      finalConfidence = 'medium'; // Downgrade confidence slightly if relying on domain grounding
+    }
+
+    /* --- QUALITY FILTERS --- */
+    if (evidence.hasNegativeIntent) {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: negative intent detected.`);
+      continue;
+    }
+
+    if (qualityLevel === 'high') {
+      if (!evidence.hasUsableQuote || !evidence.hasExplicitIntent) {
+        console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient high-quality intent evidence.`);
+        continue;
+      }
+    }
+
+    if (qualityLevel === 'medium' && !evidence.hasUsableQuote) {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient medium-quality evidence.`);
+      continue;
+    }
+
+    if (qualityLevel === 'low' && !evidence.hasUsableQuote && !isGrounded) {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: no usable grounded evidence.`);
+      continue;
+    }
+
+    let finalSocialSignal = socialSignalQuote !== 'N/A' ? socialSignalQuote : leadRationale;
+    if (finalSocialSignal === 'N/A') continue;
+
+    if (signalSourceUrl !== 'N/A') {
+      finalSocialSignal += ` (Source: ${signalSourceUrl})`;
+    }
+
+    /* --- RECORD LEAD --- */
+    if (websiteDomain) seenCompanyDomains.add(websiteDomain);
+    if (normalizedCompanyName) seenCompanyNames.add(normalizedCompanyName);
+
+    processedLeads.push({
+      companyName,
+      website,
+      contactEmail,
+      phoneNumber,
+      socialHandles,
+      socialSignal: finalSocialSignal,
+      leadRationale: leadRationale !== 'N/A' ? leadRationale : 'N/A',
+      draftPitch: draftPitch !== 'N/A' ? draftPitch : 'N/A',
+      nextStep: nextStep !== 'N/A' ? nextStep : 'N/A',
+      confidenceScore: finalConfidence
+    });
+  }
+
+  console.log(
+    `[REQ-${requestId}] Completed in ${Date.now() - startTime}ms. ` +
+    `Returning ${processedLeads.length} leads.`
+  );
+
+  return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+      message: 'Leads generated successfully.',
+      leads: processedLeads,
+      data: processedLeads
+    })
+  };
+
+} catch (err) {
+ 
+  console.error(`[REQ-${requestId}] Execution error:`, err);
+
+  const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
+  const clientMessage = err?.clientMessage || 'An error occurred while generating lead intelligence.';
+
+  return {
+    statusCode,
+    headers,
+    body: JSON.stringify({
+      error: clientMessage,
+      message: clientMessage,
+      leads: [],
+      data: []
+    })
+  };
+}
