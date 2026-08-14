@@ -1559,7 +1559,7 @@ Use exactly:
             tools: [{ googleSearch: {} }]
           }
         },
-        15000 // 15-second per-vector deadline budget
+        26000 // 15-second per-vector deadline budget
       );
 
       const candidate = response?.candidates?.[0];
