@@ -1544,6 +1544,7 @@ Use exactly:
 }
 `;
 
+      // 1. Enforce strict responseMimeType and cap vector deadline to 15s
       const response = await generateWithDeadline(
         ai,
         {
@@ -1552,10 +1553,11 @@ Use exactly:
           config: {
             systemInstruction,
             temperature: 0.2,
+            responseMimeType: 'application/json',
             tools: [{ googleSearch: {} }]
           }
         },
-        availableForModel
+        15000 // 15-second per-vector deadline budget
       );
 
       const candidate = response?.candidates?.[0];
@@ -1573,16 +1575,17 @@ Use exactly:
         };
       }
 
-      let parsed;
+      // 2. Extract strictly formed JSON object using regex (strips conversational preambles)
+      let parsed = { leads: [] };
       try {
-        parsed = JSON.parse(responseText);
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          parsed = JSON.parse(responseText);
+        }
       } catch (jsonError) {
-        const cleaned = responseText
-          .replace(/^```(?:json)?\s*/i, '')
-          .replace(/\s*```$/i, '')
-          .trim();
-
-        parsed = JSON.parse(cleaned);
+        console.warn(`[REQ-${requestId}] ${name} vector JSON parse failed:`, jsonError.message);
       }
 
       const rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
