@@ -1625,9 +1625,14 @@ Use exactly:
   /* -------------------------------------------------------------------- */
 
   // Execute ONLY the targetVector passed from the client
+  // Execute ONLY the targetVector passed from the client
   const vectorResult = await executeVectorCall(targetVector);
 
   const groundingIndex = vectorResult?.groundingIndex || { exactUrls: new Set(), domains: new Set() };
+  
+  // Set mergedGroundingIndex so downstream validation and logging references won't crash
+  const mergedGroundingIndex = groundingIndex;
+
   const rawLeadsWithGrounding = [];
 
   if (Array.isArray(vectorResult?.rawLeads)) {
@@ -1646,12 +1651,11 @@ Use exactly:
 
   console.log(
     `[REQ-${requestId}] Aggregated ` +
-    `${rawLeadsWithGrounding.length} raw candidates across ` +
-    `${queryVectors.length} parallel search vectors.`
+    `${rawLeadsWithGrounding.length} raw candidates for active search vector.`
   );
 
   console.log(
-    `[REQ-${requestId}] Merged grounding index contains ` +
+    `[REQ-${requestId}] Vector grounding index contains ` +
     `${mergedGroundingIndex.exactUrls.size} exact URLs and ` +
     `${mergedGroundingIndex.domains.size} domains.`
   );
