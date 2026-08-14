@@ -952,36 +952,19 @@ exports.handler = async function (
   );
 
   const headers = {
-    'Access-Control-Allow-Origin':
-      ALLOWED_ORIGIN,
+  'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Content-Type': 'application/json'
+};
 
-    'Access-Control-Allow-Headers':
-      'Content-Type, Authorization',
-
-    'Access-Control-Allow-Methods':
-      'POST, OPTIONS',
-
-    'Access-Control-Max-Age':
-      '86400',
-
-    'Content-Type':
-      'application/json'
+if (event.httpMethod === 'OPTIONS') {
+  return {
+    statusCode: 200,
+    headers,
+    body: ''
   };
-
-
-  /* ---------------------------------------------------------------------- */
-  /* CORS                                                                    */
-  /* ---------------------------------------------------------------------- */
-
-  if (
-    event?.httpMethod === 'OPTIONS'
-  ) {
-    return {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
-  }
+}
 
 
   /* ---------------------------------------------------------------------- */
