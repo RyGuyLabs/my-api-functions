@@ -1622,41 +1622,28 @@ Use exactly:
 
 
   /* -------------------------------------------------------------------- */
-  /* PARALLEL SEARCH EXECUTION                                             */
+  /* SINGLE VECTOR EXECUTION                                              */
   /* -------------------------------------------------------------------- */
 
-  const vectorResults = await Promise.all(
-    queryVectors.map(vector => executeVectorCall(vector))
-  );
+  // Execute ONLY the targetVector passed from the client
+  const vectorResult = await executeVectorCall(targetVector);
 
-
-  /* -------------------------------------------------------------------- */
-  /* EVIDENCE AGGREGATION                                                 */
-  /* -------------------------------------------------------------------- */
-
-  // Retain grounding metadata bound specifically to the originating vector call
+  const groundingIndex = vectorResult?.groundingIndex || { exactUrls: new Set(), domains: new Set() };
   const rawLeadsWithGrounding = [];
 
-  const mergedGroundingIndex = {
-    exactUrls: new Set(),
-    domains: new Set()
-  };
-
-  for (const result of vectorResults) {
-    const groundingIndex = result?.groundingIndex || { exactUrls: new Set(), domains: new Set() };
-
-    if (Array.isArray(result?.rawLeads)) {
-      for (const lead of result.rawLeads) {
-        rawLeadsWithGrounding.push({
-          rawLead: lead,
-          groundingIndex
-        });
-      }
+  if (Array.isArray(vectorResult?.rawLeads)) {
+    for (const lead of vectorResult.rawLeads) {
+      rawLeadsWithGrounding.push({
+        rawLead: lead,
+        groundingIndex
+      });
     }
-
-    groundingIndex?.exactUrls?.forEach(url => mergedGroundingIndex.exactUrls.add(url));
-    groundingIndex?.domains?.forEach(domain => mergedGroundingIndex.domains.add(domain));
   }
+
+  console.log(
+    `[REQ-${requestId}] Executed vector "${targetVector.name}". ` +
+    `Extracted ${rawLeadsWithGrounding.length} raw candidates.`
+  );
 
   console.log(
     `[REQ-${requestId}] Aggregated ` +
@@ -1669,7 +1656,6 @@ Use exactly:
     `${mergedGroundingIndex.exactUrls.size} exact URLs and ` +
     `${mergedGroundingIndex.domains.size} domains.`
   );
-
 
   /* -------------------------------------------------------------------- */
   /* LEAD PROCESSING                                                      */
