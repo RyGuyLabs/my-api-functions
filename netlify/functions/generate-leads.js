@@ -1486,221 +1486,272 @@ Use exactly this structure:
 /* -------------------------------------------------------------------- */
 
 const response = await generateWithDeadline(
-    ai,
-    {
-      model: 'gemini-2.5-flash',
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        temperature: 0.1,
-        tools: [{ googleSearch: {} }]
-      }
-    },
-    availableForModel
-  );
+  ai,
+  {
+    model: 'gemini-2.5-flash',
+    contents: userPrompt,
+    config: {
+      systemInstruction,
+      temperature: 0.1,
+      tools: [{ googleSearch: {} }]
+    }
+  },
+  availableForModel
+);
 
+const candidate = response?.candidates?.[0];
+const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
 
-  const candidate = response?.candidates?.[0];
-  const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
+const groundingIndex = buildGroundingIndex(groundingChunks);
 
-  const groundingIndex = buildGroundingIndex(groundingChunks);
+console.log(
+  `[REQ-${requestId}] Grounding index contains ` +
+  `${groundingIndex?.exactUrls?.size || 0} URLs and ` +
+  `${groundingIndex?.domains?.size || 0} domains.`
+);
 
-  console.log(
-    `[REQ-${requestId}] Grounding index contains ` +
-    `${groundingIndex?.exactUrls?.size || 0} URLs and ` +
-    `${groundingIndex?.domains?.size || 0} domains.`
-  );
+if (!groundingIndex?.exactUrls?.size) {
+  console.warn(`[REQ-${requestId}] Google Search returned no grounded URLs.`);
+}
 
-  if (!groundingIndex?.exactUrls?.size) {
-    console.warn(`[REQ-${requestId}] Google Search returned no grounded URLs.`);
+let rawLeads = [];
+
+try {
+  const responseText = typeof response?.text === 'string' ? response.text.trim() : '';
+
+  if (!responseText) {
+    console.error(
+      `[REQ-${requestId}] Gemini returned no text.`,
+      JSON.stringify({
+        hasCandidates: Array.isArray(response?.candidates) && response.candidates.length > 0,
+        candidateCount: response?.candidates?.length || 0,
+        finishReason: candidate?.finishReason || 'unknown',
+        groundingChunkCount: groundingChunks.length
+      })
+    );
+    throw new Error('Empty model response.');
   }
 
-
-  let rawLeads = [];
+  let parsed;
 
   try {
-    const responseText = typeof response?.text === 'string' ? response.text.trim() : '';
+    parsed = JSON.parse(responseText);
+  } catch (jsonError) {
+    const cleanedText = responseText
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
 
-    if (!responseText) {
-      console.error(
-        `[REQ-${requestId}] Gemini returned no text.`,
-        JSON.stringify({
-          hasCandidates: Array.isArray(response?.candidates) && response.candidates.length > 0,
-          candidateCount: response?.candidates?.length || 0,
-          finishReason: candidate?.finishReason || 'unknown',
-          groundingChunkCount: groundingChunks.length
-        })
-      );
-      throw new Error('Empty model response.');
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(responseText);
-    } catch (jsonError) {
-      const cleanedText = responseText
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-
-      parsed = JSON.parse(cleanedText);
-    }
-
-    rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
-  } catch (error) {
-    console.error(`[REQ-${requestId}] Invalid structured output JSON.`, error);
-
-    return {
-      statusCode: 502,
-      headers,
-      body: JSON.stringify({
-        message: 'Failed to extract valid lead intelligence.',
-        leads: [],
-        data: []
-      })
-    };
+    parsed = JSON.parse(cleanedText);
   }
 
-  
-  const processedLeads = [];
-  const seenCompanyDomains = new Set();
-  const seenCompanyNames = new Set();
+  rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
+} catch (error) {
+  console.error(`[REQ-${requestId}] Invalid structured output JSON.`, error);
 
-  for (const rawLead of rawLeads) {
-    if (processedLeads.length >= maxLeads) break;
+  return {
+    statusCode: 502,
+    headers,
+    body: JSON.stringify({
+      message: 'Failed to extract valid lead intelligence.',
+      leads: [],
+      data: []
+    })
+  };
+}
 
-    if (!rawLead || typeof rawLead !== 'object' || Array.isArray(rawLead)) {
+const processedLeads = [];
+const seenCompanyDomains = new Set();
+const seenCompanyNames = new Set();
+
+for (const rawLead of rawLeads) {
+  if (processedLeads.length >= maxLeads) {
+    break;
+  }
+
+  if (!rawLead || typeof rawLead !== 'object' || Array.isArray(rawLead)) {
+    continue;
+  }
+
+  /* --- COMPANY --- */
+  const companyName = cleanText(rawLead.companyName, 300);
+
+  if (companyName === 'N/A' || companyName === 'Unknown Company') {
+    continue;
+  }
+
+  /* --- URLS & DOMAINS --- */
+  const website = normalizeUrl(rawLead.website);
+  const signalSourceUrl = normalizeUrl(rawLead.signalSourceUrl);
+  const websiteDomain = extractDomain(website);
+  const signalDomain = extractDomain(signalSourceUrl);
+  const normalizedCompanyName = normalizeCompanyName(companyName);
+
+  /* --- DUPLICATE PREVENTION --- */
+  if (websiteDomain && seenCompanyDomains.has(websiteDomain)) {
+    continue;
+  }
+
+  if (normalizedCompanyName && seenCompanyNames.has(normalizedCompanyName)) {
+    continue;
+  }
+
+  /* --- EVIDENCE & GROUNDING --- */
+  const evidence = validateLeadEvidence(rawLead, groundingIndex);
+
+  const exactSourceGrounded =
+    signalSourceUrl !== 'N/A' &&
+    groundingIndex?.exactUrls?.has(signalSourceUrl);
+
+  const exactWebsiteGrounded =
+    website !== 'N/A' &&
+    groundingIndex?.exactUrls?.has(website);
+
+  const sourceDomainGrounded =
+    signalDomain &&
+    groundingIndex?.domains?.has(signalDomain);
+
+  const websiteDomainGrounded =
+    websiteDomain &&
+    groundingIndex?.domains?.has(websiteDomain);
+
+  const isExactGrounded =
+    exactSourceGrounded ||
+    exactWebsiteGrounded ||
+    Boolean(evidence?.sourceGrounded) ||
+    Boolean(evidence?.websiteGrounded);
+
+  const isDomainGrounded =
+    Boolean(sourceDomainGrounded) ||
+    Boolean(websiteDomainGrounded) ||
+    Boolean(evidence?.sourceDomainGrounded) ||
+    Boolean(evidence?.websiteDomainGrounded);
+
+  const isGrounded = isExactGrounded || isDomainGrounded;
+
+  /* --- CONTACT DATA --- */
+  const contactEmail = sanitizeEmail(rawLead.contactEmail);
+  const phoneNumber = sanitizePhone(rawLead.phoneNumber);
+  const socialHandles = sanitizeSocialHandles(rawLead.socialHandles);
+
+  /* --- TEXT FIELDS --- */
+  const socialSignalQuote = cleanText(rawLead.socialSignalQuote, 2500);
+  const leadRationale = cleanText(rawLead.leadRationale, 3000);
+  const draftPitch = cleanText(rawLead.draftPitch, 3000);
+  const nextStep = cleanText(rawLead.nextStep, 1000);
+
+  /* --- HARD NEGATIVE INTENT --- */
+  if (evidence?.hasNegativeIntent) {
+    console.log(`[REQ-${requestId}] Rejected ${companyName}: negative intent detected.`);
+    continue;
+  }
+
+  /* --- QUALITY HANDLING --- */
+  if (qualityLevel === 'high') {
+    if (!isGrounded || !evidence?.hasUsableQuote || !evidence?.hasExplicitIntent) {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient high-quality evidence.`);
       continue;
     }
+  }
 
-    /* --- COMPANY --- */
-    const companyName = cleanText(rawLead.companyName, 300);
-    if (companyName === 'N/A' || companyName === 'Unknown Company') {
-      continue;
-    }
+  if (qualityLevel === 'medium') {
+    const hasUsefulEvidence =
+      Boolean(evidence?.hasUsableQuote) ||
+      (isGrounded && leadRationale !== 'N/A');
 
-    /* --- URLS --- */
-    const website = normalizeUrl(rawLead.website);
-    const signalSourceUrl = normalizeUrl(rawLead.signalSourceUrl);
-    const websiteDomain = extractDomain(website);
-    const signalDomain = extractDomain(signalSourceUrl);
-    const normalizedCompanyName = normalizeCompanyName(companyName);
-
-    /* --- DUPLICATES --- */
-    if (websiteDomain && seenCompanyDomains.has(websiteDomain)) continue;
-    if (normalizedCompanyName && seenCompanyNames.has(normalizedCompanyName)) continue;
-
-    /* --- EVIDENCE & GROUNDING RESILIENCE --- */
-    const evidence = validateLeadEvidence(rawLead, groundingIndex);
-
-    // Resilient grounding check: check exact match OR domain match
-    const isExactGrounded =
-      groundingIndex?.exactUrls?.has(signalSourceUrl) ||
-      groundingIndex?.exactUrls?.has(website);
-
-    const isDomainGrounded =
-      (signalDomain && groundingIndex?.domains?.has(signalDomain)) ||
-      (websiteDomain && groundingIndex?.domains?.has(websiteDomain));
-
-    const isGrounded = isExactGrounded || isDomainGrounded || evidence.sourceGrounded;
-
-    // Hard rejection only if completely ungrounded on high quality settings
-    if (!isGrounded && qualityLevel === 'high') {
-      console.log(`[REQ-${requestId}] Rejected ${companyName}: signal source not grounded.`);
-      continue;
-    }
-
-    /* --- CONTACT DATA --- */
-    const contactEmail = sanitizeEmail(rawLead.contactEmail);
-    const phoneNumber = sanitizePhone(rawLead.phoneNumber);
-    const socialHandles = sanitizeSocialHandles(rawLead.socialHandles);
-
-    /* --- TEXT --- */
-    const socialSignalQuote = cleanText(rawLead.socialSignalQuote, 2500);
-    const leadRationale = cleanText(rawLead.leadRationale, 3000);
-    const draftPitch = cleanText(rawLead.draftPitch, 3000);
-    const nextStep = cleanText(rawLead.nextStep, 1000);
-
-    /* --- CONFIDENCE --- */
-    const modelScore =
-      typeof rawLead.confidenceScore === 'string'
-        ? rawLead.confidenceScore.trim().toLowerCase()
-        : 'low';
-
-    let finalConfidence = calculateConfidence({
-      modelScore,
-      evidence
-    });
-
-    if (!isExactGrounded && finalConfidence === 'high') {
-      finalConfidence = 'medium'; // Downgrade confidence slightly if relying on domain grounding
-    }
-
-    /* --- QUALITY FILTERS --- */
-    if (evidence.hasNegativeIntent) {
-      console.log(`[REQ-${requestId}] Rejected ${companyName}: negative intent detected.`);
-      continue;
-    }
-
-    if (qualityLevel === 'high') {
-      if (!evidence.hasUsableQuote || !evidence.hasExplicitIntent) {
-        console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient high-quality intent evidence.`);
-        continue;
-      }
-    }
-
-    if (qualityLevel === 'medium' && !evidence.hasUsableQuote) {
+    if (!hasUsefulEvidence) {
       console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient medium-quality evidence.`);
       continue;
     }
-
-    if (qualityLevel === 'low' && !evidence.hasUsableQuote && !isGrounded) {
-      console.log(`[REQ-${requestId}] Rejected ${companyName}: no usable grounded evidence.`);
-      continue;
-    }
-
-    let finalSocialSignal = socialSignalQuote !== 'N/A' ? socialSignalQuote : leadRationale;
-    if (finalSocialSignal === 'N/A') continue;
-
-    if (signalSourceUrl !== 'N/A') {
-      finalSocialSignal += ` (Source: ${signalSourceUrl})`;
-    }
-
-    /* --- RECORD LEAD --- */
-    if (websiteDomain) seenCompanyDomains.add(websiteDomain);
-    if (normalizedCompanyName) seenCompanyNames.add(normalizedCompanyName);
-
-    processedLeads.push({
-      companyName,
-      website,
-      contactEmail,
-      phoneNumber,
-      socialHandles,
-      socialSignal: finalSocialSignal,
-      leadRationale: leadRationale !== 'N/A' ? leadRationale : 'N/A',
-      draftPitch: draftPitch !== 'N/A' ? draftPitch : 'N/A',
-      nextStep: nextStep !== 'N/A' ? nextStep : 'N/A',
-      confidenceScore: finalConfidence
-    });
   }
 
-  console.log(
-    `[REQ-${requestId}] Completed in ${Date.now() - startTime}ms. ` +
-    `Returning ${processedLeads.length} leads.`
-  );
+  if (qualityLevel === 'low') {
+    const hasUsefulEvidence =
+      Boolean(evidence?.hasUsableQuote) ||
+      (isGrounded && (leadRationale !== 'N/A' || nextStep !== 'N/A'));
 
-  return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({
-      message: 'Leads generated successfully.',
-      leads: processedLeads,
-      data: processedLeads
-    })
-  };
+    if (!hasUsefulEvidence) {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient evidence.`);
+      continue;
+    }
+  }
+
+  /* --- CONFIDENCE SCORING --- */
+  const modelScore =
+    typeof rawLead.confidenceScore === 'string'
+      ? rawLead.confidenceScore.trim().toLowerCase()
+      : 'low';
+
+  let finalConfidence = calculateConfidence({
+    modelScore,
+    evidence
+  });
+
+  if (!exactSourceGrounded && finalConfidence === 'high') {
+    finalConfidence = 'medium';
+  }
+
+  if (!isGrounded && finalConfidence !== 'low') {
+    finalConfidence = 'low';
+  }
+
+  /* --- FINAL SIGNAL --- */
+  let finalSocialSignal = 'N/A';
+
+  if (socialSignalQuote !== 'N/A') {
+    finalSocialSignal = socialSignalQuote;
+  } else if (leadRationale !== 'N/A') {
+    finalSocialSignal = `Research summary: ${leadRationale}`;
+  }
+
+  if (finalSocialSignal === 'N/A') {
+    continue;
+  }
+
+  if (signalSourceUrl !== 'N/A') {
+    finalSocialSignal += ` (Source: ${signalSourceUrl})`;
+  }
+
+  /* --- RECORD LEAD --- */
+  if (websiteDomain) {
+    seenCompanyDomains.add(websiteDomain);
+  }
+
+  if (normalizedCompanyName) {
+    seenCompanyNames.add(normalizedCompanyName);
+  }
+
+  processedLeads.push({
+    companyName,
+    website,
+    contactEmail,
+    phoneNumber,
+    socialHandles,
+    socialSignal: finalSocialSignal,
+    leadRationale: leadRationale !== 'N/A' ? leadRationale : 'N/A',
+    draftPitch: draftPitch !== 'N/A' ? draftPitch : 'N/A',
+    nextStep: nextStep !== 'N/A' ? nextStep : 'N/A',
+    confidenceScore: finalConfidence
+  });
+}
+
+/* --- RESPONSE --- */
+console.log(
+  `[REQ-${requestId}] Completed in ${Date.now() - startTime}ms. ` +
+  `Returning ${processedLeads.length} leads.`
+);
+
+return {
+  statusCode: 200,
+  headers,
+  body: JSON.stringify({
+    message: 'Leads generated successfully.',
+    leads: processedLeads,
+    data: processedLeads
+  })
+};
 
 } catch (err) {
- 
   console.error(`[REQ-${requestId}] Execution error:`, err);
 
   const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
