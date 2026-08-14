@@ -1010,16 +1010,19 @@ if (event.httpMethod === 'OPTIONS') {
     /* INPUTS                                                                */
     /* -------------------------------------------------------------------- */
 
-    const {
-  industry,
-  searchQuery,
-  qualityLevel,
-  maxLeads
-} =
-  parseAndValidateInputs(
-    event.body
-  );
+   const { industry, searchQuery, maxLeads, qualityLevel, targetVector } = JSON.parse(event.body || '{}');
 
+// Safeguard: Ensure a single target vector was supplied
+if (!targetVector || !targetVector.name || !targetVector.prompt) {
+  return {
+    statusCode: 400,
+    headers,
+    body: JSON.stringify({
+      error: 'Missing targetVector parameter in request body.',
+      leads: []
+    })
+  };
+}
 
 /* -------------------------------------------------------------------- */
 /* GEMINI CLIENT                                                         */
