@@ -1773,7 +1773,10 @@ Use exactly:
     }
 
     if (qualityLevel === 'medium') {
-      const hasUsefulEvidence = Boolean(evidence?.hasUsableQuote) && Boolean(isGrounded);
+      // Allow lead if grounded OR if a valid HTTP signal URL + quote is supplied
+      const hasValidUrl = signalSourceUrl.startsWith('http://') || signalSourceUrl.startsWith('https://');
+      const hasUsefulEvidence = (isGrounded || (hasValidUrl && socialSignalQuote !== 'N/A')) && evidence?.hasUsableQuote;
+
       if (!hasUsefulEvidence) {
         console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient medium-quality evidence.`);
         continue;
@@ -1781,8 +1784,8 @@ Use exactly:
     }
 
     if (qualityLevel === 'low') {
-      const hasUsefulEvidence = Boolean(evidence?.hasUsableQuote) && Boolean(isGrounded);
-      if (!hasUsefulEvidence) {
+      const hasValidUrl = signalSourceUrl !== 'N/A' || website !== 'N/A';
+      if (!hasValidUrl) {
         console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient evidence.`);
         continue;
       }
