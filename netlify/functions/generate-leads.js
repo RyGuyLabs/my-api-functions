@@ -900,6 +900,31 @@ async function generateWithDeadline(
   }
 }
 
+function extractAndParseJSON(text) {
+  if (!text || typeof text !== 'string') {
+    return { leads: [] };
+  }
+
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+    console.warn('[JSON] No valid JSON object bounds found.');
+    return { leads: [] };
+  }
+
+  try {
+    const jsonString = text.slice(firstBrace, lastBrace + 1);
+    const parsed = JSON.parse(jsonString);
+
+    return parsed && typeof parsed === 'object'
+      ? parsed
+      : { leads: [] };
+  } catch (error) {
+    console.error('[JSON] Parsing failed on extracted substring:', error);
+    return { leads: [] };
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /* HANDLER                                                                     */
