@@ -1491,6 +1491,8 @@ ${prompt}
 
 RESEARCH INSTRUCTIONS:
 
+CRITICAL: Be concise and fast. Return strictly 3 to 5 high-quality leads. Do not include introductory text, preambles, or lengthy commentary—output raw JSON only.
+
 Search broadly using this search vector.
 
 Do not rely on a single generic result.
@@ -1547,7 +1549,7 @@ Use exactly:
 }
 `;
 
-      // 1. Enforce strict responseMimeType and cap vector deadline to 15s
+      // 1. Cap vector deadline to 26s for live execution
       const response = await generateWithDeadline(
         ai,
         {
@@ -1559,7 +1561,7 @@ Use exactly:
             tools: [{ googleSearch: {} }]
           }
         },
-        26000 // 15-second per-vector deadline budget
+        26000 // 26-second per-vector deadline budget
       );
 
       const candidate = response?.candidates?.[0];
@@ -1624,7 +1626,6 @@ Use exactly:
   /* SINGLE VECTOR EXECUTION                                              */
   /* -------------------------------------------------------------------- */
 
-  // Execute ONLY the targetVector passed from the client
   // Execute ONLY the targetVector passed from the client
   const vectorResult = await executeVectorCall(targetVector);
 
