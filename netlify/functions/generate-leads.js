@@ -1556,7 +1556,6 @@ Use exactly:
           config: {
             systemInstruction,
             temperature: 0.2,
-            responseMimeType: 'application/json',
             tools: [{ googleSearch: {} }]
           }
         },
