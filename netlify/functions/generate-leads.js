@@ -1483,12 +1483,9 @@ if (availableForModel < 3000) {
 /* PARALLEL DISCOVERY WORKER                                             */
 /* -------------------------------------------------------------------- */
 
-const executeVectorCall = async ({
-  name,
-  prompt
-}) => {
-  try {
-    const vectorUserPrompt = `
+const executeVectorCall = async ({ name, prompt }) => {
+    try {
+      const vectorUserPrompt = `
 TARGET INDUSTRY:
 "${industry}"
 
@@ -1564,639 +1561,347 @@ Use exactly:
 }
 `;
 
-    const response = await generateWithDeadline(
-      ai,
-      {
-        model: 'gemini-2.5-flash',
-        contents: vectorUserPrompt,
-        config: {
-          systemInstruction,
-          temperature: 0.2,
-          tools: [{ googleSearch: {} }]
-        }
-      },
-      availableForModel
-    );
-
-    const candidate =
-      response?.candidates?.[0];
-
-    const groundingChunks =
-      candidate?.groundingMetadata?.groundingChunks || [];
-
-    const groundingIndex =
-      buildGroundingIndex(
-        groundingChunks
+      const response = await generateWithDeadline(
+        ai,
+        {
+          model: 'gemini-2.5-flash',
+          contents: vectorUserPrompt,
+          config: {
+            systemInstruction,
+            temperature: 0.2,
+            tools: [{ googleSearch: {} }]
+          }
+        },
+        availableForModel
       );
 
-    const responseText =
-      typeof response?.text === 'string'
-        ? response.text.trim()
-        : '';
+      const candidate = response?.candidates?.[0];
+      const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
+      const groundingIndex = buildGroundingIndex(groundingChunks);
 
-    if (!responseText) {
-      console.warn(
-        `[REQ-${requestId}] ${name} vector returned no text.`
+      const responseText = typeof response?.text === 'string' ? response.text.trim() : '';
+
+      if (!responseText) {
+        console.warn(`[REQ-${requestId}] ${name} vector returned no text.`);
+        return {
+          name,
+          rawLeads: [],
+          groundingIndex
+        };
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(responseText);
+      } catch (jsonError) {
+        const cleaned = responseText
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
+
+        parsed = JSON.parse(cleaned);
+      }
+
+      const rawLeads = Array.isArray(parsed?.leads) ? parsed.leads : [];
+
+      console.log(
+        `[REQ-${requestId}] ${name} vector returned ` +
+        `${rawLeads.length} raw candidates, ` +
+        `${groundingIndex?.exactUrls?.size || 0} exact URLs and ` +
+        `${groundingIndex?.domains?.size || 0} domains.`
       );
 
       return {
         name,
-        rawLeads: [],
+        rawLeads,
         groundingIndex
       };
+
+    } catch (err) {
+      console.warn(`[REQ-${requestId}] ${name} vector failed:`, err?.message);
+
+      return {
+        name,
+        rawLeads: [],
+        groundingIndex: {
+          exactUrls: new Set(),
+          domains: new Set()
+        }
+      };
     }
+  };
 
-    let parsed;
 
-    try {
-      parsed =
-        JSON.parse(responseText);
-    } catch (jsonError) {
-      const cleaned =
-        responseText
-          .replace(
-            /^```(?:json)?\s*/i,
-            ''
-          )
-          .replace(
-            /\s*```$/i,
-            ''
-          )
-          .trim();
+  /* -------------------------------------------------------------------- */
+  /* PARALLEL SEARCH EXECUTION                                             */
+  /* -------------------------------------------------------------------- */
 
-      parsed =
-        JSON.parse(cleaned);
-    }
+  const vectorResults = await Promise.all(
+    queryVectors.map(vector => executeVectorCall(vector))
+  );
 
-    const rawLeads =
-      Array.isArray(parsed?.leads)
-        ? parsed.leads
-        : [];
 
-    console.log(
-      `[REQ-${requestId}] ${name} vector returned ` +
-      `${rawLeads.length} raw candidates, ` +
-      `${groundingIndex?.exactUrls?.size || 0} exact URLs and ` +
-      `${groundingIndex?.domains?.size || 0} domains.`
-    );
+  /* -------------------------------------------------------------------- */
+  /* EVIDENCE AGGREGATION                                                 */
+  /* -------------------------------------------------------------------- */
 
-    return {
-      name,
-      rawLeads,
-      groundingIndex
-    };
+  // Retain grounding metadata bound specifically to the originating vector call
+  const rawLeadsWithGrounding = [];
 
-  } catch (err) {
-    console.warn(
-      `[REQ-${requestId}] ${name} vector failed:`,
-      err?.message
-    );
+  const mergedGroundingIndex = {
+    exactUrls: new Set(),
+    domains: new Set()
+  };
 
-    return {
-      name,
-      rawLeads: [],
-      groundingIndex: {
-        exactUrls: new Set(),
-        domains: new Set()
+  for (const result of vectorResults) {
+    const groundingIndex = result?.groundingIndex || { exactUrls: new Set(), domains: new Set() };
+
+    if (Array.isArray(result?.rawLeads)) {
+      for (const lead of result.rawLeads) {
+        rawLeadsWithGrounding.push({
+          rawLead: lead,
+          groundingIndex
+        });
       }
-    };
+    }
+
+    groundingIndex?.exactUrls?.forEach(url => mergedGroundingIndex.exactUrls.add(url));
+    groundingIndex?.domains?.forEach(domain => mergedGroundingIndex.domains.add(domain));
   }
-};
 
+  console.log(
+    `[REQ-${requestId}] Aggregated ` +
+    `${rawLeadsWithGrounding.length} raw candidates across ` +
+    `${queryVectors.length} parallel search vectors.`
+  );
 
-/* -------------------------------------------------------------------- */
-/* PARALLEL SEARCH EXECUTION                                             */
-/* -------------------------------------------------------------------- */
-
-const vectorResults =
-  await Promise.all(
-    queryVectors.map(
-      vector =>
-        executeVectorCall(vector)
-    )
+  console.log(
+    `[REQ-${requestId}] Merged grounding index contains ` +
+    `${mergedGroundingIndex.exactUrls.size} exact URLs and ` +
+    `${mergedGroundingIndex.domains.size} domains.`
   );
 
 
-/* -------------------------------------------------------------------- */
-/* EVIDENCE AGGREGATION                                                  */
-/* -------------------------------------------------------------------- */
+  /* -------------------------------------------------------------------- */
+  /* LEAD PROCESSING                                                      */
+  /* -------------------------------------------------------------------- */
 
-const allRawLeads = [];
+  const processedLeads = [];
+  const seenCompanyDomains = new Set();
+  const seenCompanyNames = new Set();
 
-const mergedGroundingIndex = {
-  exactUrls: new Set(),
-  domains: new Set()
-};
+  for (const item of rawLeadsWithGrounding) {
+    if (processedLeads.length >= maxLeads) {
+      break;
+    }
 
-for (const result of vectorResults) {
+    const { rawLead, groundingIndex } = item;
 
-  if (
-    Array.isArray(result?.rawLeads) &&
-    result.rawLeads.length > 0
-  ) {
-    allRawLeads.push(
-      ...result.rawLeads
-    );
-  }
+    if (!rawLead || typeof rawLead !== 'object' || Array.isArray(rawLead)) {
+      continue;
+    }
 
-  result?.groundingIndex?.exactUrls?.forEach(
-    url =>
-      mergedGroundingIndex.exactUrls.add(url)
-  );
+    /* --- COMPANY / PROSPECT --- */
+    const companyName = cleanText(rawLead.companyName, 300);
 
-  result?.groundingIndex?.domains?.forEach(
-    domain =>
-      mergedGroundingIndex.domains.add(domain)
-  );
-}
+    if (companyName === 'N/A' || companyName === 'Unknown Company') {
+      continue;
+    }
 
-console.log(
-  `[REQ-${requestId}] Aggregated ` +
-  `${allRawLeads.length} raw candidates across ` +
-  `${queryVectors.length} parallel search vectors.`
-);
+    /* --- URLS & DOMAINS --- */
+    const website = normalizeUrl(rawLead.website);
+    const signalSourceUrl = normalizeUrl(rawLead.signalSourceUrl);
 
-console.log(
-  `[REQ-${requestId}] Merged grounding index contains ` +
-  `${mergedGroundingIndex.exactUrls.size} exact URLs and ` +
-  `${mergedGroundingIndex.domains.size} domains.`
-);
+    const websiteDomain = extractDomain(website);
+    const signalDomain = extractDomain(signalSourceUrl);
 
+    const normalizedCompanyName = normalizeCompanyName(companyName);
 
-/* -------------------------------------------------------------------- */
-/* LEAD PROCESSING                                                       */
-/* -------------------------------------------------------------------- */
+    /* --- DUPLICATE PREVENTION --- */
+    if (websiteDomain && seenCompanyDomains.has(websiteDomain)) {
+      continue;
+    }
 
-const processedLeads = [];
+    if (normalizedCompanyName && seenCompanyNames.has(normalizedCompanyName)) {
+      continue;
+    }
 
-const seenCompanyDomains =
-  new Set();
+    /* --- EVIDENCE VALIDATION (Bound to Vector-Specific Index) --- */
+    const evidence = validateLeadEvidence(rawLead, groundingIndex);
 
-const seenCompanyNames =
-  new Set();
+    /* --- EXACT SOURCE GROUNDING --- */
+    const exactSourceGrounded =
+      signalSourceUrl !== 'N/A' &&
+      groundingIndex?.exactUrls?.has(signalSourceUrl);
 
+    const exactWebsiteGrounded =
+      website !== 'N/A' &&
+      groundingIndex?.exactUrls?.has(website);
 
-for (const rawLead of allRawLeads) {
-
-  if (
-    processedLeads.length >= maxLeads
-  ) {
-    break;
-  }
-
-  if (
-    !rawLead ||
-    typeof rawLead !== 'object' ||
-    Array.isArray(rawLead)
-  ) {
-    continue;
-  }
-
-
-  /* --- COMPANY / PROSPECT --- */
-
-  const companyName =
-    cleanText(
-      rawLead.companyName,
-      300
+    /* --- DOMAIN GROUNDING --- */
+    const sourceDomainGrounded = Boolean(
+      signalDomain && groundingIndex?.domains?.has(signalDomain)
     );
 
-  if (
-    companyName === 'N/A' ||
-    companyName === 'Unknown Company'
-  ) {
-    continue;
-  }
-
-
-  /* --- URLS & DOMAINS --- */
-
-  const website =
-    normalizeUrl(
-      rawLead.website
+    const websiteDomainGrounded = Boolean(
+      websiteDomain && groundingIndex?.domains?.has(websiteDomain)
     );
 
-  const signalSourceUrl =
-    normalizeUrl(
-      rawLead.signalSourceUrl
-    );
-
-  const websiteDomain =
-    extractDomain(
-      website
-    );
-
-  const signalDomain =
-    extractDomain(
-      signalSourceUrl
-    );
-
-  const normalizedCompanyName =
-    normalizeCompanyName(
-      companyName
-    );
-
-
-  /* --- DUPLICATE PREVENTION --- */
-
-  if (
-    websiteDomain &&
-    seenCompanyDomains.has(
-      websiteDomain
-    )
-  ) {
-    continue;
-  }
-
-  if (
-    normalizedCompanyName &&
-    seenCompanyNames.has(
-      normalizedCompanyName
-    )
-  ) {
-    continue;
-  }
-
-
-  /* --- EVIDENCE VALIDATION --- */
-
-  const evidence =
-    validateLeadEvidence(
-      rawLead,
-      mergedGroundingIndex
-    );
-
-
-  /* --- EXACT SOURCE GROUNDING --- */
-
-  const exactSourceGrounded =
-    signalSourceUrl !== 'N/A' &&
-    mergedGroundingIndex?.exactUrls?.has(
-      signalSourceUrl
-    );
-
-
-  const exactWebsiteGrounded =
-    website !== 'N/A' &&
-    mergedGroundingIndex?.exactUrls?.has(
-      website
-    );
-
-
-  /* --- DOMAIN GROUNDING --- */
-
-  const sourceDomainGrounded =
-    Boolean(
-      signalDomain &&
-      mergedGroundingIndex?.domains?.has(
-        signalDomain
-      )
-    );
-
-
-  const websiteDomainGrounded =
-    Boolean(
-      websiteDomain &&
-      mergedGroundingIndex?.domains?.has(
-        websiteDomain
-      )
-    );
-
-
-  /* --- FINAL GROUNDING STATUS --- */
-
-  const isExactGrounded =
-    Boolean(
+    /* --- FINAL GROUNDING STATUS --- */
+    const isExactGrounded = Boolean(
       exactSourceGrounded ||
       exactWebsiteGrounded ||
       evidence?.sourceGrounded ||
       evidence?.websiteGrounded
     );
 
-
-  const isDomainGrounded =
-    Boolean(
+    const isDomainGrounded = Boolean(
       sourceDomainGrounded ||
       websiteDomainGrounded ||
       evidence?.sourceDomainGrounded ||
       evidence?.websiteDomainGrounded
     );
 
+    const isGrounded = isExactGrounded || isDomainGrounded;
 
-  const isGrounded =
-    isExactGrounded ||
-    isDomainGrounded;
+    /* --- CONTACT DATA --- */
+    const contactEmail = sanitizeEmail(rawLead.contactEmail);
+    const phoneNumber = sanitizePhone(rawLead.phoneNumber);
+    const socialHandles = sanitizeSocialHandles(rawLead.socialHandles);
 
+    /* --- TEXT FIELDS --- */
+    const socialSignalQuote = cleanText(rawLead.socialSignalQuote, 2500);
+    const leadRationale = cleanText(rawLead.leadRationale, 3000);
+    const draftPitch = cleanText(rawLead.draftPitch, 3000);
+    const nextStep = cleanText(rawLead.nextStep, 1000);
 
-  /* --- CONTACT DATA --- */
-
-  const contactEmail =
-    sanitizeEmail(
-      rawLead.contactEmail
-    );
-
-  const phoneNumber =
-    sanitizePhone(
-      rawLead.phoneNumber
-    );
-
-  const socialHandles =
-    sanitizeSocialHandles(
-      rawLead.socialHandles
-    );
-
-
-  /* --- TEXT FIELDS --- */
-
-  const socialSignalQuote =
-    cleanText(
-      rawLead.socialSignalQuote,
-      2500
-    );
-
-  const leadRationale =
-    cleanText(
-      rawLead.leadRationale,
-      3000
-    );
-
-  const draftPitch =
-    cleanText(
-      rawLead.draftPitch,
-      3000
-    );
-
-  const nextStep =
-    cleanText(
-      rawLead.nextStep,
-      1000
-    );
-
-
-  /* --- NEGATIVE INTENT --- */
-
-  if (
-    evidence?.hasNegativeIntent
-  ) {
-    console.log(
-      `[REQ-${requestId}] Rejected ${companyName}: negative intent detected.`
-    );
-
-    continue;
-  }
-
-
-  /* --- QUALITY FILTERING --- */
-
-  if (
-    qualityLevel === 'high'
-  ) {
-
-    if (
-      !isExactGrounded ||
-      !evidence?.hasUsableQuote ||
-      !evidence?.hasExplicitIntent
-    ) {
-      console.log(
-        `[REQ-${requestId}] Rejected ${companyName}: insufficient high-quality evidence.`
-      );
-
+    /* --- NEGATIVE INTENT --- */
+    if (evidence?.hasNegativeIntent) {
+      console.log(`[REQ-${requestId}] Rejected ${companyName}: negative intent detected.`);
       continue;
     }
-  }
 
-
-  if (
-    qualityLevel === 'medium'
-  ) {
-
-    const hasUsefulEvidence =
-      Boolean(
-        evidence?.hasUsableQuote
-      ) &&
-      Boolean(
-        isGrounded
-      );
-
-    if (
-      !hasUsefulEvidence
-    ) {
-      console.log(
-        `[REQ-${requestId}] Rejected ${companyName}: insufficient medium-quality evidence.`
-      );
-
-      continue;
+    /* --- QUALITY FILTERING --- */
+    if (qualityLevel === 'high') {
+      if (!isExactGrounded || !evidence?.hasUsableQuote || !evidence?.hasExplicitIntent) {
+        console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient high-quality evidence.`);
+        continue;
+      }
     }
-  }
 
-
-  if (
-    qualityLevel === 'low'
-  ) {
-
-    const hasUsefulEvidence =
-      Boolean(
-        evidence?.hasUsableQuote
-      ) &&
-      Boolean(
-        isGrounded
-      );
-
-    if (
-      !hasUsefulEvidence
-    ) {
-      console.log(
-        `[REQ-${requestId}] Rejected ${companyName}: insufficient evidence.`
-      );
-
-      continue;
+    if (qualityLevel === 'medium') {
+      const hasUsefulEvidence = Boolean(evidence?.hasUsableQuote) && Boolean(isGrounded);
+      if (!hasUsefulEvidence) {
+        console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient medium-quality evidence.`);
+        continue;
+      }
     }
-  }
 
+    if (qualityLevel === 'low') {
+      const hasUsefulEvidence = Boolean(evidence?.hasUsableQuote) && Boolean(isGrounded);
+      if (!hasUsefulEvidence) {
+        console.log(`[REQ-${requestId}] Rejected ${companyName}: insufficient evidence.`);
+        continue;
+      }
+    }
 
-  /* --- CONFIDENCE SCORING --- */
-
-  const modelScore =
-    typeof rawLead.confidenceScore === 'string'
-      ? rawLead.confidenceScore
-          .trim()
-          .toLowerCase()
+    /* --- CONFIDENCE SCORING --- */
+    const modelScore = typeof rawLead.confidenceScore === 'string'
+      ? rawLead.confidenceScore.trim().toLowerCase()
       : 'low';
 
-
-  let finalConfidence =
-    calculateConfidence({
+    let finalConfidence = calculateConfidence({
       modelScore,
       evidence
     });
 
+    if (!exactSourceGrounded && finalConfidence === 'high') {
+      finalConfidence = 'medium';
+    }
 
-  if (
-    !exactSourceGrounded &&
-    finalConfidence === 'high'
-  ) {
-    finalConfidence =
-      'medium';
-  }
+    if (!isGrounded && finalConfidence !== 'low') {
+      finalConfidence = 'low';
+    }
 
+    /* --- FINAL SOCIAL SIGNAL --- */
+    let finalSocialSignal = 'N/A';
 
-  if (
-    !isGrounded &&
-    finalConfidence !== 'low'
-  ) {
-    finalConfidence =
-      'low';
-  }
+    if (socialSignalQuote !== 'N/A') {
+      finalSocialSignal = socialSignalQuote;
+    } else if (leadRationale !== 'N/A') {
+      finalSocialSignal = `Research summary: ${leadRationale}`;
+    }
 
+    if (finalSocialSignal === 'N/A') {
+      continue;
+    }
 
-  /* --- FINAL SOCIAL SIGNAL --- */
+    /* --- EXACT SOURCE URL --- */
+    if (signalSourceUrl !== 'N/A') {
+      finalSocialSignal += ` (Source: ${signalSourceUrl})`;
+    }
 
-  let finalSocialSignal =
-    'N/A';
+    /* --- RECORD LEAD --- */
+    if (websiteDomain) {
+      seenCompanyDomains.add(websiteDomain);
+    }
 
+    if (normalizedCompanyName) {
+      seenCompanyNames.add(normalizedCompanyName);
+    }
 
-  if (
-    socialSignalQuote !== 'N/A'
-  ) {
-
-    finalSocialSignal =
-      socialSignalQuote;
-
-  } else if (
-    leadRationale !== 'N/A'
-  ) {
-
-    finalSocialSignal =
-      `Research summary: ${leadRationale}`;
-  }
-
-
-  if (
-    finalSocialSignal === 'N/A'
-  ) {
-    continue;
-  }
-
-
-  /* --- EXACT SOURCE URL --- */
-
-  if (
-    signalSourceUrl !== 'N/A'
-  ) {
-
-    finalSocialSignal +=
-      ` (Source: ${signalSourceUrl})`;
-  }
-
-
-  /* --- RECORD LEAD --- */
-
-  if (
-    websiteDomain
-  ) {
-    seenCompanyDomains.add(
-      websiteDomain
-    );
-  }
-
-  if (
-    normalizedCompanyName
-  ) {
-    seenCompanyNames.add(
-      normalizedCompanyName
-    );
-  }
-
-
-  processedLeads.push({
-
-    companyName,
-
-    website,
-
-    contactEmail,
-
-    phoneNumber,
-
-    socialHandles,
-
-    socialSignal:
-      finalSocialSignal,
-
-    leadRationale:
-      leadRationale !== 'N/A'
+    processedLeads.push({
+      companyName,
+      website,
+      contactEmail,
+      phoneNumber,
+      socialHandles,
+      socialSignal: finalSocialSignal,
+      leadRationale: leadRationale !== 'N/A'
         ? leadRationale
         : 'Identified through publicly available evidence matching the requested search intent.',
-
-    draftPitch:
-      draftPitch !== 'N/A'
-        ? draftPitch
-        : 'N/A',
-
-    nextStep:
-      nextStep !== 'N/A'
+      draftPitch: draftPitch !== 'N/A' ? draftPitch : 'N/A',
+      nextStep: nextStep !== 'N/A'
         ? nextStep
         : 'Review the cited source and contact the prospect using publicly available information.',
-
-    confidenceScore:
-      finalConfidence
-  });
-}
+      confidenceScore: finalConfidence
+    });
+  }
 
 
-/* -------------------------------------------------------------------- */
-/* FINAL RESPONSE                                                        */
-/* -------------------------------------------------------------------- */
+  /* -------------------------------------------------------------------- */
+  /* FINAL RESPONSE                                                       */
+  /* -------------------------------------------------------------------- */
 
-console.log(
-  `[REQ-${requestId}] Completed in ` +
-  `${Date.now() - startTime}ms. ` +
-  `Returning ${processedLeads.length} leads ` +
-  `across ${queryVectors.length} parallel vectors.`
-);
-
-
-return {
-  statusCode: 200,
-  headers,
-  body: JSON.stringify({
-    message:
-      'Leads generated successfully.',
-    leads:
-      processedLeads,
-    data:
-      processedLeads
-  })
-};
-
-
-} catch (err) {
-
-  console.error(
-    `[REQ-${requestId}] Execution error:`,
-    err
+  console.log(
+    `[REQ-${requestId}] Completed in ` +
+    `${Date.now() - startTime}ms. ` +
+    `Returning ${processedLeads.length} leads ` +
+    `across ${queryVectors.length} parallel vectors.`
   );
 
-  const statusCode =
-    Number.isInteger(
-      err?.statusCode
-    )
-      ? err.statusCode
-      : 500;
+  return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+      message: 'Leads generated successfully.',
+      leads: processedLeads,
+      data: processedLeads
+    })
+  };
 
-  const clientMessage =
-    err?.clientMessage ||
-    'An error occurred while generating lead intelligence.';
+} catch (err) {
+  console.error(`[REQ-${requestId}] Execution error:`, err);
 
+  const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
+  const clientMessage = err?.clientMessage || 'An error occurred while generating lead intelligence.';
 
   return {
     statusCode,
     headers,
     body: JSON.stringify({
-      error:
-        clientMessage,
-      message:
-        clientMessage,
+      error: clientMessage,
+      message: clientMessage,
       leads: [],
       data: []
     })
