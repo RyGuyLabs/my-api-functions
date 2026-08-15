@@ -1630,12 +1630,38 @@ OUTPUT ONLY VALID JSON:
   /* EXECUTION, SYNTHESIS & VALIDATION PIPELINE                            */
   /* -------------------------------------------------------------------- */
 
-  // 1. Execute Stage 1 Vector (Discovery)
-  const vectorResult = await executeVectorCall(targetVector);
-  const groundingIndex = vectorResult?.groundingIndex || { exactUrls: new Set(), domains: new Set() };
-  const rawCandidates = vectorResult?.rawCandidates || [];
+  // 1. Determine vectors to execute (Run queryVectors array if available, or fallback to single targetVector)
+  const vectorsToRun = Array.isArray(queryVectors) && queryVectors.length > 0 
+    ? queryVectors 
+    : [targetVector];
 
-  // 2. Execute Stage 2 Synthesis on Grounded Candidates
+  // 2. Execute Stage 1 Search Vectors in Parallel
+  const vectorResults = await Promise.all(
+    vectorsToRun.map(vector => executeVectorCall(vector))
+  );
+
+  // 3. Flatten candidates and aggregate grounding indexes across all vectors
+  const rawCandidates = [];
+  const aggregatedGroundingIndex = {
+    exactUrls: new Set(),
+    domains: new Set()
+  };
+
+  vectorResults.forEach(res => {
+    if (Array.isArray(res?.rawCandidates)) {
+      rawCandidates.push(...res.rawCandidates);
+    }
+    if (res?.groundingIndex?.exactUrls) {
+      res.groundingIndex.exactUrls.forEach(url => aggregatedGroundingIndex.exactUrls.add(url));
+    }
+    if (res?.groundingIndex?.domains) {
+      res.groundingIndex.domains.forEach(domain => aggregatedGroundingIndex.domains.add(domain));
+    }
+  });
+
+  const groundingIndex = aggregatedGroundingIndex;
+
+  // 4. Execute Stage 2 Synthesis on All Grounded Candidates
   const synthesizedMap = new Map();
   if (rawCandidates.length > 0) {
     const synthesizedResults = await executeStage2Synthesis(rawCandidates);
