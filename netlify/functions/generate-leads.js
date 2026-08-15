@@ -1482,20 +1482,20 @@ STRATEGY: ${prompt}
 
 INSTRUCTIONS:
 Perform a targeted search. Identify 3 to 5 real businesses, organizations, projects, or individual prospects matching the intent.
-Extract exact identity signifiers and verbatim evidence quotes. Use null for missing or unpublished fields.
+Every candidate MUST have a companyName OR prospectName, AND an exact signalSourceUrl where the evidence was found.
 
 OUTPUT ONLY VALID JSON:
 {
   "candidates": [
     {
-      "prospectName": "Person, username, or contact name (or null)",
-      "companyName": "Legal or operating business name (or null)",
-      "website": "https://example.com (or null)",
-      "signalSourceUrl": "https://exact-source-url.com",
-      "socialHandles": "@handle or profile link (or null)",
-      "signalQuote": "Verbatim quote or excerpt from page showing buying intent or commercial need",
-      "contactEmail": "Published Email (or null)",
-      "phoneNumber": "Published Phone (or null)"
+      "prospectName": "Person, contact name, or username (or null)",
+      "companyName": "Business, project, or organization name",
+      "website": "Direct company homepage URL (or null)",
+      "signalSourceUrl": "EXACT web URL where the signal/post/evidence was discovered",
+      "socialHandles": "@handle or profile URL (or null)",
+      "signalQuote": "Verbatim excerpt or post content showing the commercial need",
+      "contactEmail": "Published email address (or null)",
+      "phoneNumber": "Published phone number (or null)"
     }
   ]
 }
