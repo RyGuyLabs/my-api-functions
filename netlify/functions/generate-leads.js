@@ -1508,7 +1508,7 @@ OUTPUT ONLY VALID JSON:
           model: 'gemini-2.5-flash',
           contents: vectorUserPrompt,
           config: {
-            systemInstruction: "You are a fast, precise data-extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Use null for missing fields.",
+            systemInstruction: `${systemInstruction}\n\nTASK: You are a fast, precise data-extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Use null for missing fields.`,
             temperature: 0.1,
             tools: [{ googleSearch: {} }]
           }
