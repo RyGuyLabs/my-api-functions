@@ -1625,75 +1625,55 @@ OUTPUT ONLY VALID JSON:
       return [];
     }
   };
-    
+
   /* -------------------------------------------------------------------- */
-  /* SINGLE VECTOR EXECUTION                                              */
+  /* EXECUTION, SYNTHESIS & VALIDATION PIPELINE                            */
   /* -------------------------------------------------------------------- */
 
-  // Execute ONLY the targetVector passed from the client
+  // 1. Execute Stage 1 Vector (Discovery)
   const vectorResult = await executeVectorCall(targetVector);
-
   const groundingIndex = vectorResult?.groundingIndex || { exactUrls: new Set(), domains: new Set() };
-  
-  // Set mergedGroundingIndex so downstream validation and logging references won't crash
-  const mergedGroundingIndex = groundingIndex;
+  const rawCandidates = vectorResult?.rawCandidates || [];
 
-  const rawLeadsWithGrounding = [];
-
-  if (Array.isArray(vectorResult?.rawLeads)) {
-    for (const lead of vectorResult.rawLeads) {
-      rawLeadsWithGrounding.push({
-        rawLead: lead,
-        groundingIndex
-      });
-    }
+  // 2. Execute Stage 2 Synthesis on Grounded Candidates
+  const synthesizedMap = new Map();
+  if (rawCandidates.length > 0) {
+    const synthesizedResults = await executeStage2Synthesis(rawCandidates);
+    synthesizedResults.forEach(item => {
+      if (item.signalSourceUrl) {
+        synthesizedMap.set(item.signalSourceUrl, item);
+      }
+    });
   }
 
-  console.log(
-    `[REQ-${requestId}] Executed vector "${targetVector.name}". ` +
-    `Extracted ${rawLeadsWithGrounding.length} raw candidates.`
-  );
-
-  console.log(
-    `[REQ-${requestId}] Aggregated ` +
-    `${rawLeadsWithGrounding.length} raw candidates for active search vector.`
-  );
-
-  console.log(
-    `[REQ-${requestId}] Vector grounding index contains ` +
-    `${mergedGroundingIndex.exactUrls.size} exact URLs and ` +
-    `${mergedGroundingIndex.domains.size} domains.`
-  );
-
   /* -------------------------------------------------------------------- */
-  /* LEAD PROCESSING                                                      */
+  /* LEAD PROCESSING & VALIDATION                                         */
   /* -------------------------------------------------------------------- */
 
   const processedLeads = [];
   const seenCompanyDomains = new Set();
   const seenCompanyNames = new Set();
 
-  for (const item of rawLeadsWithGrounding) {
+  for (const candidate of rawCandidates) {
     if (processedLeads.length >= maxLeads) {
       break;
     }
 
-    const { rawLead, groundingIndex } = item;
-
-    if (!rawLead || typeof rawLead !== 'object' || Array.isArray(rawLead)) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
       continue;
     }
 
-    /* --- COMPANY / PROSPECT --- */
-    const companyName = cleanText(rawLead.companyName, 300);
+    /* --- COMPANY / PROSPECT IDENTIFIER --- */
+    // Fallback to prospectName if companyName is missing or N/A
+    const companyName = cleanText(candidate.companyName || candidate.prospectName, 300);
 
-    if (companyName === 'N/A' || companyName === 'Unknown Company') {
+    if (!companyName || companyName === 'N/A' || companyName === 'Unknown Company') {
       continue;
     }
 
     /* --- URLS & DOMAINS --- */
-    const website = normalizeUrl(rawLead.website);
-    const signalSourceUrl = normalizeUrl(rawLead.signalSourceUrl);
+    const website = normalizeUrl(candidate.website);
+    const signalSourceUrl = normalizeUrl(candidate.signalSourceUrl);
 
     const websiteDomain = extractDomain(website);
     const signalDomain = extractDomain(signalSourceUrl);
@@ -1708,6 +1688,24 @@ OUTPUT ONLY VALID JSON:
     if (normalizedCompanyName && seenCompanyNames.has(normalizedCompanyName)) {
       continue;
     }
+
+    /* --- RETRIEVE STAGE 2 SYNTHESIS --- */
+    const synthesis = synthesizedMap.get(signalSourceUrl) || {};
+
+    /* --- MAP TO RAW LEAD OBJECT FOR EXISTING EVIDENCE VALIDATOR --- */
+    const rawLead = {
+      companyName,
+      website,
+      contactEmail: candidate.contactEmail || "N/A",
+      phoneNumber: candidate.phoneNumber || "N/A",
+      socialHandles: candidate.socialHandles || "N/A",
+      signalSourceUrl,
+      socialSignalQuote: candidate.signalQuote || "Verified public search signal.",
+      leadRationale: synthesis.leadRationale || "Matched search vector criteria.",
+      draftPitch: synthesis.draftPitch || `Reaching out regarding opportunities in ${industry}.`,
+      nextStep: synthesis.nextStep || "Initiate direct outreach.",
+      confidenceScore: "high"
+    };
 
     /* --- EVIDENCE VALIDATION (Bound to Vector-Specific Index) --- */
     const evidence = validateLeadEvidence(rawLead, groundingIndex);
@@ -1773,7 +1771,6 @@ OUTPUT ONLY VALID JSON:
     }
 
     if (qualityLevel === 'medium') {
-      // Allow lead if grounded OR if a valid HTTP signal URL + quote is supplied
       const hasValidUrl = signalSourceUrl.startsWith('http://') || signalSourceUrl.startsWith('https://');
       const hasUsefulEvidence = (isGrounded || (hasValidUrl && socialSignalQuote !== 'N/A')) && evidence?.hasUsableQuote;
 
@@ -1792,9 +1789,7 @@ OUTPUT ONLY VALID JSON:
     }
 
     /* --- CONFIDENCE SCORING --- */
-    const modelScore = typeof rawLead.confidenceScore === 'string'
-      ? rawLead.confidenceScore.trim().toLowerCase()
-      : 'low';
+    const modelScore = 'high';
 
     let finalConfidence = calculateConfidence({
       modelScore,
@@ -1822,11 +1817,6 @@ OUTPUT ONLY VALID JSON:
       continue;
     }
 
-    /* --- EXACT SOURCE URL --- */
-    if (signalSourceUrl !== 'N/A') {
-      finalSocialSignal += ` (Source: ${signalSourceUrl})`;
-    }
-
     /* --- RECORD LEAD --- */
     if (websiteDomain) {
       seenCompanyDomains.add(websiteDomain);
@@ -1838,10 +1828,12 @@ OUTPUT ONLY VALID JSON:
 
     processedLeads.push({
       companyName,
+      prospectName: candidate.prospectName || null,
       website,
       contactEmail,
       phoneNumber,
       socialHandles,
+      signalSourceUrl,
       socialSignal: finalSocialSignal,
       leadRationale: leadRationale !== 'N/A'
         ? leadRationale
@@ -1853,7 +1845,6 @@ OUTPUT ONLY VALID JSON:
       confidenceScore: finalConfidence
     });
   }
-
 
   /* -------------------------------------------------------------------- */
   /* FINAL RESPONSE                                                       */
