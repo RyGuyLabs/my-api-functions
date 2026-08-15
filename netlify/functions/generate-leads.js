@@ -1561,6 +1561,71 @@ OUTPUT ONLY VALID JSON:
     }
   };
 
+/* -------------------------------------------------------------------- */
+  /* STAGE 2 — SYNTHESIS ENGINE (Evidence-Bound, Fast Execution)          */
+  /* -------------------------------------------------------------------- */
+  const executeStage2Synthesis = async (candidates) => {
+    if (!candidates || candidates.length === 0) return [];
+
+    const synthesisPrompt = `
+You are a senior sales intelligence strategist. Analyze these verified leads retrieved from web searches.
+
+TARGET INDUSTRY: "${industry}"
+SEARCH INTENT: "${searchQuery}"
+
+RETRIEVED CANDIDATES & VERBATIM EVIDENCE:
+${JSON.stringify(candidates, null, 2)}
+
+INSTRUCTIONS:
+1. Synthesize a 2-sentence rationale explaining why the retrieved signal matches the search intent.
+2. Write a tailored 3-sentence outreach email addressing the prospect's signalQuote. DO NOT copy website slogans or boilerplate headers.
+3. DO NOT invent contact info, URLs, or facts not present in the input.
+
+OUTPUT ONLY VALID JSON:
+{
+  "synthesizedLeads": [
+    {
+      "signalSourceUrl": "Preserve exact signalSourceUrl from input",
+      "leadRationale": "2-sentence strategic rationale",
+      "draftPitch": "Tailored 3-sentence outreach email",
+      "nextStep": "Actionable outreach recommendation"
+    }
+  ]
+}
+`;
+
+    try {
+      const response = await generateWithDeadline(
+        ai,
+        {
+          model: 'gemini-2.5-flash',
+          contents: synthesisPrompt,
+          config: {
+            systemInstruction: "You are a sales analyst. Synthesize input evidence into actionable pitches. Output strictly raw JSON without preambles.",
+            temperature: 0.2
+            // NO googleSearch tool = Instant 2-second execution
+          }
+        },
+        8000 
+      );
+
+      const responseText = typeof response?.text === 'string' ? response.text.trim() : '';
+      let parsed = { synthesizedLeads: [] };
+
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+      } catch (e) {
+        console.warn(`[REQ-${requestId}] Stage 2 parse error:`, e.message);
+      }
+
+      return Array.isArray(parsed?.synthesizedLeads) ? parsed.synthesizedLeads : [];
+    } catch (err) {
+      console.warn(`[REQ-${requestId}] Stage 2 synthesis failed:`, err.message);
+      return [];
+    }
+  };
+    
   /* -------------------------------------------------------------------- */
   /* SINGLE VECTOR EXECUTION                                              */
   /* -------------------------------------------------------------------- */
