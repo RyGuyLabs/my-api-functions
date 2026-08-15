@@ -1469,95 +1469,85 @@ if (availableForModel < 3000) {
 /* PARALLEL DISCOVERY WORKER                                             */
 /* -------------------------------------------------------------------- */
 
-const executeVectorCall = async ({ name, prompt }) => {
+/* -------------------------------------------------------------------- */
+  /* STAGE 1 — DISCOVERY ENGINE (Preserves Identity & Verbatim Evidence)   */
+  /* -------------------------------------------------------------------- */
+  const executeVectorCall = async ({ name, prompt }) => {
     try {
-      // ⚡ LIGHTWEIGHT VECTOR PROMPT: Asks ONLY for core identifiers to prevent LLM generation bottlenecks
       const vectorUserPrompt = `
 TARGET INDUSTRY: "${industry}"
 SEARCH INTENT: "${searchQuery}"
 SEARCH VECTOR: ${name}
-${prompt}
+STRATEGY: ${prompt}
 
 INSTRUCTIONS:
-Perform a targeted search. Identify 3 to 5 real businesses, organizations, or commercial prospects matching the intent.
-Keep text extremely brief so generation is instant.
+Perform a targeted search. Identify 3 to 5 real businesses, organizations, projects, or individual prospects matching the intent.
+Extract exact identity signifiers and verbatim evidence quotes. Use null for missing or unpublished fields.
 
 OUTPUT ONLY VALID JSON:
 {
-  "leads": [
+  "candidates": [
     {
-      "companyName": "Exact Company Name",
-      "website": "https://example.com",
-      "signalSourceUrl": "https://source-url.com",
-      "socialSignalQuote": "Brief excerpt or signal",
-      "leadRationale": "Short rationale"
+      "prospectName": "Person, username, or contact name (or null)",
+      "companyName": "Legal or operating business name (or null)",
+      "website": "https://example.com (or null)",
+      "signalSourceUrl": "https://exact-source-url.com",
+      "socialHandles": "@handle or profile link (or null)",
+      "signalQuote": "Verbatim quote or excerpt from page showing buying intent or commercial need",
+      "contactEmail": "Published Email (or null)",
+      "phoneNumber": "Published Phone (or null)"
     }
   ]
 }
 `;
 
-      // Set deadline budget to 20s
+      // Set deadline budget to 18s for Stage 1 Search
       const response = await generateWithDeadline(
         ai,
         {
           model: 'gemini-2.5-flash',
           contents: vectorUserPrompt,
           config: {
-            systemInstruction: "You are a fast lead-discovery engine. Search the web and return ONLY raw JSON matching the requested schema. No preambles.",
+            systemInstruction: "You are a fast, precise data-extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Use null for missing fields.",
             temperature: 0.1,
             tools: [{ googleSearch: {} }]
           }
         },
-        20000 
+        18000 
       );
 
       const candidate = response?.candidates?.[0];
       const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
+      
+      // Isolated Vector Grounding Index
       const groundingIndex = buildGroundingIndex(groundingChunks);
 
       const responseText = typeof response?.text === 'string' ? response.text.trim() : '';
 
       if (!responseText) {
         console.warn(`[REQ-${requestId}] ${name} vector returned no text.`);
-        return { name, rawLeads: [], groundingIndex };
+        return { name, rawCandidates: [], groundingIndex };
       }
 
       // Extract JSON payload safely
-      let parsed = { leads: [] };
+      let parsed = { candidates: [] };
       try {
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
-        } else {
-          parsed = JSON.parse(responseText);
-        }
+        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
       } catch (jsonError) {
         console.warn(`[REQ-${requestId}] ${name} vector JSON parse failed:`, jsonError.message);
       }
 
-      // Hydrate missing secondary fields with defaults so frontend components don't break
-      const rawLeads = (Array.isArray(parsed?.leads) ? parsed.leads : []).map(lead => ({
-        companyName: lead.companyName || "N/A",
-        website: lead.website || "N/A",
-        contactEmail: lead.contactEmail || "N/A",
-        phoneNumber: lead.phoneNumber || "N/A",
-        socialHandles: lead.socialHandles || "N/A",
-        signalSourceUrl: lead.signalSourceUrl || lead.website || "N/A",
-        socialSignalQuote: lead.socialSignalQuote || "Verified public search signal.",
-        leadRationale: lead.leadRationale || "Matched search vector criteria.",
-        draftPitch: lead.draftPitch || `Reaching out regarding opportunities in ${industry}.`,
-        nextStep: lead.nextStep || "Initiate direct outreach.",
-        confidenceScore: lead.confidenceScore || "high"
-      }));
+      const rawCandidates = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
 
       console.log(
         `[REQ-${requestId}] ${name} vector returned ` +
-        `${rawLeads.length} raw candidates in record time.`
+        `${rawCandidates.length} raw candidates in record time.`
       );
 
       return {
         name,
-        rawLeads,
+        rawCandidates,
         groundingIndex
       };
 
@@ -1565,7 +1555,7 @@ OUTPUT ONLY VALID JSON:
       console.warn(`[REQ-${requestId}] ${name} vector failed:`, err?.message);
       return {
         name,
-        rawLeads: [],
+        rawCandidates: [],
         groundingIndex: { exactUrls: new Set(), domains: new Set() }
       };
     }
