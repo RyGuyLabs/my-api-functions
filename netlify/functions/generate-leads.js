@@ -1697,9 +1697,18 @@ OUTPUT ONLY VALID JSON:
       continue;
     }
 
-    /* --- URLS & DOMAINS --- */
-    const website = normalizeUrl(candidate.website);
+    /* --- URLS & DOMAINS (With Automatic Fallback) --- */
     const signalSourceUrl = normalizeUrl(candidate.signalSourceUrl);
+    
+    // If explicit website is missing, derive root website from the signal URL domain
+    let rawWebsite = candidate.website;
+    if ((!rawWebsite || rawWebsite === 'N/A') && signalSourceUrl !== 'N/A') {
+      const derivedDomain = extractDomain(signalSourceUrl);
+      if (derivedDomain && derivedDomain !== 'n/a') {
+        rawWebsite = `https://${derivedDomain}`;
+      }
+    }
+    const website = normalizeUrl(rawWebsite);
 
     const websiteDomain = extractDomain(website);
     const signalDomain = extractDomain(signalSourceUrl);
