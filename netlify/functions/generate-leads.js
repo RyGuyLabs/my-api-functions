@@ -1863,12 +1863,13 @@ OUTPUT ONLY VALID JSON:
 
     processedLeads.push({
       companyName,
-      prospectName: candidate.prospectName || null,
-      website,
-      contactEmail,
-      phoneNumber,
-      socialHandles,
-      signalSourceUrl,
+      prospectName: candidate.prospectName || "N/A",
+      website: website !== 'N/A' ? website : signalSourceUrl,
+      contactEmail: contactEmail !== 'N/A' ? contactEmail : "N/A",
+      phoneNumber: phoneNumber !== 'N/A' ? phoneNumber : "N/A",
+      socialHandles: socialHandles !== 'N/A' ? socialHandles : "N/A",
+      signalSourceUrl: signalSourceUrl !== 'N/A' ? signalSourceUrl : website,
+      socialSignalQuote: socialSignalQuote !== 'N/A' ? socialSignalQuote : finalSocialSignal,
       socialSignal: finalSocialSignal,
       leadRationale: leadRationale !== 'N/A'
         ? leadRationale
