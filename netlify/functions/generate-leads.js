@@ -1443,7 +1443,18 @@ if (availableForModel < 3000) {
 
   /* STAGE 1 — DISCOVERY ENGINE (Preserves Identity & Verbatim Evidence)   */
 
-    const executeVectorCall = async ({ name, prompt }) => {
+  const executeVectorCall = async ({ 
+    name, 
+    prompt, 
+    salesPersona, 
+    leadType, 
+    targetServiceKeyword, 
+    location, 
+    financialUrgencyFilter, 
+    socialCompetitiveFocus, 
+    industry, 
+    searchQuery 
+  }) => {
     try {
       const activePersona = salesPersona || industry || 'Sales Professional';
       const activeKeyword = targetServiceKeyword || searchQuery || 'Services';
@@ -1619,10 +1630,25 @@ OUTPUT ONLY VALID JSON:
   /* EXECUTION, SYNTHESIS & VALIDATION PIPELINE                            */
   /* -------------------------------------------------------------------- */
 
-  // 1. Determine vectors to execute (Run queryVectors array if available, or fallback to single targetVector)
+  // 1. Determine vectors to execute
   const vectorsToRun = Array.isArray(queryVectors) && queryVectors.length > 0 
     ? queryVectors 
     : [targetVector];
+
+  // 2. Execute Stage 1 Search Vectors in Parallel with Explicit Context Passing
+  const vectorResults = await Promise.all(
+    vectorsToRun.map(vector => executeVectorCall({
+      ...vector,
+      salesPersona,
+      leadType,
+      targetServiceKeyword,
+      location,
+      financialUrgencyFilter,
+      socialCompetitiveFocus,
+      industry,
+      searchQuery
+    }))
+  );
 
   // 2. Execute Stage 1 Search Vectors in Parallel
   const vectorResults = await Promise.all(
