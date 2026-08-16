@@ -967,9 +967,7 @@ if (event.httpMethod === 'OPTIONS') {
 
 
   try {
-    /* -------------------------------------------------------------------- */
     /* API KEY                                                               */
-    /* -------------------------------------------------------------------- */
 
     if (!API_KEY) {
       console.error(
@@ -1637,16 +1635,24 @@ OUTPUT ONLY VALID JSON:
     }
   };
 
-  /* -------------------------------------------------------------------- */
   /* EXECUTION, SYNTHESIS & VALIDATION PIPELINE                            */
-  /* -------------------------------------------------------------------- */
 
-  // 1. Determine vectors to execute
-  const vectorsToRun = Array.isArray(queryVectors) && queryVectors.length > 0 
+  // DEV THROTTLE TOGGLE:
+  // Change DEV_MODE to false (or remove .slice(0, 1)) when going to production.
+  const DEV_MODE = true; 
+
+  const baseVectors = (Array.isArray(queryVectors) && queryVectors.length > 0)
     ? queryVectors 
     : [targetVector];
 
-  // Execute parallel vector execution with individual fallback control
+  const vectorsToRun = DEV_MODE ? baseVectors.slice(0, 1) : baseVectors;
+
+  console.log(
+    `[REQ-${requestId}] Running ${vectorsToRun.length} search vector(s) ` +
+    `(${DEV_MODE ? 'DEV THROTTLE ACTIVE - 85% Cost Reduction' : 'PRODUCTION MODE'})...`
+  );
+
+  // Execute vector execution (1 in dev mode, 6 in production)
   const vectorResults = await Promise.all(
     vectorsToRun.map(vector => executeVectorCall({
       ...vector,
@@ -1693,9 +1699,7 @@ OUTPUT ONLY VALID JSON:
     });
   }
 
-  /* -------------------------------------------------------------------- */
   /* LEAD PROCESSING & VALIDATION                                         */
-  /* -------------------------------------------------------------------- */
 
   const processedLeads = [];
   const seenCompanyDomains = new Set();
@@ -1903,9 +1907,7 @@ OUTPUT ONLY VALID JSON:
     });
   }
 
-  /* -------------------------------------------------------------------- */
   /* FINAL RESPONSE                                                       */
-  /* -------------------------------------------------------------------- */
 
   console.log(
     `[REQ-${requestId}] Completed in ` +
