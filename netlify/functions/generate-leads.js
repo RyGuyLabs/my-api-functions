@@ -1635,7 +1635,7 @@ OUTPUT ONLY VALID JSON:
     ? queryVectors 
     : [targetVector];
 
-  // 2. Execute Stage 1 Search Vectors in Parallel with Explicit Context Passing
+  // Execute parallel vector execution with individual fallback control
   const vectorResults = await Promise.all(
     vectorsToRun.map(vector => executeVectorCall({
       ...vector,
@@ -1649,12 +1649,7 @@ OUTPUT ONLY VALID JSON:
       searchQuery
     }))
   );
-
-  // 2. Execute Stage 1 Search Vectors in Parallel
-  const vectorResults = await Promise.all(
-    vectorsToRun.map(vector => executeVectorCall(vector))
-  );
-
+    
   // 3. Flatten candidates and aggregate grounding indexes across all vectors
   const rawCandidates = [];
   const aggregatedGroundingIndex = {
