@@ -1,3 +1,4 @@
+const { validatePhase1Signal, scorePhase2, generatePhase3, authorizePhase4 } = require('./pipeline-implementation');
 const { GoogleGenAI, Type } = require('@google/genai');
 const { URL } = require('url');
 
