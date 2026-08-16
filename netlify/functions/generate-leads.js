@@ -122,9 +122,7 @@ function clientError(statusCode, clientMessage) {
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* INPUT VALIDATION                                                            */
-/* -------------------------------------------------------------------------- */
 
 function parseAndValidateInputs(body) {
   let parsed;
@@ -252,9 +250,7 @@ function parseAndValidateInputs(body) {
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* URL NORMALIZATION                                                           */
-/* -------------------------------------------------------------------------- */
 
 function normalizeUrl(rawUrl) {
   if (
@@ -363,9 +359,7 @@ function normalizeCompanyName(name) {
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* GOOGLE GROUNDING                                                           */
-/* -------------------------------------------------------------------------- */
 
 function buildGroundingIndex(groundingChunks) {
   const exactUrls =
@@ -456,9 +450,7 @@ function isDomainGrounded(
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* FIELD SANITIZATION                                                         */
-/* -------------------------------------------------------------------------- */
 
 function sanitizeEmail(email) {
   if (
@@ -589,9 +581,7 @@ function cleanText(
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* INTENT ANALYSIS                                                            */
-/* -------------------------------------------------------------------------- */
 
 function analyzeIntent(
   socialSignalQuote,
@@ -708,9 +698,7 @@ function analyzeIntent(
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* EVIDENCE VALIDATION                                                         */
-/* -------------------------------------------------------------------------- */
 
 function validateLeadEvidence(
   rawLead,
@@ -768,9 +756,7 @@ function validateLeadEvidence(
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* CONFIDENCE                                                                  */
-/* -------------------------------------------------------------------------- */
 
 function calculateConfidence({
   modelScore,
@@ -847,9 +833,7 @@ function calculateConfidence({
 }
 
 
-/* -------------------------------------------------------------------------- */
 /* MODEL DEADLINE                                                              */
-/* -------------------------------------------------------------------------- */
 
 function remainingTime(deadline) {
   return Math.max(
@@ -927,9 +911,7 @@ function extractAndParseJSON(text) {
   }
 }
 
-/* -------------------------------------------------------------------------- */
 /* HANDLER                                                                     */
-/* -------------------------------------------------------------------------- */
 
 exports.handler = async function (
   event,
@@ -968,10 +950,8 @@ if (event.httpMethod === 'OPTIONS') {
 }
 
 
-  /* ---------------------------------------------------------------------- */
-  /* METHOD                                                                  */
-  /* ---------------------------------------------------------------------- */
-
+    /* METHOD                                                                  */
+  
   if (
     event?.httpMethod !== 'POST'
   ) {
@@ -1025,9 +1005,7 @@ if (!targetVector || !targetVector.name || !targetVector.prompt) {
   };
 }
 
-/* -------------------------------------------------------------------- */
 /* GEMINI CLIENT                                                         */
-/* -------------------------------------------------------------------- */
 
 const ai =
   new GoogleGenAI({
@@ -1035,9 +1013,7 @@ const ai =
   });
 
 
-/* -------------------------------------------------------------------- */
 /* SYSTEM INSTRUCTION                                                    */
-/* -------------------------------------------------------------------- */
 
 const systemInstruction = `
 You are an enterprise-grade public-web lead intelligence research engine.
@@ -1465,25 +1441,37 @@ if (availableForModel < 3000) {
   );
 }
 
-
-/* -------------------------------------------------------------------- */
-/* PARALLEL DISCOVERY WORKER                                             */
-/* -------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------- */
   /* STAGE 1 — DISCOVERY ENGINE (Preserves Identity & Verbatim Evidence)   */
-  /* -------------------------------------------------------------------- */
-  const executeVectorCall = async ({ name, prompt }) => {
+
+    const executeVectorCall = async ({ name, prompt }) => {
     try {
+      const activePersona = salesPersona || industry || 'Sales Professional';
+      const activeKeyword = targetServiceKeyword || searchQuery || 'Services';
+      const activeLocation = location || 'United States';
+      const activeLeadType = leadType || 'Business';
+
       const vectorUserPrompt = `
-TARGET INDUSTRY: "${industry}"
-SEARCH INTENT: "${searchQuery}"
+USER'S SALES PERSONA: "${activePersona}" (The provider offering the service)
+TARGET LEAD TYPE: "${activeLeadType}" (${activeLeadType === 'Residential' ? 'B2C / Individual' : 'B2B / Business'})
+CORE NEED / KEYWORD: "${activeKeyword}"
+LOCATION: "${activeLocation}"
+QUALIFICATION CRITERIA: "${financialUrgencyFilter || 'None'}"
+PREFERRED CHANNEL FOCUS: "${socialCompetitiveFocus || 'All Public Web Sources'}"
 SEARCH VECTOR: ${name}
 STRATEGY: ${prompt}
 
-INSTRUCTIONS:
-Perform a targeted search. Identify 3 to 5 real businesses, organizations, projects, or individual prospects matching the intent.
-Every candidate MUST have a companyName OR prospectName, AND an exact signalSourceUrl where the evidence was found.
+CRITICAL ROLE FILTERING INSTRUCTIONS:
+1. EXCLUDE COMPETITORS (NEGATIVE FILTER):
+   - DO NOT return companies, agencies, brokers, or practitioners that SELL "${activeKeyword}" or operate as a "${activePersona}".
+   - Example: If the persona is "Life Insurance Agent", DO NOT return insurance agencies or brokers.
+
+2. PROSPECTS & BUYERS ONLY (POSITIVE FILTER):
+   - Find ${activeLeadType === 'Residential' ? 'individuals, homeowners, or private buyers' : 'businesses, managers, executives, or project owners'} located in "${activeLocation}".
+   - Candidates MUST be actively expressing a need, asking for recommendations, filing permits, or undergoing trigger events requiring "${activeKeyword}".
+
+3. EVIDENCE & SOURCE REQUIREMENT:
+   - Identify 3 to 5 real candidates.
+   - Every candidate MUST have a companyName OR prospectName, AND an exact, verifiable signalSourceUrl where the intent was discovered.
 
 OUTPUT ONLY VALID JSON:
 {
@@ -1509,7 +1497,7 @@ OUTPUT ONLY VALID JSON:
           model: 'gemini-2.5-flash',
           contents: vectorUserPrompt,
           config: {
-            systemInstruction: `${systemInstruction}\n\nTASK: You are a fast, precise data-extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Use null for missing fields.`,
+            systemInstruction: `${systemInstruction}\n\nTASK: You are a fast, precise lead-generation extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Strictly filter out competitors offering the specified service. Use null for missing fields.`,
             temperature: 0.1,
             tools: [{ googleSearch: {} }]
           }
