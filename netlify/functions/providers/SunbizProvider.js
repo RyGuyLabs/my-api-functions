@@ -1,6 +1,6 @@
-import { BaseProvider } from "./BaseProvider.js";
+const { BaseProvider } = require("./BaseProvider.js");
 
-export class SunbizProvider extends BaseProvider {
+class SunbizProvider extends BaseProvider {
   constructor() {
     super("SunbizProvider", ["FL"]);
   }
@@ -27,7 +27,6 @@ export class SunbizProvider extends BaseProvider {
 
   async search(geoContext, filters) {
     // Simulated Sunbiz fetch matching Florida structure
-    // (Replace with actual Sunbiz HTML/API parser execution)
     return [
       {
         cor_number: "L18000123456",
@@ -58,4 +57,14 @@ export class SunbizProvider extends BaseProvider {
       registrationId: rawRecord.cor_number
     };
   }
+
+  // Canonical URL generator requested by CTO
+  getSourceReference(raw, normalized) {
+    const docNum = normalized?.registrationId || normalized?.docNumber || raw?.cor_number || raw?.docNumber;
+    if (!docNum) return "https://search.sunbiz.org/";
+    
+    return `https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResultDetail?inquiryType=EntityName&directionType=Initial&searchNameOrder=${encodeURIComponent(normalized.companyName || "")}&aggregateId=${docNum}`;
+  }
 }
+
+module.exports = { SunbizProvider };
