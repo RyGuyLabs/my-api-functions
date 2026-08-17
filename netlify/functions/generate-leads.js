@@ -1491,20 +1491,19 @@ OUTPUT ONLY VALID JSON:
 }
 `;
 
-      // Set deadline budget to 18s for Stage 1 Search
-      const response = await generateWithDeadline(
-        ai,
-        {
-          model: 'gemini-2.5-flash',
-          contents: vectorUserPrompt,
-          config: {
-            systemInstruction: `${systemInstruction}\n\nTASK: You are a fast, precise lead-generation extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Strictly filter out competitors offering the specified service. Use null for missing fields.`,
-            temperature: 0.1,
-            tools: [{ googleSearch: {} }]
-          }
-        },
-        18000 
-      );
+const response = await generateWithDeadline(
+  ai,
+  {
+    model: 'gemini-2.5-flash',
+    contents: vectorUserPrompt,
+    config: {
+      systemInstruction: `${systemInstruction}\n\nTASK: You are a fast, precise lead-generation extraction engine. Search the web and return ONLY raw JSON matching the requested schema. Strictly filter out competitors offering the specified service. Use null for missing fields.`,
+      temperature: 0.1,
+      tools: [{ googleSearch: {} }]
+    }
+  },
+  6500 
+);
 
       const candidate = response?.candidates?.[0];
       const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
