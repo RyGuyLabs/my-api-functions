@@ -1,52 +1,65 @@
+import crypto from "crypto";
 import { toCanonicalString } from "../CanonicalSerializer.js";
-import { PipelineContract } from "../pipeline-implementation.ts";
 
+/**
+ * In-Memory Evidence Store Adapter with Dual-Hash & Object.freeze() Protection
+ */
 export class EvidenceLedgerAdapter {
   constructor() {
     this.ledger = new Map();
   }
 
   /**
-   * Records an observation from a provider and converts it to a cryptographically bound Phase 1 Signal Record.
+   * Generates a deterministic SHA-256 hash string for data inputs.
    */
-  recordObservation({ providerName, rawPayload, normalizedEntity, sourceUrl, publishedAt }) {
-    const canonicalPayloadStr = toCanonicalString(normalizedEntity);
-    
-    // Construct Phase 1 input matching raw signal schema
-    const rawInput = {
-      sourceUrl: sourceUrl || `https://registry.internal/${providerName.toLowerCase()}`,
-      publishedAt: publishedAt || new Date().toISOString(),
-      rawText: canonicalPayloadStr,
-      entityName: normalizedEntity.companyName,
-      jurisdiction: normalizedEntity.jurisdiction || "US",
-    };
+  #hashData(data) {
+    const canonicalStr = typeof data === "string" ? data : toCanonicalString(data);
+    return crypto.createHash("sha256").update(canonicalStr).digest("hex");
+  }
 
-    // Pass through canonical validation & hashing
-    const validationResult = validatePhase1Signal(rawInput);
+  /**
+   * Records an observation with a 3-tier hash chain (Source, Canonical, Signal).
+   */
+  recordObservation({ providerName, rawPayload, normalizedEntity, sourceUrl, retrievedAt }) {
+    const inputSignalId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    if (!validationResult.valid || !validationResult.record) {
-      throw new Error(`Evidence Ledger Recording Failed: ${validationResult.error}`);
+    // 1. sourceContentHash: Raw payload fingerprint
+    const sourceContentHash = this.#hashData(rawPayload);
+
+    // 2. canonicalEntityHash: Normalized domain representation fingerprint
+    const canonicalEntityHash = this.#hashData(normalizedEntity);
+
+    // 3. signalRecordHash: Composite cryptographic binding
+    const signalRecordHash = this.#hashData({
+      inputSignalId,
+      providerName,
+      sourceContentHash,
+      canonicalEntityHash,
+      retrievedAt: retrievedAt || new Date().toISOString()
+    });
+
+    // Guard against accidental in-memory mutation using Object.freeze
+    const entry = Object.freeze({
+      inputSignalId,
+      providerName,
+      sourceUrl: sourceUrl || null,
+      retrievedAt: retrievedAt || new Date().toISOString(),
+      rawSourceReference: Object.freeze(JSON.parse(JSON.stringify(rawPayload))),
+      normalizedEntity: Object.freeze(JSON.parse(JSON.stringify(normalizedEntity))),
+      sourceContentHash,
+      canonicalEntityHash,
+      signalRecordHash
+    });
+
+    if (this.ledger.has(inputSignalId)) {
+      throw new Error(`Evidence record collision: ${inputSignalId} already exists.`);
     }
 
-    const signalRecord = validationResult.record;
-
-    // Attach raw untouched provider representation separately for auditability
-    const evidenceEntry = {
-      ...signalRecord,
-      rawSourceReference: rawPayload,
-      providerName,
-      recordedAt: new Date().toISOString()
-    };
-
-    this.ledger.set(signalRecord.inputSignalId, evidenceEntry);
-    return evidenceEntry;
+    this.ledger.set(inputSignalId, entry);
+    return entry;
   }
 
   getRecord(inputSignalId) {
     return this.ledger.get(inputSignalId) || null;
-  }
-
-  getAllRecords() {
-    return Array.from(this.ledger.values());
   }
 }
