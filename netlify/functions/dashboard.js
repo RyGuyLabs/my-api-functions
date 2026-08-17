@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+const { GoogleGenAI } = require("@google/genai");
 
 // Initialize the GoogleGenAI SDK.
 // It automatically uses the GEMINI_API_KEY environment variable.
