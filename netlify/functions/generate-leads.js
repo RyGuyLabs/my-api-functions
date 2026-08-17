@@ -917,58 +917,43 @@ exports.handler = async function (
   event,
   context
 ) {
-  const startTime =
-    Date.now();
-
-  const deadline =
-    startTime +
-    GLOBAL_TIMEOUT_MS;
+  const startTime = Date.now();
+  const deadline = startTime + GLOBAL_TIMEOUT_MS;
 
   const requestId =
     context?.awsRequestId ||
-    Math.random()
-      .toString(36)
-      .substring(2, 11);
+    Math.random().toString(36).substring(2, 11);
 
   console.log(
     `[REQ-${requestId}] Processing lead intelligence request.`
   );
 
   const headers = {
-  'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Content-Type': 'application/json'
-};
-
-if (event.httpMethod === 'OPTIONS') {
-  return {
-    statusCode: 200,
-    headers,
-    body: ''
+    'Access-Control-Allow-Origin': 'https://www.ryguylabs.com',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Content-Type': 'application/json'
   };
-}
 
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers,
+      body: ''
+    };
+  }
 
-    /* METHOD                                                                  */
-  
-  if (
-    event?.httpMethod !== 'POST'
-  ) {
+  if (event?.httpMethod !== 'POST') {
     return {
       statusCode: 405,
       headers,
       body: JSON.stringify({
-        error:
-          'Method Not Allowed'
+        error: 'Method Not Allowed'
       })
     };
   }
 
-
   try {
-    /* API KEY                                                               */
-
     if (!API_KEY) {
       console.error(
         `[REQ-${requestId}] Missing Gemini API environment variable.`
@@ -978,48 +963,46 @@ if (event.httpMethod === 'OPTIONS') {
         statusCode: 500,
         headers,
         body: JSON.stringify({
-          error:
-            'Service configuration error.'
+          error: 'Service configuration error.'
         })
       };
     }
 
+    /* INPUTS                                                               */
 
-    /* -------------------------------------------------------------------- */
-    /* INPUTS                                                                */
-    /* -------------------------------------------------------------------- */
+    const { 
+      industry, 
+      searchQuery, 
+      maxLeads, 
+      qualityLevel, 
+      targetVector,
+      salesPersona,
+      leadType,
+      targetServiceKeyword,
+      location,
+      financialUrgencyFilter,
+      socialCompetitiveFocus
+    } = JSON.parse(event.body || '{}');
 
-const { 
-  industry, 
-  searchQuery, 
-  maxLeads, 
-  qualityLevel, 
-  targetVector,
-  salesPersona,
-  leadType,
-  targetServiceKeyword,
-  location,
-  financialUrgencyFilter,
-  socialCompetitiveFocus
-} = JSON.parse(event.body || '{}');
-// Safeguard: Ensure a single target vector was supplied
-if (!targetVector || !targetVector.name || !targetVector.prompt) {
-  return {
-    statusCode: 400,
-    headers,
-    body: JSON.stringify({
-      error: 'Missing targetVector parameter in request body.',
-      leads: []
-    })
-  };
-}
+    // Extract vector safely whether passed as an object or a string
+    const activeVectorName = (typeof targetVector === 'object' && targetVector?.name) 
+      ? targetVector.name 
+      : (typeof targetVector === 'string' ? targetVector : 'PROCUREMENT');
 
-/* GEMINI CLIENT                                                         */
+    const activeVectorPrompt = (typeof targetVector === 'object' && targetVector?.prompt) 
+      ? targetVector.prompt 
+      : `Search specifically for active commercial signals matching ${targetServiceKeyword || searchQuery || 'services'}.`;
 
-const ai =
-  new GoogleGenAI({
-    apiKey: API_KEY
-  });
+    const activeTargetVector = {
+      name: activeVectorName,
+      prompt: activeVectorPrompt
+    };
+
+    /* GEMINI CLIENT                                                        */
+
+    const ai = new GoogleGenAI({
+      apiKey: API_KEY
+    });
 
 
 /* SYSTEM INSTRUCTION                                                    */
