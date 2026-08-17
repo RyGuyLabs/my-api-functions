@@ -9,7 +9,7 @@ const { enrichProspect } = require("../enrichment/enrichProspect");
  * @param {Object} params
  * @param {Object} [params.geoContext] - Geographic constraints (e.g., { states: ["FL"] })
  * @param {Object} [params.filters] - Query parameters (e.g., { industry: "Roofing" })
- * @returns {Promise<Object>} Unified pipeline output with leads payload and legacy root properties.
+ * @returns {Promise<Object>} Unified pipeline output with leads payload and primary root bindings.
  */
 async function runLeadPipeline({ geoContext, filters = {} }) {
   const provider = new SunbizProvider();
@@ -18,7 +18,7 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
   const queryInput = filters.industry || "Roofing Contractors";
   const searchGeo = geoContext || { states: ["FL"] };
 
-  // 1. Search candidate records from registry provider
+  // 1. Fetch raw registry candidate records
   const rawRecords = await provider.search(searchGeo, { industry: queryInput });
 
   if (!rawRecords || rawRecords.length === 0) {
@@ -31,7 +31,8 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       locationDisplay: "FL",
       score: null,
       priority: "UNQUALIFIED",
-      reasons: ["Provider query yielded 0 candidate records."],
+      evidenceSummary: ["Provider query yielded 0 candidate records."],
+      qualificationReasons: [],
       enrichment: null,
       evidenceLedger: null
     };
@@ -39,17 +40,16 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
 
   const leads = [];
 
-  // 2. Controlled processing loop to prevent enrichment rate-limit thundering herds
+  // 2. Sequential/Controlled processing loop
   for (const raw of rawRecords) {
     const normalized = provider.normalize ? provider.normalize(raw) : raw;
 
-    // Resolve specific registry document source URL
-    const recordDocNum = normalized.docNumber || raw.docNumber || raw.corId;
-    const sourceUrl = recordDocNum 
-      ? `https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResultDetail?inquiryType=EntityName&directionType=Initial&searchNameOrder=${encodeURIComponent(normalized.companyName)}&aggregateId=${recordDocNum}`
-      : "https://search.sunbiz.org/";
+    // Item 2: Delegate source reference resolution directly to the provider schema
+    const sourceUrl = typeof provider.getSourceReference === "function"
+      ? provider.getSourceReference(raw, normalized)
+      : (normalized.docNumber || raw.cor_number || raw.docNumber || "https://search.sunbiz.org/");
 
-    // Record observation in Evidence Ledger with dual-hash bounds
+    // Record observation in Evidence Ledger
     const evidenceEntry = ledger.recordObservation({
       providerName: provider.name || "SunbizProvider",
       rawPayload: raw,
@@ -58,10 +58,43 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       retrievedAt: new Date().toISOString()
     });
 
-    // Execute unified website & contact enrichment
-    const enrichment = await enrichProspect(normalized);
+    // Item 3: Enforce strict deterministic identity. No timestamp fallbacks.
+    if (!evidenceEntry || !evidenceEntry.inputSignalId) {
+      throw new Error(
+        `[PIPELINE INTEGRITY FAILURE] Evidence Ledger returned no inputSignalId for entity: ${normalized.companyName || 'Unknown Entity'}`
+      );
+    }
 
-    // Format location display string safely while preserving raw object
+    // Item 4: Fault-Tolerant Enrichment Sandbox
+    let enrichmentResult = {
+      data: { website: null, contacts: null },
+      status: "unattempted",
+      errors: []
+    };
+
+    try {
+      const enrichmentData = await enrichProspect(normalized);
+      enrichmentResult = {
+        data: enrichmentData,
+        status: (enrichmentData.website || enrichmentData.contacts) ? "full" : "partial",
+        errors: []
+      };
+    } catch (enrichError) {
+      console.error(
+        `[ENRICHMENT ERROR BOUNDARY] Non-fatal enrichment failure for ${normalized.companyName}:`,
+        enrichError.message
+      );
+      enrichmentResult = {
+        data: { website: null, contacts: null },
+        status: "failed",
+        errors: [{
+          stage: "enrichProspect",
+          message: enrichError.message
+        }]
+      };
+    }
+
+    // Format location display string safely while preserving raw structured object
     const location = normalized.location || {};
     let locationDisplay = "Florida";
 
@@ -74,30 +107,32 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     }
 
     leads.push({
-      prospectId: `prospect_${evidenceEntry.inputSignalId || Date.now()}`,
+      prospectId: `prospect_${evidenceEntry.inputSignalId}`,
       prospectName: normalized.companyName || normalized.name || "Active Prospect",
       location: location,
       locationDisplay: locationDisplay,
       entity: normalized,
-      enrichment: enrichment,
-      score: null, // Set to null until qualification engine weights are bound
+      enrichment: enrichmentResult,
+      score: null, // Set to null until qualification engine rules are applied
       priority: "UNQUALIFIED",
-      reasons: [
-        "Verified live corporate registration via Sunbiz.",
-        "Canonical ledger entry generated and hash-bound."
+      evidenceSummary: [
+        "Verified live corporate registration via official registry.",
+        "Canonical observation ledger entry generated and hash-bound."
       ],
+      qualificationReasons: [], // System reasons vs Commercial rules separated
       evidenceLedger: {
-        inputSignalId: evidenceEntry.inputSignalId || null,
+        inputSignalId: evidenceEntry.inputSignalId,
         sourceContentHash: evidenceEntry.sourceContentHash || evidenceEntry.contentHash || null,
         canonicalEntityHash: evidenceEntry.canonicalEntityHash || null,
-        signalRecordHash: evidenceEntry.signalRecordHash || null
+        signalRecordHash: evidenceEntry.signalRecordHash || null,
+        sourceUrl: sourceUrl
       }
     });
   }
 
   const primaryLead = leads[0];
 
-  // Return full lead collection alongside primary root bindings for single-card UI support
+  // Return full collection alongside primary root bindings for legacy/single-card UI compatibility
   return {
     status: "success",
     count: leads.length,
@@ -107,7 +142,8 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     locationDisplay: primaryLead.locationDisplay,
     score: primaryLead.score,
     priority: primaryLead.priority,
-    reasons: primaryLead.reasons,
+    evidenceSummary: primaryLead.evidenceSummary,
+    qualificationReasons: primaryLead.qualificationReasons,
     enrichment: primaryLead.enrichment,
     evidenceLedger: primaryLead.evidenceLedger
   };
