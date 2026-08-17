@@ -1,12 +1,9 @@
-export class BaseProvider {
+class BaseProvider {
   constructor(name, supportedGeos) {
     this.name = name;
-    this.supportedGeos = supportedGeos; // e.g. ["FL"]
+    this.supportedGeos = supportedGeos;
   }
 
-  /**
-   * Returns compliance, terms of use, and privacy boundaries
-   */
   getAccessPolicy() {
     return {
       sourceType: "official_public_registry",
@@ -16,24 +13,17 @@ export class BaseProvider {
     };
   }
 
-  /**
-   * Returns what fields this provider can and cannot populate
-   */
   getCapabilityProfile() {
     throw new Error("getCapabilityProfile() must be implemented by subclass");
   }
 
-  /**
-   * Search for raw records matching search parameters
-   */
   async search(geoContext, filters) {
     throw new Error("search() must be implemented by subclass");
   }
 
-  /**
-   * Normalize raw state payload into standardized prospect entity structure
-   */
   normalize(rawRecord) {
     throw new Error("normalize() must be implemented by subclass");
   }
 }
+
+module.exports = { BaseProvider };
