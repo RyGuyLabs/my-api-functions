@@ -679,7 +679,12 @@ Schema:
                 };
             }
         }
- catch (e) {
+
+        try {
+        const parsed = JSON.parse(rawText);
+        // ... handling R.E.A.D.Y. logic ...
+        return { statusCode: 200, ... };
+    } catch (e) {
         console.error("Failed to parse R.E.A.D.Y. enhancement JSON:", rawText);
         return {
             statusCode: 500,
