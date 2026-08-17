@@ -5,15 +5,20 @@ const { enrichProspect } = require("../enrichment/enrichProspect");
 /**
  * Core Lead Pipeline Execution Engine
  * Pure business logic called by both Firebase and Netlify adapters.
+ *
+ * @param {Object} params
+ * @param {Object} [params.geoContext] - Geographic constraints (e.g., { states: ["FL"] })
+ * @param {Object} [params.filters] - Query parameters (e.g., { industry: "Roofing" })
+ * @returns {Promise<Object>} Unified pipeline output with leads payload and legacy root properties.
  */
-async function runLeadPipeline({ geoContext, filters }) {
+async function runLeadPipeline({ geoContext, filters = {} }) {
   const provider = new SunbizProvider();
   const ledger = new EvidenceLedgerAdapter();
 
   const queryInput = filters.industry || "Roofing Contractors";
   const searchGeo = geoContext || { states: ["FL"] };
 
-  // 1. Search candidate records
+  // 1. Search candidate records from registry provider
   const rawRecords = await provider.search(searchGeo, { industry: queryInput });
 
   if (!rawRecords || rawRecords.length === 0) {
@@ -34,17 +39,17 @@ async function runLeadPipeline({ geoContext, filters }) {
 
   const leads = [];
 
-  // 2. Sequential processing to enforce controlled enrichment concurrency
+  // 2. Controlled processing loop to prevent enrichment rate-limit thundering herds
   for (const raw of rawRecords) {
     const normalized = provider.normalize ? provider.normalize(raw) : raw;
 
-    // Build specific record source URL if document number exists
+    // Resolve specific registry document source URL
     const recordDocNum = normalized.docNumber || raw.docNumber || raw.corId;
     const sourceUrl = recordDocNum 
       ? `https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResultDetail?inquiryType=EntityName&directionType=Initial&searchNameOrder=${encodeURIComponent(normalized.companyName)}&aggregateId=${recordDocNum}`
       : "https://search.sunbiz.org/";
 
-    // Record evidence ledger observation
+    // Record observation in Evidence Ledger with dual-hash bounds
     const evidenceEntry = ledger.recordObservation({
       providerName: provider.name || "SunbizProvider",
       rawPayload: raw,
@@ -53,10 +58,10 @@ async function runLeadPipeline({ geoContext, filters }) {
       retrievedAt: new Date().toISOString()
     });
 
-    // Run unified enrichment
+    // Execute unified website & contact enrichment
     const enrichment = await enrichProspect(normalized);
 
-    // Format location cleanly while preserving raw structured object
+    // Format location display string safely while preserving raw object
     const location = normalized.location || {};
     let locationDisplay = "Florida";
 
@@ -75,7 +80,7 @@ async function runLeadPipeline({ geoContext, filters }) {
       locationDisplay: locationDisplay,
       entity: normalized,
       enrichment: enrichment,
-      score: null, // Honest null until qualification engine is wired
+      score: null, // Set to null until qualification engine weights are bound
       priority: "UNQUALIFIED",
       reasons: [
         "Verified live corporate registration via Sunbiz.",
@@ -92,11 +97,11 @@ async function runLeadPipeline({ geoContext, filters }) {
 
   const primaryLead = leads[0];
 
+  // Return full lead collection alongside primary root bindings for single-card UI support
   return {
     status: "success",
     count: leads.length,
     leads: leads,
-    // Legacy single-item UI bindings maintain compatibility
     prospectName: primaryLead.prospectName,
     location: primaryLead.location,
     locationDisplay: primaryLead.locationDisplay,
