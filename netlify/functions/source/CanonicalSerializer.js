@@ -1,4 +1,4 @@
-export function canonicalize(obj) {
+function canonicalize(obj) {
   if (obj === null || typeof obj !== "object") {
     return obj;
   }
@@ -12,7 +12,6 @@ export function canonicalize(obj) {
 
   for (const key of sortedKeys) {
     const value = obj[key];
-    // Exclude undefined to maintain canonical cleanliness
     if (value !== undefined) {
       canonicalObj[key] = canonicalize(value);
     }
@@ -21,6 +20,11 @@ export function canonicalize(obj) {
   return canonicalObj;
 }
 
-export function toCanonicalString(obj) {
+function toCanonicalString(obj) {
   return JSON.stringify(canonicalize(obj));
 }
+
+module.exports = {
+  canonicalize,
+  toCanonicalString
+};
