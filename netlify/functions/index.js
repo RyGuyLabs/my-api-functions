@@ -138,6 +138,10 @@ exports.processLeadPipeline = functions.https.onCall(async (data, context) => {
   }
 });
 
+// ============================================================================
+// NETLIFY NATIVE SERVERLESS HANDLER (Resolves CORS preflight for fetch requests)
+// ============================================================================
+
 exports.handler = async (event, context) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -146,7 +150,7 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json'
   };
 
-  // 1. Preflight check
+  // 1. Handle HTTP OPTIONS preflight request immediately
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
   }
@@ -157,36 +161,29 @@ exports.handler = async (event, context) => {
     const geoContext = body.geoContext || { states: ["FL"] };
     const filters = body.filters || { industry: queryInput };
 
-    console.log("Pipeline initiated with query:", queryInput);
-
     const { SunbizProvider } = require("./providers/SunbizProvider");
     const { EvidenceLedgerAdapter } = require("./ledger/EvidenceLedgerAdapter");
 
     const provider = new SunbizProvider();
     const ledger = new EvidenceLedgerAdapter();
 
-    // Execute direct live search against provider
+    // 2. Fetch raw registry array from provider
     const rawRecords = await provider.search(geoContext, filters);
-    console.log(`SunbizProvider returned ${rawRecords ? rawRecords.length : 0} records.`);
 
-    // 2. Return live pipeline results if records exist
     if (rawRecords && rawRecords.length > 0) {
-      const firstRaw = rawRecords[0];
-      const normalized = provider.normalize ? provider.normalize(firstRaw) : firstRaw;
+      // Map every raw record through normalization and ledger observation
+      const leads = rawRecords.map((raw) => {
+        const normalized = provider.normalize ? provider.normalize(raw) : raw;
+        const evidenceEntry = ledger.recordObservation({
+          providerName: provider.name || "SunbizProvider",
+          rawPayload: raw,
+          normalizedEntity: normalized,
+          sourceUrl: "https://search.sunbiz.org/",
+          retrievedAt: new Date().toISOString()
+        });
 
-      const evidenceEntry = ledger.recordObservation({
-        providerName: provider.name || "SunbizProvider",
-        rawPayload: firstRaw,
-        normalizedEntity: normalized,
-        sourceUrl: "https://search.sunbiz.org/",
-        retrievedAt: new Date().toISOString()
-      });
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          prospectName: normalized.companyName || normalized.name || "Live Prospect",
+        return {
+          prospectName: normalized.companyName || normalized.name || "Active Prospect",
           location: normalized.location || normalized.city || "Florida",
           score: 95,
           priority: "HIGH PRIORITY",
@@ -198,37 +195,53 @@ exports.handler = async (event, context) => {
             inputSignalId: evidenceEntry.inputSignalId,
             sourceContentHash: evidenceEntry.sourceContentHash,
             canonicalEntityHash: evidenceEntry.canonicalEntityHash
-          },
-          rawCount: rawRecords.length
+          }
+        };
+      });
+
+      // Return complete array payload + fallback properties for legacy single-item consumers
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          status: "success",
+          count: leads.length,
+          leads: leads,
+          // Primary record defaults for single-card UI bindings
+          prospectName: leads[0].prospectName,
+          location: leads[0].location,
+          score: leads[0].score,
+          priority: leads[0].priority,
+          reasons: leads[0].reasons,
+          evidenceLedger: leads[0].evidenceLedger
         })
       };
     }
 
-    // 3. Fallback when provider returns 0 records (no generic hardcode)
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
+        status: "empty",
+        count: 0,
+        leads: [],
         prospectName: `No live registry records found for "${queryInput}"`,
         location: "FL",
         score: 0,
         priority: "LOW PRIORITY",
-        reasons: ["Provider query yielded 0 candidate records from search endpoint."],
+        reasons: ["Provider query yielded 0 candidate records."],
         evidenceLedger: null
       })
     };
 
   } catch (error) {
     console.error("Live Pipeline Failure inside Netlify Handler:", error);
-    
-    // Return explicit error details to the browser network response
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         error: "Pipeline Execution Exception",
-        message: error.message,
-        stack: error.stack
+        message: error.message
       })
     };
   }
