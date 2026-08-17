@@ -8,8 +8,8 @@ const API_KEY =
 
 const ALLOWED_ORIGIN = 'https://www.ryguylabs.com';
 
-const GLOBAL_TIMEOUT_MS = 45000;
-const RESPONSE_RESERVE_MS = 2000;
+const GLOBAL_TIMEOUT_MS = 8000; 
+const RESPONSE_RESERVE_MS = 1500;
 const MAX_LEADS_ALLOWED = 8;
 
 const INTERNAL_LEAD_SCHEMA = {
@@ -1435,9 +1435,7 @@ console.log(
 );
 
 
-/* -------------------------------------------------------------------- */
 /* MODEL TIME BUDGET                                                     */
-/* -------------------------------------------------------------------- */
 
 const availableForModel =
   remainingTime(deadline) -
@@ -1638,14 +1636,17 @@ OUTPUT ONLY VALID JSON:
   /* EXECUTION, SYNTHESIS & VALIDATION PIPELINE                            */
 
   // DEV THROTTLE TOGGLE:
-  // Change DEV_MODE to false (or remove .slice(0, 1)) when going to production.
+  // Change DEV_MODE to false when going to production.
   const DEV_MODE = true; 
 
   const baseVectors = (Array.isArray(queryVectors) && queryVectors.length > 0)
     ? queryVectors 
     : [targetVector];
 
-  const vectorsToRun = DEV_MODE ? baseVectors.slice(0, 1) : baseVectors;
+  // In DEV_MODE, pick 1 primary vector, falling back to targetVector if needed
+  const vectorsToRun = DEV_MODE 
+    ? [baseVectors[0] || targetVector] 
+    : baseVectors;
 
   console.log(
     `[REQ-${requestId}] Running ${vectorsToRun.length} search vector(s) ` +
