@@ -1,8 +1,5 @@
-import { 
-  calculateCanonicalContentHash, 
-  validatePhase1Signal 
-} from "../core/pipeline-implementation.js";
-import { toCanonicalString } from "../core/CanonicalSerializer.js";
+import { toCanonicalString } from "../CanonicalSerializer.js";
+import { PipelineContract } from "../pipeline-implementation.ts";
 
 export class EvidenceLedgerAdapter {
   constructor() {
