@@ -138,12 +138,7 @@ exports.processLeadPipeline = functions.https.onCall(async (data, context) => {
   }
 });
 
-// ============================================================================
-// NETLIFY NATIVE SERVERLESS HANDLER (Resolves CORS preflight for fetch requests)
-// ============================================================================
-
 exports.handler = async (event, context) => {
-  // CORS Headers allowing requests from Squarespace
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -151,84 +146,90 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json'
   };
 
-  // 1. Handle HTTP OPTIONS preflight request immediately
+  // 1. Preflight check
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: headers,
-      body: ''
-    };
+    return { statusCode: 200, headers, body: '' };
   }
 
   try {
     const body = event.body ? JSON.parse(event.body) : {};
     const queryInput = body.query || "Roofing Contractors";
+    const geoContext = body.geoContext || { states: ["FL"] };
+    const filters = body.filters || { industry: queryInput };
 
-    let rawRecords = [];
-    let providerName = "SunbizProvider";
-    
-    // Attempt pipeline modules execution
-    try {
-      const { SunbizProvider } = require("./providers/SunbizProvider");
-      const provider = new SunbizProvider();
-      providerName = provider.name || providerName;
-      rawRecords = await provider.search({ states: ["FL"] }, { industry: queryInput });
-    } catch (e) {
-      console.log("Module pre-fetch fallback active:", e.message);
-    }
+    console.log("Pipeline initiated with query:", queryInput);
 
-    const firstRaw = (rawRecords && rawRecords.length > 0) ? rawRecords[0] : {
-      companyName: "Apex Commercial Roofing LLC",
-      location: "Tampa, FL"
-    };
+    const { SunbizProvider } = require("./providers/SunbizProvider");
+    const { EvidenceLedgerAdapter } = require("./ledger/EvidenceLedgerAdapter");
 
-    let evidenceEntry = {
-      inputSignalId: `sig_${Date.now()}_a8f2`,
-      sourceContentHash: "8f3a19e04c56b27d890a214e9f78231c5d85834d82f719",
-      canonicalEntityHash: "c41e8902b15fa2901389e7821094baef2104820d"
-    };
+    const provider = new SunbizProvider();
+    const ledger = new EvidenceLedgerAdapter();
 
-    try {
-      const { EvidenceLedgerAdapter } = require("./ledger/EvidenceLedgerAdapter");
-      const ledger = new EvidenceLedgerAdapter();
-      evidenceEntry = ledger.recordObservation({
-        providerName: providerName,
+    // Execute direct live search against provider
+    const rawRecords = await provider.search(geoContext, filters);
+    console.log(`SunbizProvider returned ${rawRecords ? rawRecords.length : 0} records.`);
+
+    // 2. Return live pipeline results if records exist
+    if (rawRecords && rawRecords.length > 0) {
+      const firstRaw = rawRecords[0];
+      const normalized = provider.normalize ? provider.normalize(firstRaw) : firstRaw;
+
+      const evidenceEntry = ledger.recordObservation({
+        providerName: provider.name || "SunbizProvider",
         rawPayload: firstRaw,
-        normalizedEntity: firstRaw,
+        normalizedEntity: normalized,
         sourceUrl: "https://search.sunbiz.org/",
         retrievedAt: new Date().toISOString()
       });
-    } catch (e) {
-      console.log("Ledger adapter fallback active:", e.message);
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          prospectName: normalized.companyName || normalized.name || "Live Prospect",
+          location: normalized.location || normalized.city || "Florida",
+          score: 95,
+          priority: "HIGH PRIORITY",
+          reasons: [
+            "Verified live corporate registration via Sunbiz.",
+            "Canonical ledger entry generated and hash-bound."
+          ],
+          evidenceLedger: {
+            inputSignalId: evidenceEntry.inputSignalId,
+            sourceContentHash: evidenceEntry.sourceContentHash,
+            canonicalEntityHash: evidenceEntry.canonicalEntityHash
+          },
+          rawCount: rawRecords.length
+        })
+      };
     }
 
-    // 2. Return payload with explicit CORS headers attached
+    // 3. Fallback when provider returns 0 records (no generic hardcode)
     return {
       statusCode: 200,
-      headers: headers,
+      headers,
       body: JSON.stringify({
-        prospectName: firstRaw.companyName || "Apex Commercial Roofing LLC",
-        location: firstRaw.location || "Tampa, FL",
-        score: 91,
-        priority: "HIGH PRIORITY",
-        reasons: [
-          "Verified active corporate registration on Sunbiz with zero license suspensions.",
-          "Website inspection confirmed active lead quote form with no automated scheduling.",
-          "14 distinct signal attributes verified and bound to canonical ledger entry."
-        ],
-        evidenceLedger: {
-          inputSignalId: evidenceEntry.inputSignalId,
-          sourceContentHash: evidenceEntry.sourceContentHash,
-          canonicalEntityHash: evidenceEntry.canonicalEntityHash
-        }
+        prospectName: `No live registry records found for "${queryInput}"`,
+        location: "FL",
+        score: 0,
+        priority: "LOW PRIORITY",
+        reasons: ["Provider query yielded 0 candidate records from search endpoint."],
+        evidenceLedger: null
       })
     };
+
   } catch (error) {
-    console.error("Netlify Handler Error:", error);
+    console.error("Live Pipeline Failure inside Netlify Handler:", error);
+    
+    // Return explicit error details to the browser network response
     return {
       statusCode: 500,
-      headers: headers,
-      body: JSON.stringify({ error: error.message })
+      headers,
+      body: JSON.stringify({
+        error: "Pipeline Execution Exception",
+        message: error.message,
+        stack: error.stack
+      })
     };
   }
 };
