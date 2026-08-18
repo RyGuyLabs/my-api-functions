@@ -485,28 +485,31 @@ async function runLeadPipeline({
       );
 
       enrichmentResult = {
+  data: {
+    website: null,
+    businessPhone: null,
+    emails: [],
+    phones: [],
+    digitalSignals: [],
+    contacts: [],
+    status: "failed",
+    errors: [
+      {
+        stage: "enrichProspect",
+        message: enrichError.message
+      }
+    ]
+  },
 
-        data: {
-          website: null,
-          contacts: null,
-          phones: [],
-          emails: [],
-          digitalSignals: []
-        },
+  status: "failed",
 
-        status:
-          "failed",
-
-        errors: [
-          {
-            stage:
-              "enrichProspect",
-
-            message:
-              enrichError.message
-          }
-        ]
-      };
+  errors: [
+    {
+      stage: "enrichProspect",
+      message: enrichError.message
+    }
+  ]
+};
     }
 
     // ==========================================================================
