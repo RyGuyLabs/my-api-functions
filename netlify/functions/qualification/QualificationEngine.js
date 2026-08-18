@@ -3,16 +3,41 @@ class QualificationEngine {
   /**
    * Evaluate a prospect using deterministic evidence.
    *
+   * IMPORTANT:
+   * This engine does not use an LLM.
+   * It does not invent facts.
+   * It does not treat missing enrichment as negative proof.
+   *
    * @param {Object} entity
    * @param {Object} enrichmentData
    * @param {Object} evidenceLedger
    * @returns {Object}
    */
-  static evaluate(entity = {}, enrichmentData = {}, evidenceLedger = null) {
+  static evaluate(
+    entity = {},
+    enrichmentData = {},
+    evidenceLedger = null
+  ) {
 
     const reasons = [];
     const signals = [];
     const evidence = [];
+
+    /*
+     * ------------------------------------------------------------------------
+     * DETERMINISTIC SCORING CONFIGURATION
+     * ------------------------------------------------------------------------
+     *
+     * Base score = 50
+     *
+     * Maximum possible:
+     * 50 + 20 + 10 + 10 + 10 + 10 = 110
+     *
+     * Final score is intentionally capped at 100.
+     *
+     * These weights represent qualification signals only.
+     * They do NOT represent business value, revenue, or likelihood of purchase.
+     */
 
     const weights = {
       activeRegistration: 20,
@@ -22,10 +47,21 @@ class QualificationEngine {
       businessEmail: 10
     };
 
-    const configVersion = "qualification-v1.0";
+    const configVersion = "qualification-v1.1";
 
-    let score = 50;
+    const baseScore = 50;
 
+    let score = baseScore;
+
+
+    /*
+     * ------------------------------------------------------------------------
+     * 1. ACTIVE REGISTRATION
+     * ------------------------------------------------------------------------
+     *
+     * This is the strongest authoritative signal because it originates from
+     * the registry provider.
+     */
 
     if (entity.status === "ACTIVE") {
 
@@ -33,7 +69,11 @@ class QualificationEngine {
 
       const reason = {
         code: "ACTIVE_REGISTRATION",
-        message: `Verified ACTIVE state registration in ${entity.jurisdiction || "US"} (${entity.registrationId || "Registry Record"}).`,
+
+        message:
+          `Verified ACTIVE state registration in ${entity.jurisdiction || "US"} ` +
+          `(${entity.registrationId || "Registry Record"}).`,
+
         source: "registry"
       };
 
@@ -44,15 +84,19 @@ class QualificationEngine {
 
       signals.push({
         code: "REGISTRATION_NOT_ACTIVE",
-        message: "Entity status is inactive or could not be verified."
-      });
 
+        message:
+          "Entity status is inactive or could not be verified from the supplied registry evidence."
+      });
     }
+
 
     /*
      * ------------------------------------------------------------------------
-     * LOCATION VERIFICATION
+     * 2. LOCATION VERIFICATION
      * ------------------------------------------------------------------------
+     *
+     * Location is only scored when a structured city is actually present.
      */
 
     if (
@@ -66,11 +110,16 @@ class QualificationEngine {
       const locationText = [
         entity.location.city,
         entity.location.state
-      ].filter(Boolean).join(", ");
+      ]
+        .filter(Boolean)
+        .join(", ");
 
       const reason = {
         code: "VERIFIED_LOCATION",
-        message: `Verified principal market: ${locationText}.`,
+
+        message:
+          `Verified principal market: ${locationText}.`,
+
         source: "registry"
       };
 
@@ -81,84 +130,183 @@ class QualificationEngine {
 
       signals.push({
         code: "LOCATION_INCOMPLETE",
-        message: "Principal market could not be completely verified."
-      });
 
+        message:
+          "A complete principal market could not be verified from the supplied registry evidence."
+      });
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * DATA SHAPE NORMALIZATION
-     * Safely resolve nested website enrichment parameters
-     * ------------------------------------------------------------------------
-     */
-
-    const websiteObj = (enrichmentData && typeof enrichmentData.website === "object" && enrichmentData.website !== null) 
-      ? enrichmentData.website 
-      : {};
-
-    const websiteUrl = typeof enrichmentData.website === "string"
-      ? enrichmentData.website
-      : websiteObj.url || null;
 
     /*
      * ------------------------------------------------------------------------
-     * WEBSITE ANALYSIS
+     * 3. ENRICHMENT DATA NORMALIZATION
      * ------------------------------------------------------------------------
+     *
+     * Supports both:
+     *
+     * enrichmentData.website = "https://example.com"
+     *
+     * and:
+     *
+     * enrichmentData.website = {
+     *   url: "https://example.com"
+     * }
      */
 
-    const websiteExists = typeof websiteUrl === "string" && websiteUrl.trim().length > 0;
+    const websiteObj =
+      (
+        enrichmentData &&
+        typeof enrichmentData.website === "object" &&
+        enrichmentData.website !== null
+      )
+        ? enrichmentData.website
+        : {};
+
+    const websiteUrl =
+      typeof enrichmentData.website === "string"
+        ? enrichmentData.website.trim()
+        : typeof websiteObj.url === "string"
+          ? websiteObj.url.trim()
+          : null;
+
+
+    /*
+     * ------------------------------------------------------------------------
+     * 4. WEBSITE OBSERVATION
+     * ------------------------------------------------------------------------
+     *
+     * IMPORTANT:
+     *
+     * A discovered URL is NOT automatically proof that the website was
+     * reachable or successfully retrieved.
+     *
+     * Therefore:
+     * - "WEBSITE_DISCOVERED" is an observation.
+     * - The score is only awarded when the enrichment layer indicates that
+     *   the website was successfully processed.
+     */
+
+    const websiteExists =
+      typeof websiteUrl === "string" &&
+      websiteUrl.length > 0;
+
+    const websiteReconSuccess =
+      enrichmentData?.enrichmentStatus === "complete" ||
+      enrichmentData?.providerResults?.websiteRecon?.status === "success" ||
+      websiteObj?.reconStatus === "success" ||
+      websiteObj?.status === "success";
 
     if (websiteExists) {
 
-      score += weights.reachableWebsite;
-
       const reason = {
         code: "WEBSITE_DISCOVERED",
-        message: `Public website discovered: ${websiteUrl}`,
+
+        message:
+          `Public website identified: ${websiteUrl}`,
+
         source: "website_recon"
       };
 
       reasons.push(reason.message);
       evidence.push(reason);
 
+      /*
+       * Only award the website score when the enrichment evidence indicates
+       * successful website reconnaissance.
+       */
+
+      if (websiteReconSuccess) {
+
+        score += weights.reachableWebsite;
+
+        evidence.push({
+          code: "WEBSITE_RECON_SUCCESS",
+          message:
+            `Website reconnaissance successfully processed ${websiteUrl}.`,
+          source: "website_recon"
+        });
+
+      } else {
+
+        signals.push({
+          code: "WEBSITE_NOT_CONFIRMED_REACHABLE",
+
+          message:
+            "A public website URL was identified, but successful website retrieval was not established by the supplied enrichment evidence."
+        });
+      }
+
     } else {
 
       signals.push({
-        code: "MISSING_WEBSITE",
-        message: "No public business website was identified."
-      });
+        code: "NO_PUBLIC_WEBSITE_IDENTIFIED",
 
+        message:
+          "No public business website was identified in the supplied enrichment evidence."
+      });
     }
+
 
     /*
      * ------------------------------------------------------------------------
-     * PHONE CONTACTABILITY
+     * 5. PHONE CONTACTABILITY
      * ------------------------------------------------------------------------
+     *
+     * These are publicly observed contact values.
+     * They are NOT treated as proof of ownership or guaranteed validity.
      */
 
-    const rawPhones = Array.isArray(enrichmentData.phones)
-      ? enrichmentData.phones
-      : Array.isArray(websiteObj.phones)
-        ? websiteObj.phones
-        : [];
+    const rawPhones =
+      Array.isArray(enrichmentData.phones)
+        ? enrichmentData.phones
+        : Array.isArray(websiteObj.phones)
+          ? websiteObj.phones
+          : [];
 
-    const validPhones = rawPhones.filter(
-      phone => phone && typeof (typeof phone === "string" ? phone : phone.value) === "string" && (typeof phone === "string" ? phone : phone.value).trim()
-    );
+    const validPhones =
+      rawPhones.filter(phone => {
+
+        const value =
+          typeof phone === "string"
+            ? phone
+            : phone?.value;
+
+        return (
+          typeof value === "string" &&
+          value.trim().length > 0
+        );
+      });
+
 
     if (validPhones.length > 0) {
 
       score += weights.businessPhone;
 
-      const phone = validPhones[0];
-      const phoneValue = typeof phone === "string" ? phone : phone.value;
-      const phoneSource = typeof phone === "object" && phone.source ? phone.source : "website_recon";
+      const phone =
+        validPhones[0];
+
+      const phoneValue =
+        typeof phone === "string"
+          ? phone
+          : phone.value;
+
+      const phoneSource =
+        typeof phone === "object"
+          ? (
+              phone.sourceType ||
+              phone.source ||
+              "public_web_observation"
+            )
+          : "public_web_observation";
 
       const reason = {
         code: "PHONE_DISCOVERED",
-        message: `Business phone number discovered: ${phoneValue}`,
-        source: phoneSource
+
+        message:
+          `Publicly observed business phone number: ${phoneValue}`,
+
+        source:
+          phoneSource
       };
 
       reasons.push(reason.message);
@@ -167,40 +315,73 @@ class QualificationEngine {
     } else {
 
       signals.push({
-        code: "NO_PHONE_FOUND",
-        message: "No publicly discoverable business phone number was identified."
-      });
+        code: "NO_PUBLIC_PHONE_FOUND",
 
+        message:
+          "No publicly discoverable business phone number was identified."
+      });
     }
+
 
     /*
      * ------------------------------------------------------------------------
-     * EMAIL CONTACTABILITY
+     * 6. EMAIL CONTACTABILITY
      * ------------------------------------------------------------------------
+     *
+     * Same zero-trust principle as phone numbers.
      */
 
-    const rawEmails = Array.isArray(enrichmentData.emails)
-      ? enrichmentData.emails
-      : Array.isArray(websiteObj.emails)
-        ? websiteObj.emails
-        : [];
+    const rawEmails =
+      Array.isArray(enrichmentData.emails)
+        ? enrichmentData.emails
+        : Array.isArray(websiteObj.emails)
+          ? websiteObj.emails
+          : [];
 
-    const validEmails = rawEmails.filter(
-      email => email && typeof (typeof email === "string" ? email : email.value) === "string" && (typeof email === "string" ? email : email.value).trim()
-    );
+    const validEmails =
+      rawEmails.filter(email => {
+
+        const value =
+          typeof email === "string"
+            ? email
+            : email?.value;
+
+        return (
+          typeof value === "string" &&
+          value.trim().length > 0
+        );
+      });
+
 
     if (validEmails.length > 0) {
 
       score += weights.businessEmail;
 
-      const email = validEmails[0];
-      const emailValue = typeof email === "string" ? email : email.value;
-      const emailSource = typeof email === "object" && email.source ? email.source : "website_recon";
+      const email =
+        validEmails[0];
+
+      const emailValue =
+        typeof email === "string"
+          ? email
+          : email.value;
+
+      const emailSource =
+        typeof email === "object"
+          ? (
+              email.sourceType ||
+              email.source ||
+              "public_web_observation"
+            )
+          : "public_web_observation";
 
       const reason = {
         code: "EMAIL_DISCOVERED",
-        message: `Business email address discovered: ${emailValue}`,
-        source: emailSource
+
+        message:
+          `Publicly observed business email address: ${emailValue}`,
+
+        source:
+          emailSource
       };
 
       reasons.push(reason.message);
@@ -209,23 +390,29 @@ class QualificationEngine {
     } else {
 
       signals.push({
-        code: "NO_EMAIL_FOUND",
-        message: "No publicly discoverable business email address was identified."
-      });
+        code: "NO_PUBLIC_EMAIL_FOUND",
 
+        message:
+          "No publicly discoverable business email address was identified."
+      });
     }
+
 
     /*
      * ------------------------------------------------------------------------
-     * DIGITAL SIGNALS
+     * 7. DIGITAL SIGNALS
      * ------------------------------------------------------------------------
+     *
+     * Digital signals are observations.
+     * They do not independently increase the qualification score.
      */
 
-    const rawSignals = Array.isArray(enrichmentData.digitalSignals)
-      ? enrichmentData.digitalSignals
-      : Array.isArray(websiteObj.digitalSignals)
-        ? websiteObj.digitalSignals
-        : null;
+    const rawSignals =
+      Array.isArray(enrichmentData.digitalSignals)
+        ? enrichmentData.digitalSignals
+        : Array.isArray(websiteObj.digitalSignals)
+          ? websiteObj.digitalSignals
+          : [];
 
     if (Array.isArray(rawSignals)) {
 
@@ -235,62 +422,97 @@ class QualificationEngine {
 
           signals.push({
             code: "DIGITAL_SIGNAL",
-            message: String(signal)
+
+            message:
+              typeof signal === "object"
+                ? (
+                    signal.message ||
+                    signal.description ||
+                    JSON.stringify(signal)
+                  )
+                : String(signal)
           });
-
         });
-
     }
 
-
-
-    const finalScore = Math.min(
-      Math.max(score, 0),
-      100
-    );
 
     /*
      * ------------------------------------------------------------------------
-     * PRIORITY
+     * 8. FINAL SCORE
      * ------------------------------------------------------------------------
      */
 
-    let priority = "STANDARD";
+    const finalScore =
+      Math.min(
+        Math.max(
+          score,
+          0
+        ),
+        100
+      );
+
+
+    /*
+     * ------------------------------------------------------------------------
+     * 9. PRIORITY
+     * ------------------------------------------------------------------------
+     */
+
+    let priority =
+      "STANDARD";
 
     if (finalScore >= 85) {
-      priority = "HIGH PRIORITY";
+
+      priority =
+        "HIGH PRIORITY";
+
     } else if (finalScore >= 70) {
-      priority = "MEDIUM PRIORITY";
+
+      priority =
+        "MEDIUM PRIORITY";
     }
 
-   
+
+    /*
+     * ------------------------------------------------------------------------
+     * 10. RECOMMENDED ACTION
+     * ------------------------------------------------------------------------
+     *
+     * Recommendations are derived from observable evidence.
+     * They are not claims about the prospect's internal business condition.
+     */
+
     let recommendedAction =
       "Review available evidence and initiate the most appropriate outreach channel.";
 
     if (
       validEmails.length > 0 &&
-      rawSignals?.length > 0
+      rawSignals.length > 0
     ) {
 
       recommendedAction =
-        "Initiate email outreach using the observed digital signals as the conversation trigger.";
-
-    } else if (validEmails.length > 0) {
-
-      recommendedAction =
-        "Initiate business email outreach using the verified public contact channel.";
-
-    } else if (validPhones.length > 0) {
-
-      recommendedAction =
-        "Initiate telephone outreach using the publicly discovered business number.";
+        "Initiate email outreach using the publicly observed contact channel and relevant digital observations as the conversation trigger.";
 
     } else if (
-      signals.some(signal => signal.code === "MISSING_WEBSITE")
+      validEmails.length > 0
     ) {
 
       recommendedAction =
-        "Investigate the business through additional public sources before proposing a digital-presence solution.";
+        "Initiate business email outreach using the publicly observed contact channel.";
+
+    } else if (
+      validPhones.length > 0
+    ) {
+
+      recommendedAction =
+        "Initiate telephone outreach using the publicly observed business number.";
+
+    } else if (
+      websiteExists
+    ) {
+
+      recommendedAction =
+        "Review the identified public website and perform additional evidence-based enrichment before initiating outreach.";
 
     } else {
 
@@ -298,42 +520,68 @@ class QualificationEngine {
         "Perform additional public-source enrichment before initiating outreach.";
     }
 
-  
+
+    /*
+     * ------------------------------------------------------------------------
+     * 11. RETURN CONTRACT
+     * ------------------------------------------------------------------------
+     */
 
     return {
-      qualificationScore: finalScore,
+
+      qualificationScore:
+        finalScore,
+
       priority,
 
-      qualificationReasons: reasons,
+      qualificationReasons:
+        reasons,
 
-      salesSignals: signals,
+      salesSignals:
+        signals,
 
       evidence,
 
       recommendedAction,
 
       scoring: {
+
         configVersion,
-        baseScore: 50,
-        appliedWeights: weights,
+
+        baseScore,
+
+        appliedWeights:
+          weights,
+
         finalScore
       },
 
-      evidenceReference: evidenceLedger
-        ? {
-            inputSignalId: evidenceLedger.inputSignalId || null,
-            contentHash:
-              evidenceLedger.sourceContentHash ||
-              evidenceLedger.contentHash ||
-              null,
-            signalRecordHash:
-              evidenceLedger.signalRecordHash || null
-          }
-        : null,
+      evidenceReference:
+        evidenceLedger
+          ? {
 
-      evaluatedAt: new Date().toISOString()
+              inputSignalId:
+                evidenceLedger.inputSignalId ||
+                null,
+
+              contentHash:
+                evidenceLedger.sourceContentHash ||
+                evidenceLedger.contentHash ||
+                null,
+
+              signalRecordHash:
+                evidenceLedger.signalRecordHash ||
+                null
+            }
+
+          : null,
+
+      evaluatedAt:
+        new Date().toISOString()
     };
   }
 }
 
-module.exports = { QualificationEngine };
+module.exports = {
+  QualificationEngine
+};
