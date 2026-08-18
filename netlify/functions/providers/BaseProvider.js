@@ -1,28 +1,36 @@
+/**
+ * BaseProvider
+ * Standard Interface for All Corporate Registry Providers.
+ */
 class BaseProvider {
-  constructor(name, supportedGeos) {
+  constructor(name, supportedGeos = []) {
     this.name = name;
     this.supportedGeos = supportedGeos;
   }
 
-  getAccessPolicy() {
+  getCapabilityProfile() {
     return {
-      sourceType: "official_public_registry",
-      permittedUse: "commercial_lead_generation",
-      attributionRequired: false,
-      restrictions: ["no_bulk_resale_raw_pii"],
+      provider: this.name,
+      geography: this.supportedGeos,
+      capabilities: [],
+      limitations: []
     };
   }
 
-  getCapabilityProfile() {
-    throw new Error("getCapabilityProfile() must be implemented by subclass");
+  async search(geoContext, filters) {
+    throw new Error(`[BaseProvider] search() not implemented in ${this.name}`);
   }
 
-  async search(geoContext, filters) {
-    throw new Error("search() must be implemented by subclass");
+  async verifyEntity(candidate) {
+    throw new Error(`[BaseProvider] verifyEntity() not implemented in ${this.name}`);
   }
 
   normalize(rawRecord) {
-    throw new Error("normalize() must be implemented by subclass");
+    throw new Error(`[BaseProvider] normalize() not implemented in ${this.name}`);
+  }
+
+  getSourceReference(raw, normalized) {
+    throw new Error(`[BaseProvider] getSourceReference() not implemented in ${this.name}`);
   }
 }
 
