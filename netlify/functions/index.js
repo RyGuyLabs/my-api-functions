@@ -2,34 +2,13 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 
-// ============================================================================
-// CORE PIPELINE
-// ============================================================================
-//
-// IMPORTANT:
-// index.js is intentionally a TRANSPORT / SECURITY layer only.
-//
-// All discovery, Sunbiz verification, enrichment, qualification,
-// canonicalization, and evidence-ledger processing belongs inside:
-//
-//     pipeline/runLeadPipeline.js
-//
-// Firebase and Netlify therefore execute the exact same business pipeline.
-// ============================================================================
-
 const { runLeadPipeline } = require("./pipeline/runLeadPipeline.js");
 
-// ============================================================================
-// FIREBASE ADMIN INITIALIZATION
-// ============================================================================
-
 if (!admin.apps.length) {
-  admin.initializeApp();
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault()
+  });
 }
-
-// ============================================================================
-// PRODUCTION CORS CONFIGURATION
-// ============================================================================
 
 const ALLOWED_ORIGINS = [
   "https://www.ryguylabs.com",
@@ -771,9 +750,6 @@ exports.handler =
         };
       }
 
-      // ----------------------------------------------------------------------
-      // AUTHENTICATION SUCCESS
-      // ----------------------------------------------------------------------
 
       const uid =
         decodedToken.uid;
@@ -786,9 +762,6 @@ exports.handler =
         }
       );
 
-      // ----------------------------------------------------------------------
-      // PIPELINE EXECUTION
-      // ----------------------------------------------------------------------
 
       const rawQuery =
         body.query ||
@@ -839,14 +812,7 @@ exports.handler =
 
     } catch (error) {
 
-      // ----------------------------------------------------------------------
-      // INTERNAL ERROR
-      // ----------------------------------------------------------------------
-      //
-      // Detailed exception information remains server-side.
-      // The client receives only the requestId.
-      // ----------------------------------------------------------------------
-
+     
       console.error(
         "[NETLIFY PIPELINE FAILURE]",
         {
