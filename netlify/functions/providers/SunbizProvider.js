@@ -2,80 +2,303 @@ const { BaseProvider } = require("./BaseProvider.js");
 
 /**
  * SunbizProvider
- * Authoritative Provider for Florida Department of State Division of Corporations.
- * Strictly extracts real public observations. Does NOT fabricate records.
+ *
+ * Authoritative Provider:
+ * Florida Department of State
+ * Division of Corporations / Sunbiz
+ *
+ * RESPONSIBILITY:
+ * - Discover Florida corporate registration records.
+ * - Extract only observations actually present in Sunbiz responses.
+ * - Preserve source URLs and retrieval timestamps.
+ *
+ * DOES NOT:
+ * - Invent contact information.
+ * - Infer a company's location from the user's search location.
+ * - Assign sales qualification scores.
+ * - Determine whether a company is a good prospect.
+ * - Perform website/contact enrichment.
  */
 class SunbizProvider extends BaseProvider {
   constructor() {
     super("SunbizProvider", ["FL"]);
+
+    this.baseUrl =
+      "https://search.sunbiz.org";
+
+    this.searchPath =
+      "/Inquiry/CorporationSearch/ByName";
+
+    this.defaultLimit = 10;
+    this.maxLimit = 50;
+    this.timeoutMs = 8000;
   }
 
+  /**
+   * Describe the provider's actual capabilities.
+   */
   getCapabilityProfile() {
     return {
       provider: this.name,
+
       geography: this.supportedGeos,
-      capabilities: ["legalName", "registrationId", "status", "principalAddress", "registeredAgent"],
-      limitations: ["no_direct_email", "no_direct_phone", "rate_limited_registry_endpoint"]
+
+      authority:
+        "Florida Department of State Division of Corporations",
+
+      sourceType:
+        "official_public_registry",
+
+      capabilities: [
+        "legalName",
+        "registrationId",
+        "status",
+        "entityType",
+        "filingDate",
+        "principalAddress",
+        "registeredAgent"
+      ],
+
+      limitations: [
+        "no_direct_email",
+        "no_direct_phone",
+        "no_revenue",
+        "no_employee_count",
+        "no_sales_intent",
+        "no_website_quality_assessment",
+        "registry_search_rate_limited"
+      ]
     };
   }
 
   /**
-   * Search and verify candidate against public Sunbiz endpoints.
+   * Search Sunbiz for candidate corporate records.
+   *
+   * IMPORTANT:
+   * Search results are registry observations, not qualified leads.
    */
-  async search(geoContext, filters) {
-    const query = filters?.industry || filters?.query || "";
-    if (!query) return [];
+  async search(geoContext = {}, filters = {}) {
+    const query =
+      filters?.query ||
+      filters?.industry ||
+      "";
 
-    // Production Path: Query Official State Registry Search
-    try {
-      const searchUrl = `https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResultDetail?inquiryType=EntityName&directionType=Initial&searchNameOrder=${encodeURIComponent(query)}`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      const response = await fetch(searchUrl, {
-        headers: { "User-Agent": "RyGuyLabs-LeadEngine/2.0 (Commercial Lead Intelligence Pipeline)" },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const html = await response.text();
-        const parsedRecords = this._parseSunbizHtml(html, query, geoContext);
-        if (parsedRecords.length > 0) {
-          return parsedRecords;
-        }
-      }
-    } catch (err) {
-      console.warn(`[SunbizProvider Direct Search Notice]: ${err.message}. Falling back to structured search parsing.`);
+    if (!query.trim()) {
+      return [];
     }
 
-    return [];
+    const cleanTerm = this.cleanSearchTerm(query);
+
+    if (!cleanTerm) {
+      return [];
+    }
+
+    const limit = this.normalizeLimit(
+      filters?.limit
+    );
+
+    const searchUrl =
+      `${this.baseUrl}${this.searchPath}` +
+      `?searchTerm=${encodeURIComponent(cleanTerm)}`;
+
+    try {
+      const response = await this._request(
+        searchUrl
+      );
+
+      if (!response.ok) {
+        console.warn(
+          `[${this.name}] Registry returned HTTP ${response.status}.`
+        );
+
+        return [];
+      }
+
+      const html = await response.text();
+
+      if (!html) {
+        console.warn(
+          `[${this.name}] Registry returned an empty response.`
+        );
+
+        return [];
+      }
+
+      const records =
+        this._parseSunbizTableHtml(
+          html,
+          searchUrl,
+          limit
+        );
+
+      return records;
+
+    } catch (error) {
+      console.warn(
+        `[${this.name} Search Notice] ${error.message}`
+      );
+
+      return [];
+    }
   }
 
   /**
-   * Parse HTML returned by Sunbiz web search.
+   * Perform controlled HTTP request to Sunbiz.
    */
-  _parseSunbizHtml(html, query, geoContext) {
-    const records = [];
-    
-    // Regex extraction for Sunbiz record detail containers
-    const docNumMatch = html.match(/Document Number<\/label>\s*<span>([^<]+)<\/span>/i);
-    const entityNameMatch = html.match(/Entity Name<\/label>\s*<span>([^<]+)<\/span>/i);
-    const statusMatch = html.match(/Status<\/label>\s*<span>([^<]+)<\/span>/i);
-    const agentMatch = html.match(/Name<\/label>\s*<span>([^<]+)<\/span>/i);
+  async _request(url) {
+    const controller =
+      new AbortController();
 
-    if (docNumMatch && entityNameMatch) {
+    const timeoutId =
+      setTimeout(() => {
+        controller.abort();
+      }, this.timeoutMs);
+
+    try {
+      return await fetch(url, {
+        method: "GET",
+
+        headers: {
+          "User-Agent":
+            "RyGuyLabs Lead Intelligence / Public Registry Research",
+
+          "Accept":
+            "text/html,application/xhtml+xml"
+        },
+
+        signal: controller.signal
+      });
+
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error(
+          `Sunbiz request timed out after ${this.timeoutMs}ms`
+        );
+      }
+
+      throw error;
+
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Normalize search term.
+   */
+  cleanSearchTerm(value) {
+    return String(value || "")
+      .replace(/["']/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200);
+  }
+
+  /**
+   * Normalize requested result count.
+   */
+  normalizeLimit(value) {
+    const parsed =
+      Number.parseInt(value, 10);
+
+    if (!Number.isFinite(parsed)) {
+      return this.defaultLimit;
+    }
+
+    return Math.min(
+      Math.max(parsed, 1),
+      this.maxLimit
+    );
+  }
+
+  /**
+   * Parse Sunbiz search result HTML.
+   *
+   * IMPORTANT:
+   * This parser only maps values that are actually present
+   * in the returned registry HTML.
+   *
+   * It does NOT manufacture location, filing date,
+   * registered-agent, or status values.
+   */
+  _parseSunbizTableHtml(
+    html,
+    sourceUrl,
+    limit
+  ) {
+    const records = [];
+
+    /*
+     * Current parser targets the known Sunbiz result-row
+     * structure. Keep this method isolated so it can be
+     * replaced with a DOM parser if Sunbiz markup changes.
+     */
+    const rowRegex =
+      /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+
+    let rowMatch;
+
+    while (
+      (rowMatch = rowRegex.exec(html)) !== null &&
+      records.length < limit
+    ) {
+      const rowHtml =
+        rowMatch[1];
+
+      const cells =
+        this._extractTableCells(
+          rowHtml
+        );
+
+      if (cells.length < 3) {
+        continue;
+      }
+
+      const entityName =
+        this.cleanText(cells[0]);
+
+      const docNum =
+        this.cleanText(cells[1]);
+
+      const status =
+        this.cleanText(cells[2]);
+
+      if (!entityName || !docNum) {
+        continue;
+      }
+
+      /*
+       * Never substitute search geography for actual
+       * registry geography.
+       */
       records.push({
-        cor_number: docNumMatch[1].trim(),
-        name: entityNameMatch[1].trim(),
-        status: statusMatch ? statusMatch[1].trim().toUpperCase() : "ACTIVE",
-        filing_date: null, // Sourced when detail page allows
-        city: geoContext?.city || null,
+        cor_number: docNum,
+
+        name: entityName,
+
+        status:
+          status || "UNKNOWN",
+
+        filing_date: null,
+
+        city: null,
+
         state: "FL",
+
         zip: null,
-        agent: agentMatch ? agentMatch[1].trim() : null,
-        retrievedAt: new Date().toISOString()
+
+        agent: null,
+
+        source_url: sourceUrl,
+
+        sourceType:
+          "official_public_registry",
+
+        provider:
+          this.name,
+
+        retrievedAt:
+          new Date().toISOString()
       });
     }
 
@@ -83,34 +306,167 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Directly normalize raw source registry observations.
+   * Extract table-cell text while tolerating nested markup.
    */
-  normalize(rawRecord) {
+  _extractTableCells(rowHtml) {
+    const cells = [];
+
+    const cellRegex =
+      /<td\b[^>]*>([\s\S]*?)<\/td>/gi;
+
+    let match;
+
+    while (
+      (match = cellRegex.exec(rowHtml)) !== null
+    ) {
+      cells.push(
+        this.cleanText(
+          match[1]
+        )
+      );
+    }
+
+    return cells;
+  }
+
+  /**
+   * Remove HTML and normalize whitespace.
+   */
+  cleanText(value) {
+    return String(value || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /**
+   * Normalize raw provider observation into the universal
+   * Prospect entity structure.
+   *
+   * Missing values remain null.
+   */
+  normalize(rawRecord = {}) {
+    const companyName =
+      rawRecord.name ||
+      rawRecord.companyName ||
+      null;
+
+    const registrationId =
+      rawRecord.cor_number ||
+      rawRecord.registrationId ||
+      null;
+
+    const location = {
+      city:
+        rawRecord.city || null,
+
+      state:
+        rawRecord.state || "FL",
+
+      zip:
+        rawRecord.zip || null
+    };
+
     return {
-      companyName: rawRecord.name || rawRecord.companyName,
+      companyName,
+
       jurisdiction: "FL",
-      entityType: (rawRecord.name || "").includes("INC") ? "CORPORATION" : "LIMITED LIABILITY COMPANY",
-      status: rawRecord.status || "UNKNOWN",
-      formationDate: rawRecord.filing_date || null,
-      location: {
-        city: rawRecord.city || null,
-        state: "FL",
-        zip: rawRecord.zip || null
-      },
-      locationDisplay: rawRecord.city ? `${rawRecord.city}, FL` : "Florida, USA",
-      registeredAgent: rawRecord.agent || null,
-      registrationId: rawRecord.cor_number || rawRecord.registrationId || null,
-      retrievedAt: rawRecord.retrievedAt || new Date().toISOString()
+
+      entityType:
+        rawRecord.entityType ||
+        null,
+
+      status:
+        rawRecord.status ||
+        "UNKNOWN",
+
+      formationDate:
+        rawRecord.filing_date ||
+        rawRecord.formationDate ||
+        null,
+
+      location,
+
+      locationDisplay:
+        this.formatLocation(location),
+
+      registeredAgent:
+        rawRecord.agent ||
+        rawRecord.registeredAgent ||
+        null,
+
+      registrationId,
+
+      sourceUrl:
+        rawRecord.source_url ||
+        null,
+
+      sourceType:
+        rawRecord.sourceType ||
+        "official_public_registry",
+
+      provider:
+        this.name,
+
+      retrievedAt:
+        rawRecord.retrievedAt ||
+        new Date().toISOString()
     };
   }
 
-  getSourceReference(raw, normalized) {
-    const regId = normalized?.registrationId || raw?.cor_number;
-    if (regId) {
-      return `https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResultDetail?inquiryType=EntityName&searchNameOrder=${encodeURIComponent(normalized.companyName)}&aggregateId=${encodeURIComponent(regId)}`;
+  /**
+   * Convert structured location into UI-safe display text.
+   */
+  formatLocation(location = {}) {
+    const parts = [
+      location.city,
+      location.state,
+      location.zip
+    ].filter(Boolean);
+
+    return parts.length
+      ? parts.join(", ")
+      : "Florida, USA";
+  }
+
+  /**
+   * Generate authoritative source reference.
+   */
+  getSourceReference(
+    raw,
+    normalized
+  ) {
+    if (raw?.source_url) {
+      return raw.source_url;
     }
-    return `https://search.sunbiz.org/Inquiry/CorporationSearch/ByName`;
+
+    const registrationId =
+      normalized?.registrationId ||
+      raw?.cor_number;
+
+    if (!registrationId) {
+      return `${this.baseUrl}${this.searchPath}`;
+    }
+
+    const companyName =
+      normalized?.companyName ||
+      raw?.name ||
+      "";
+
+    return (
+      `${this.baseUrl}` +
+      `/Inquiry/CorporationSearch/SearchResultDetail` +
+      `?inquiryType=EntityName` +
+      `&searchNameOrder=${encodeURIComponent(companyName)}` +
+      `&aggregateId=${encodeURIComponent(registrationId)}`
+    );
   }
 }
 
-module.exports = { SunbizProvider };
+module.exports = {
+  SunbizProvider
+};
