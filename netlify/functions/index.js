@@ -51,14 +51,21 @@ async function executeCorePipeline(params) {
   // Clean raw query by removing em-dashes, en-dashes, and multiple spaces
   const sanitizedQuery = rawQuery.replace(/—|-/g, " ").replace(/\s+/g, " ").trim();
 
-  // Extract city/state if embedded in the search string (e.g., "Roofing Contractors Tampa FL")
+  // Extract industry keyword and city/state if embedded in the search string (e.g., "Solar Contractors in Tampa FL")
+  let searchKeyword = sanitizedQuery;
   let geoContext = params.geoContext || { states: ["FL"] };
-  if (sanitizedQuery.toUpperCase().includes("TAMPA")) {
-    geoContext = { city: "Tampa", states: ["FL"] };
+
+  const locationMatch = sanitizedQuery.match(/(.+?)\s+(?:in|,)\s+([A-Za-z\s]+?)(?:,\s*([A-Za-z]{2}))?$/i);
+
+  if (locationMatch) {
+    searchKeyword = locationMatch[1].trim();
+    const city = locationMatch[2].trim();
+    const state = locationMatch[3] ? locationMatch[3].toUpperCase() : "FL";
+    geoContext = { city, states: [state] };
   }
 
-  const queryInput = sanitizedQuery;
-  const filters = params.filters || { industry: queryInput };
+  const queryInput = searchKeyword;
+  const filters = params.filters ? { ...params.filters, industry: searchKeyword } : { industry: searchKeyword };
 
   if (orchestrator && typeof orchestrator.executePipeline === "function") {
     return await orchestrator.executePipeline({ queryInput, geoContext, filters, enableDiscovery: true });
