@@ -46,12 +46,22 @@ const orchestrator = new EnrichmentOrchestrator({
  * Falls back safely to legacy runLeadPipeline if needed.
  */
 async function executeCorePipeline(params) {
-  const queryInput = params.queryInput || (params.filters && params.filters.industry) || "Roofing Contractors";
-  const geoContext = params.geoContext || { states: ["FL"] };
+  let rawQuery = params.queryInput || (params.filters && params.filters.industry) || "Roofing Contractors";
+  
+  // Clean raw query by removing em-dashes, en-dashes, and multiple spaces
+  const sanitizedQuery = rawQuery.replace(/—|-/g, " ").replace(/\s+/g, " ").trim();
+
+  // Extract city/state if embedded in the search string (e.g., "Roofing Contractors Tampa FL")
+  let geoContext = params.geoContext || { states: ["FL"] };
+  if (sanitizedQuery.toUpperCase().includes("TAMPA")) {
+    geoContext = { city: "Tampa", states: ["FL"] };
+  }
+
+  const queryInput = sanitizedQuery;
   const filters = params.filters || { industry: queryInput };
 
   if (orchestrator && typeof orchestrator.executePipeline === "function") {
-    return await orchestrator.executePipeline({ queryInput, geoContext, filters });
+    return await orchestrator.executePipeline({ queryInput, geoContext, filters, enableDiscovery: true });
   } else if (typeof legacyRunLeadPipeline === "function") {
     return await legacyRunLeadPipeline({ geoContext, filters });
   } else {
@@ -109,7 +119,8 @@ exports.processLeadPipeline = functions.https.onCall(async (data, context) => {
   try {
     const geoContext = data.geoContext || { states: ["FL"] };
     const filters = data.filters || { industry: "Roofing Contractors" };
-    return await executeCorePipeline({ geoContext, filters });
+    const queryInput = data.queryInput || data.query;
+    return await executeCorePipeline({ queryInput, geoContext, filters });
   } catch (error) {
     console.error("Error executing Firebase processLeadPipeline:", error);
     throw new functions.https.HttpsError(
@@ -137,11 +148,13 @@ exports.handler = async (event, context) => {
 
   try {
     const body = event.body ? JSON.parse(event.body) : {};
-    const queryInput = body.query || "Roofing Contractors";
+    
+    // Accept raw string or structured parameters
+    const rawQuery = body.query || body.queryInput || "Roofing Contractors";
     const geoContext = body.geoContext || { states: ["FL"] };
-    const filters = body.filters || { industry: queryInput };
+    const filters = body.filters || { industry: rawQuery };
 
-    const pipelineResult = await executeCorePipeline({ queryInput, geoContext, filters });
+    const pipelineResult = await executeCorePipeline({ queryInput: rawQuery, geoContext, filters });
 
     return {
       statusCode: 200,
