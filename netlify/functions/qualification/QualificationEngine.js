@@ -334,11 +334,11 @@ const rawPhones =
      */
 
     const rawEmails =
-      Array.isArray(enrichmentData.emails)
-        ? enrichmentData.emails
-        : Array.isArray(websiteObj.emails)
-          ? websiteObj.emails
-          : [];
+  Array.isArray(enrichmentData.emails)
+    ? enrichmentData.emails
+    : Array.isArray(websiteObj.emails)
+      ? websiteObj.emails
+      : [];
 
     const validEmails =
       rawEmails.filter(email => {
