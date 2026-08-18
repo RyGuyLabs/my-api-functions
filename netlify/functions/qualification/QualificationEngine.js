@@ -1,24 +1,3 @@
-/**
- * QualificationEngine
- *
- * Downstream qualification subsystem.
- *
- * IMPORTANT:
- * This engine evaluates observable evidence. It does not invent
- * business facts, contacts, revenue, employee counts, or weaknesses.
- *
- * Architecture:
- *
- * Registry Evidence
- *        ↓
- * Enrichment Evidence
- *        ↓
- * Observable Signals
- *        ↓
- * Deterministic Qualification
- *        ↓
- * Recommended Next Action
- */
 class QualificationEngine {
 
   /**
@@ -35,15 +14,6 @@ class QualificationEngine {
     const signals = [];
     const evidence = [];
 
-    /*
-     * ------------------------------------------------------------------------
-     * SCORE CONFIGURATION
-     * ------------------------------------------------------------------------
-     *
-     * Keep weights centralized so scoring can later become versioned/configured
-     * without rewriting qualification logic.
-     */
-
     const weights = {
       activeRegistration: 20,
       verifiedLocation: 10,
@@ -56,11 +26,6 @@ class QualificationEngine {
 
     let score = 50;
 
-    /*
-     * ------------------------------------------------------------------------
-     * REGISTRY VERIFICATION
-     * ------------------------------------------------------------------------
-     */
 
     if (entity.status === "ACTIVE") {
 
@@ -246,11 +211,7 @@ class QualificationEngine {
 
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * SCORE NORMALIZATION
-     * ------------------------------------------------------------------------
-     */
+
 
     const finalScore = Math.min(
       Math.max(score, 0),
@@ -271,12 +232,7 @@ class QualificationEngine {
       priority = "MEDIUM PRIORITY";
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * RECOMMENDED NEXT ACTION
-     * ------------------------------------------------------------------------
-     */
-
+   
     let recommendedAction =
       "Review available evidence and initiate the most appropriate outreach channel.";
 
@@ -311,11 +267,7 @@ class QualificationEngine {
         "Perform additional public-source enrichment before initiating outreach.";
     }
 
-    /*
-     * ------------------------------------------------------------------------
-     * FINAL RESULT
-     * ------------------------------------------------------------------------
-     */
+  
 
     return {
       qualificationScore: finalScore,
