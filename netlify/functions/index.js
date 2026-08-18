@@ -1,11 +1,63 @@
 // Cloud Function Dependencies
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const { runLeadPipeline } = require("./pipeline/runLeadPipeline");
+
+// Pipeline & Provider Architecture Imports
+const { EvidenceLedgerAdapter } = require("./enrichment/EvidenceLedgerAdapter");
+const { GoogleDiscoveryProvider } = require("./providers/GoogleDiscoveryProvider");
+const { SunbizProvider } = require("./providers/SunbizProvider");
+const { MockProvider } = require("./providers/MockProvider");
+const { WebsiteReconProvider } = require("./providers/WebsiteReconProvider");
+const { EnrichmentOrchestrator } = require("./enrichment/EnrichmentOrchestrator");
+const { QualificationEngine } = require("./qualification/QualificationEngine");
+
+// Fallback to legacy pipeline module if present, maintaining complete system backward compatibility
+let legacyRunLeadPipeline;
+try {
+  legacyRunLeadPipeline = require("./pipeline/runLeadPipeline").runLeadPipeline;
+} catch (e) {
+  legacyRunLeadPipeline = null;
+}
 
 // Initialize the Firebase Admin SDK safely
 if (!admin.apps.length) {
   admin.initializeApp();
+}
+
+// ============================================================================
+// SINGLETON ORCHESTRATOR INITIALIZATION
+// Instantiated once per instance startup to maintain state & ledger integrity
+// ============================================================================
+const ledger = new EvidenceLedgerAdapter();
+const qualificationEngine = new QualificationEngine();
+
+const orchestrator = new EnrichmentOrchestrator({
+  ledger,
+  qualificationEngine,
+  providers: [
+    new GoogleDiscoveryProvider(),
+    new SunbizProvider(),
+    new WebsiteReconProvider(),
+    new MockProvider()
+  ]
+});
+
+/**
+ * Core execution bridge that maps incoming request parameters to the active orchestrator pipeline.
+ * Falls back safely to legacy runLeadPipeline if needed.
+ */
+async function executeCorePipeline(params) {
+  const queryInput = params.queryInput || (params.filters && params.filters.industry) || "Roofing Contractors";
+  const geoContext = params.geoContext || { states: ["FL"] };
+  const filters = params.filters || { industry: queryInput };
+
+  if (orchestrator && typeof orchestrator.executePipeline === "function") {
+    return await orchestrator.executePipeline({ queryInput, geoContext, filters });
+  } else if (typeof legacyRunLeadPipeline === "function") {
+    return await legacyRunLeadPipeline({ geoContext, filters });
+  } else {
+    throw new Error("No active lead execution pipeline found.");
+  }
 }
 
 /**
@@ -26,7 +78,7 @@ exports.mintCustomToken = functions.https.onCall(async (data, context) => {
     console.error(`Attempt to sign in with non-member ID: ${userId}`);
     throw new functions.https.HttpsError(
       "permission-denied",
-      "Membership Required: Your RyGuyLabs subscription could not be verified."
+      "Membership Required: Your subscription could not be verified."
     );
   }
 
@@ -58,7 +110,7 @@ exports.processLeadPipeline = functions.https.onCall(async (data, context) => {
   try {
     const geoContext = data.geoContext || { states: ["FL"] };
     const filters = data.filters || { industry: "Roofing Contractors" };
-    return await runLeadPipeline({ geoContext, filters });
+    return await executeCorePipeline({ geoContext, filters });
   } catch (error) {
     console.error("Error executing Firebase processLeadPipeline:", error);
     throw new functions.https.HttpsError(
@@ -90,7 +142,7 @@ exports.handler = async (event, context) => {
     const geoContext = body.geoContext || { states: ["FL"] };
     const filters = body.filters || { industry: queryInput };
 
-    const pipelineResult = await runLeadPipeline({ geoContext, filters });
+    const pipelineResult = await executeCorePipeline({ queryInput, geoContext, filters });
 
     return {
       statusCode: 200,
