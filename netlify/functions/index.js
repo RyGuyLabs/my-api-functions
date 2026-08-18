@@ -3,11 +3,11 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
 // Pipeline & Provider Architecture Imports (Note the explicit .js extensions)
-const { EvidenceLedgerAdapter } = require("./enrichment/EvidenceLedgerAdapter.js");
+const { EvidenceLedgerAdapter } = require("./ledger/EvidenceLedgerAdapter.js");
 const { GoogleDiscoveryProvider } = require("./providers/GoogleDiscoveryProvider.js");
 const { SunbizProvider } = require("./providers/SunbizProvider.js");
 const { MockProvider } = require("./providers/MockProvider.js");
-const { WebsiteReconProvider } = require("./providers/WebsiteReconProvider.js");
+const { WebsiteReconProvider } = require("./enrichment/websiterecon.js");
 const { EnrichmentOrchestrator } = require("./enrichment/EnrichmentOrchestrator.js");
 const { QualificationEngine } = require("./qualification/QualificationEngine.js");
 
