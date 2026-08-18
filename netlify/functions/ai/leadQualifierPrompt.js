@@ -1,11 +1,3 @@
-/**
- * Lead Qualifier AI Prompt
- *
- * IMPORTANT:
- * This module does NOT call an LLM.
- * It only constructs a bounded, auditable payload for a downstream AI layer.
- */
-
 const LEAD_QUALIFIER_SYSTEM_PROMPT = `
 You are a zero-trust commercial intelligence analyst.
 
