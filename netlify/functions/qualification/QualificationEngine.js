@@ -256,12 +256,14 @@ class QualificationEngine {
      * They are NOT treated as proof of ownership or guaranteed validity.
      */
 
-    const rawPhones =
-      Array.isArray(enrichmentData.phones)
-        ? enrichmentData.phones
-        : Array.isArray(websiteObj.phones)
-          ? websiteObj.phones
-          : [];
+const rawPhones =
+  Array.isArray(enrichmentData.phones)
+    ? enrichmentData.phones
+    : enrichmentData.businessPhone
+      ? [enrichmentData.businessPhone]
+      : Array.isArray(websiteObj.phones)
+        ? websiteObj.phones
+        : [];
 
     const validPhones =
       rawPhones.filter(phone => {
