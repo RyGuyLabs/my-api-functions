@@ -1,4 +1,4 @@
-const { WebsiteReconProvider } = require("./WebsiteReconProvider.js");
+const { WebsiteReconProvider } = require("./websiterecon.js");
 
 /**
  * EnrichmentOrchestrator
