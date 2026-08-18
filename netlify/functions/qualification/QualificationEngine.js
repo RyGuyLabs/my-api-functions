@@ -88,13 +88,26 @@ class QualificationEngine {
 
     /*
      * ------------------------------------------------------------------------
+     * DATA SHAPE NORMALIZATION
+     * Safely resolve nested website enrichment parameters
+     * ------------------------------------------------------------------------
+     */
+
+    const websiteObj = (enrichmentData && typeof enrichmentData.website === "object" && enrichmentData.website !== null) 
+      ? enrichmentData.website 
+      : {};
+
+    const websiteUrl = typeof enrichmentData.website === "string"
+      ? enrichmentData.website
+      : websiteObj.url || null;
+
+    /*
+     * ------------------------------------------------------------------------
      * WEBSITE ANALYSIS
      * ------------------------------------------------------------------------
      */
 
-    const websiteExists =
-      typeof enrichmentData.website === "string" &&
-      enrichmentData.website.trim().length > 0;
+    const websiteExists = typeof websiteUrl === "string" && websiteUrl.trim().length > 0;
 
     if (websiteExists) {
 
@@ -102,7 +115,7 @@ class QualificationEngine {
 
       const reason = {
         code: "WEBSITE_DISCOVERED",
-        message: `Public website discovered: ${enrichmentData.website}`,
+        message: `Public website discovered: ${websiteUrl}`,
         source: "website_recon"
       };
 
@@ -124,22 +137,28 @@ class QualificationEngine {
      * ------------------------------------------------------------------------
      */
 
-    const validPhones = Array.isArray(enrichmentData.phones)
-      ? enrichmentData.phones.filter(
-          phone => phone && typeof phone.value === "string" && phone.value.trim()
-        )
-      : [];
+    const rawPhones = Array.isArray(enrichmentData.phones)
+      ? enrichmentData.phones
+      : Array.isArray(websiteObj.phones)
+        ? websiteObj.phones
+        : [];
+
+    const validPhones = rawPhones.filter(
+      phone => phone && typeof (typeof phone === "string" ? phone : phone.value) === "string" && (typeof phone === "string" ? phone : phone.value).trim()
+    );
 
     if (validPhones.length > 0) {
 
       score += weights.businessPhone;
 
       const phone = validPhones[0];
+      const phoneValue = typeof phone === "string" ? phone : phone.value;
+      const phoneSource = typeof phone === "object" && phone.source ? phone.source : "website_recon";
 
       const reason = {
         code: "PHONE_DISCOVERED",
-        message: `Business phone number discovered: ${phone.value}`,
-        source: phone.source || "website_recon"
+        message: `Business phone number discovered: ${phoneValue}`,
+        source: phoneSource
       };
 
       reasons.push(reason.message);
@@ -160,22 +179,28 @@ class QualificationEngine {
      * ------------------------------------------------------------------------
      */
 
-    const validEmails = Array.isArray(enrichmentData.emails)
-      ? enrichmentData.emails.filter(
-          email => email && typeof email.value === "string" && email.value.trim()
-        )
-      : [];
+    const rawEmails = Array.isArray(enrichmentData.emails)
+      ? enrichmentData.emails
+      : Array.isArray(websiteObj.emails)
+        ? websiteObj.emails
+        : [];
+
+    const validEmails = rawEmails.filter(
+      email => email && typeof (typeof email === "string" ? email : email.value) === "string" && (typeof email === "string" ? email : email.value).trim()
+    );
 
     if (validEmails.length > 0) {
 
       score += weights.businessEmail;
 
       const email = validEmails[0];
+      const emailValue = typeof email === "string" ? email : email.value;
+      const emailSource = typeof email === "object" && email.source ? email.source : "website_recon";
 
       const reason = {
         code: "EMAIL_DISCOVERED",
-        message: `Business email address discovered: ${email.value}`,
-        source: email.source || "website_recon"
+        message: `Business email address discovered: ${emailValue}`,
+        source: emailSource
       };
 
       reasons.push(reason.message);
@@ -196,9 +221,15 @@ class QualificationEngine {
      * ------------------------------------------------------------------------
      */
 
-    if (Array.isArray(enrichmentData.digitalSignals)) {
+    const rawSignals = Array.isArray(enrichmentData.digitalSignals)
+      ? enrichmentData.digitalSignals
+      : Array.isArray(websiteObj.digitalSignals)
+        ? websiteObj.digitalSignals
+        : null;
 
-      enrichmentData.digitalSignals
+    if (Array.isArray(rawSignals)) {
+
+      rawSignals
         .filter(Boolean)
         .forEach(signal => {
 
@@ -238,7 +269,7 @@ class QualificationEngine {
 
     if (
       validEmails.length > 0 &&
-      enrichmentData.digitalSignals?.length > 0
+      rawSignals?.length > 0
     ) {
 
       recommendedAction =
