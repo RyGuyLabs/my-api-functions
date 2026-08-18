@@ -2,14 +2,14 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
-// Pipeline & Provider Architecture Imports
-const { EvidenceLedgerAdapter } = require("./enrichment/EvidenceLedgerAdapter");
-const { GoogleDiscoveryProvider } = require("./providers/GoogleDiscoveryProvider");
-const { SunbizProvider } = require("./providers/SunbizProvider");
-const { MockProvider } = require("./providers/MockProvider");
-const { WebsiteReconProvider } = require("./providers/WebsiteReconProvider");
-const { EnrichmentOrchestrator } = require("./enrichment/EnrichmentOrchestrator");
-const { QualificationEngine } = require("./qualification/QualificationEngine");
+// Pipeline & Provider Architecture Imports (Note the explicit .js extensions)
+const { EvidenceLedgerAdapter } = require("./enrichment/EvidenceLedgerAdapter.js");
+const { GoogleDiscoveryProvider } = require("./providers/GoogleDiscoveryProvider.js");
+const { SunbizProvider } = require("./providers/SunbizProvider.js");
+const { MockProvider } = require("./providers/MockProvider.js");
+const { WebsiteReconProvider } = require("./providers/WebsiteReconProvider.js");
+const { EnrichmentOrchestrator } = require("./enrichment/EnrichmentOrchestrator.js");
+const { QualificationEngine } = require("./qualification/QualificationEngine.js");
 
 // Fallback to legacy pipeline module if present, maintaining complete system backward compatibility
 let legacyRunLeadPipeline;
