@@ -2,39 +2,100 @@ const { SunbizProvider } = require("../providers/SunbizProvider");
 const { EvidenceLedgerAdapter } = require("../ledger/EvidenceLedgerAdapter");
 const { enrichProspect } = require("../enrichment/enrichProspect");
 const { QualificationEngine } = require("../qualification/QualificationEngine");
-const { buildUserPayload } = require("../prompts/leadQualifierPrompt");
 
 /**
  * Core Lead Pipeline Execution Engine
- * Pure business logic called by both Firebase and Netlify adapters.
+ *
+ * Runtime-agnostic business logic shared by Firebase and Netlify adapters.
+ *
+ * Pipeline:
+ *   Registry Search
+ *      ↓
+ *   Normalization
+ *      ↓
+ *   Evidence Ledger
+ *      ↓
+ *   Enrichment
+ *      ↓
+ *   Qualification
+ *      ↓
+ *   Structured Lead Output
+ *
+ * IMPORTANT:
+ * The AI prompt layer is intentionally NOT a hard dependency here.
+ * The core lead pipeline must remain operational even if an optional
+ * downstream AI module is unavailable.
  *
  * @param {Object} params
- * @param {Object} [params.geoContext] - Geographic constraints (e.g., { states: ["FL"] })
- * @param {Object} [params.filters] - Query parameters (e.g., { industry: "Roofing" })
- * @returns {Promise<Object>} Unified pipeline output with leads payload and primary root bindings.
+ * @param {Object} [params.geoContext]
+ * @param {Object} [params.filters]
+ * @returns {Promise<Object>}
  */
 async function runLeadPipeline({ geoContext, filters = {} }) {
   const provider = new SunbizProvider();
   const ledger = new EvidenceLedgerAdapter();
 
-  const queryInput = filters.industry || "Roofing Contractors";
-  const searchGeo = geoContext || { states: ["FL"] };
+  const queryInput =
+    filters.industry ||
+    filters.query ||
+    "Roofing Contractors";
 
-  // 1. Fetch raw registry candidate records
-  const rawRecords = await provider.search(searchGeo, { industry: queryInput });
+  const searchGeo =
+    geoContext || {
+      states: ["FL"]
+    };
 
-  if (!rawRecords || rawRecords.length === 0) {
+  // ==========================================================================
+  // 1. REGISTRY SEARCH
+  // ==========================================================================
+
+  let rawRecords;
+
+  try {
+    rawRecords = await provider.search(
+      searchGeo,
+      {
+        ...filters,
+        industry: queryInput
+      }
+    );
+  } catch (searchError) {
+    console.error(
+      `[PIPELINE SEARCH FAILURE] ${provider.name}:`,
+      searchError.message
+    );
+
+    throw new Error(
+      `Lead registry search failed: ${searchError.message}`
+    );
+  }
+
+  // ==========================================================================
+  // 2. EMPTY RESULT CONTRACT
+  // ==========================================================================
+
+  if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
     return {
       status: "empty",
       count: 0,
       leads: [],
-      prospectName: `No live registry records found for "${queryInput}"`,
-      location: { state: "FL" },
-      locationDisplay: "FL",
+      prospectName:
+        `No live registry records found for "${queryInput}"`,
+      location: {
+        state: searchGeo?.states?.[0] || "FL"
+      },
+      locationDisplay:
+        searchGeo?.city
+          ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
+          : (searchGeo?.states?.[0] || "FL"),
       score: null,
       priority: "UNQUALIFIED",
-      evidenceSummary: ["Provider query yielded 0 candidate records."],
+      evidenceSummary: [
+        "Provider query yielded 0 candidate records."
+      ],
       qualificationReasons: [],
+      salesSignals: [],
+      recommendedAction: null,
       enrichment: null,
       evidenceLedger: null
     };
@@ -42,131 +103,428 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
 
   const leads = [];
 
-  // 2. Sequential/Controlled processing loop
+  // ==========================================================================
+  // 3. SEQUENTIAL CANDIDATE PROCESSING
+  //
+  // Intentionally sequential.
+  // Do NOT replace this with Promise.all().
+  //
+  // Registry + website + contact enrichment can generate external traffic.
+  // Sequential processing prevents a sudden burst of requests against
+  // third-party services.
+  // ==========================================================================
+
   for (const raw of rawRecords) {
-    const normalized = provider.normalize ? provider.normalize(raw) : raw;
+    // ------------------------------------------------------------------------
+    // 3A. NORMALIZE REGISTRY RECORD
+    // ------------------------------------------------------------------------
 
-    // Item 2: Delegate source reference resolution directly to the provider schema
-    const sourceUrl = typeof provider.getSourceReference === "function"
-      ? provider.getSourceReference(raw, normalized)
-      : (normalized.docNumber || raw.cor_number || raw.docNumber || "https://search.sunbiz.org/");
+    let normalized;
 
-    // Record observation in Evidence Ledger
-    const evidenceEntry = ledger.recordObservation({
-      providerName: provider.name || "SunbizProvider",
-      rawPayload: raw,
-      normalizedEntity: normalized,
-      sourceUrl: sourceUrl,
-      retrievedAt: new Date().toISOString()
-    });
+    try {
+      normalized =
+        typeof provider.normalize === "function"
+          ? provider.normalize(raw)
+          : raw;
+    } catch (normalizeError) {
+      console.error(
+        `[NORMALIZATION FAILURE]`,
+        normalizeError.message
+      );
 
-    // Item 3: Enforce strict deterministic identity. No timestamp fallbacks.
-    if (!evidenceEntry || !evidenceEntry.inputSignalId) {
-      throw new Error(
-        `[PIPELINE INTEGRITY FAILURE] Evidence Ledger returned no inputSignalId for entity: ${normalized.companyName || 'Unknown Entity'}`
+      // One malformed provider record should not destroy the entire batch.
+      continue;
+    }
+
+    if (!normalized || !normalized.companyName) {
+      console.warn(
+        "[PIPELINE] Skipping candidate with no canonical company name."
+      );
+      continue;
+    }
+
+    // ------------------------------------------------------------------------
+    // 3B. RESOLVE AUTHORITATIVE SOURCE URL
+    // ------------------------------------------------------------------------
+
+    let sourceUrl =
+      "https://search.sunbiz.org/";
+
+    try {
+      if (
+        typeof provider.getSourceReference === "function"
+      ) {
+        sourceUrl =
+          provider.getSourceReference(
+            raw,
+            normalized
+          );
+      }
+    } catch (sourceError) {
+      console.warn(
+        `[SOURCE REFERENCE WARNING] ${normalized.companyName}:`,
+        sourceError.message
       );
     }
 
-    // Item 4: Fault-Tolerant Enrichment Sandbox
+    // ------------------------------------------------------------------------
+    // 3C. RECORD EVIDENCE
+    // ------------------------------------------------------------------------
+
+    let evidenceEntry;
+
+    try {
+      evidenceEntry = ledger.recordObservation({
+        providerName:
+          provider.name || "SunbizProvider",
+
+        rawPayload: raw,
+
+        normalizedEntity: normalized,
+
+        sourceUrl: sourceUrl,
+
+        retrievedAt:
+          new Date().toISOString()
+      });
+    } catch (ledgerError) {
+      console.error(
+        `[LEDGER FAILURE] ${normalized.companyName}:`,
+        ledgerError.message
+      );
+
+      throw new Error(
+        `Evidence Ledger failure for ${normalized.companyName}: ${ledgerError.message}`
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // 3D. STRICT LEDGER IDENTITY REQUIREMENT
+    // ------------------------------------------------------------------------
+
+    if (
+      !evidenceEntry ||
+      !evidenceEntry.inputSignalId
+    ) {
+      throw new Error(
+        `[PIPELINE INTEGRITY FAILURE] Evidence Ledger returned no inputSignalId for entity: ${normalized.companyName}`
+      );
+    }
+
+    // ------------------------------------------------------------------------
+    // 3E. CONSTRUCT LEDGER BINDING
+    // ------------------------------------------------------------------------
+
+    const ledgerBinding = {
+      inputSignalId:
+        evidenceEntry.inputSignalId,
+
+      sourceContentHash:
+        evidenceEntry.sourceContentHash ||
+        evidenceEntry.contentHash ||
+        null,
+
+      canonicalEntityHash:
+        evidenceEntry.canonicalEntityHash ||
+        null,
+
+      signalRecordHash:
+        evidenceEntry.signalRecordHash ||
+        null,
+
+      sourceUrl:
+        sourceUrl
+    };
+
+    // ==========================================================================
+    // 4. ENRICHMENT
+    // ==========================================================================
+
     let enrichmentResult = {
-      data: { website: null, contacts: null },
+      data: {
+        website: null,
+        contacts: null
+      },
       status: "unattempted",
       errors: []
     };
 
     try {
-      const enrichmentData = await enrichProspect(normalized);
+      const enrichmentData =
+        await enrichProspect(normalized);
+
+      const hasWebsiteData =
+        Boolean(enrichmentData?.website);
+
+      const hasContactData =
+        Boolean(enrichmentData?.contacts);
+
       enrichmentResult = {
         data: enrichmentData,
-        status: (enrichmentData.website || enrichmentData.contacts) ? "full" : "partial",
+
+        status:
+          hasWebsiteData || hasContactData
+            ? "partial"
+            : "empty",
+
         errors: []
       };
     } catch (enrichError) {
       console.error(
-        `[ENRICHMENT ERROR BOUNDARY] Non-fatal enrichment failure for ${normalized.companyName}:`,
+        `[ENRICHMENT ERROR BOUNDARY] ${normalized.companyName}:`,
         enrichError.message
       );
+
       enrichmentResult = {
-        data: { website: null, contacts: null },
+        data: {
+          website: null,
+          contacts: null
+        },
+
         status: "failed",
-        errors: [{
-          stage: "enrichProspect",
-          message: enrichError.message
-        }]
+
+        errors: [
+          {
+            stage: "enrichProspect",
+            message: enrichError.message
+          }
+        ]
       };
     }
 
-    // Construct Evidence Ledger record bindings
-    const ledgerBinding = {
-      inputSignalId: evidenceEntry.inputSignalId,
-      sourceContentHash: evidenceEntry.sourceContentHash || evidenceEntry.contentHash || null,
-      canonicalEntityHash: evidenceEntry.canonicalEntityHash || null,
-      signalRecordHash: evidenceEntry.signalRecordHash || null,
-      sourceUrl: sourceUrl
-    };
+    // ==========================================================================
+    // 5. DETERMINISTIC QUALIFICATION
+    // ==========================================================================
 
-    // Item 5: Execute Deterministic Qualification Engine
-    const qualification = QualificationEngine.evaluate(
-      normalized,
-      enrichmentResult.data || {},
-      ledgerBinding
-    );
+    let qualification;
 
-    // Item 6: Construct zero-trust AI user payload using object contract
-    const aiUserPayload = buildUserPayload({
-      canonicalEntity: normalized,
-      enrichment: enrichmentResult.data,
-      evidenceLedger: ledgerBinding,
-      qualification: qualification
-    });
+    try {
+      qualification =
+        QualificationEngine.evaluate(
+          normalized,
+          enrichmentResult.data || {},
+          ledgerBinding
+        );
+    } catch (qualificationError) {
+      console.error(
+        `[QUALIFICATION FAILURE] ${normalized.companyName}:`,
+        qualificationError.message
+      );
 
-    // Format location display string safely while preserving raw structured object
-    const location = normalized.location || {};
-    let locationDisplay = "Florida";
+      // Qualification failure should not destroy verified registry data.
+      qualification = {
+        qualificationScore: null,
 
-    if (typeof location === "string") {
-      locationDisplay = location;
-    } else if (location && typeof location === "object") {
-      locationDisplay = [location.city, location.state]
-        .filter(Boolean)
-        .join(", ") || "Florida";
+        priority: "UNQUALIFIED",
+
+        qualificationReasons: [
+          "Qualification engine failed; manual review required."
+        ],
+
+        salesSignals: [
+          {
+            code: "QUALIFICATION_ENGINE_ERROR",
+            message: qualificationError.message
+          }
+        ],
+
+        recommendedAction:
+          "Perform manual qualification review.",
+
+        evaluatedAt:
+          new Date().toISOString()
+      };
     }
 
+    // ==========================================================================
+    // 6. LOCATION NORMALIZATION
+    // ==========================================================================
+
+    const location =
+      normalized.location || {};
+
+    let locationDisplay =
+      "Florida";
+
+    if (typeof location === "string") {
+      locationDisplay =
+        location;
+    } else if (
+      location &&
+      typeof location === "object"
+    ) {
+      locationDisplay =
+        [
+          location.city,
+          location.state,
+          location.zip
+        ]
+          .filter(Boolean)
+          .join(", ") ||
+        "Florida";
+    }
+
+    // ==========================================================================
+    // 7. EVIDENCE SUMMARY
+    //
+    // Do NOT assume QualificationEngine.evidence exists.
+    // The current engine exposes qualificationReasons and salesSignals.
+    // ==========================================================================
+
+    const evidenceSummary = [
+      "Verified registry observation processed through the active provider.",
+
+      "Canonical observation ledger entry generated and hash-bound."
+    ];
+
+    if (sourceUrl) {
+      evidenceSummary.push(
+        `Authoritative source: ${sourceUrl}`
+      );
+    }
+
+    // ==========================================================================
+    // 8. STRUCTURED LEAD OBJECT
+    // ==========================================================================
+
     leads.push({
-      prospectId: `prospect_${evidenceEntry.inputSignalId}`,
-      prospectName: normalized.companyName || normalized.name || "Active Prospect",
-      location: location,
-      locationDisplay: locationDisplay,
-      entity: normalized,
-      enrichment: enrichmentResult,
-      score: qualification.qualificationScore,
-      priority: qualification.priority,
-      evidenceSummary: qualification.evidence.map(e => e.message),
-      qualificationReasons: qualification.qualificationReasons,
-      salesSignals: qualification.salesSignals,
-      recommendedAction: qualification.recommendedAction,
-      aiUserPayload: aiUserPayload,
-      evidenceLedger: ledgerBinding
+      prospectId:
+        `prospect_${evidenceEntry.inputSignalId}`,
+
+      prospectName:
+        normalized.companyName ||
+        normalized.name ||
+        "Active Prospect",
+
+      location:
+        location,
+
+      locationDisplay:
+        locationDisplay,
+
+      entity:
+        normalized,
+
+      enrichment:
+        enrichmentResult,
+
+      score:
+        qualification.qualificationScore ?? null,
+
+      priority:
+        qualification.priority ||
+        "UNQUALIFIED",
+
+      qualificationReasons:
+        Array.isArray(
+          qualification.qualificationReasons
+        )
+          ? qualification.qualificationReasons
+          : [],
+
+      salesSignals:
+        Array.isArray(
+          qualification.salesSignals
+        )
+          ? qualification.salesSignals
+          : [],
+
+      recommendedAction:
+        qualification.recommendedAction ||
+        null,
+
+      evidenceSummary:
+        evidenceSummary,
+
+      evidenceLedger:
+        ledgerBinding
     });
   }
 
-  const primaryLead = leads[0];
+  // ==========================================================================
+  // 9. SAFETY CHECK
+  // ==========================================================================
 
-  // Return full collection alongside primary root bindings for legacy/single-card UI compatibility
+  if (leads.length === 0) {
+    return {
+      status: "empty",
+      count: 0,
+      leads: [],
+      prospectName:
+        `No valid lead records could be constructed for "${queryInput}"`,
+      location: {
+        state:
+          searchGeo?.states?.[0] || "FL"
+      },
+      locationDisplay:
+        searchGeo?.city
+          ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
+          : (searchGeo?.states?.[0] || "FL"),
+      score: null,
+      priority: "UNQUALIFIED",
+      evidenceSummary: [
+        "Provider returned records, but none passed pipeline integrity checks."
+      ],
+      qualificationReasons: [],
+      salesSignals: [],
+      recommendedAction: null,
+      enrichment: null,
+      evidenceLedger: null
+    };
+  }
+
+  // ==========================================================================
+  // 10. PRIMARY LEAD / LEGACY ROOT BINDINGS
+  // ==========================================================================
+
+  const primaryLead =
+    leads[0];
+
   return {
     status: "success",
-    count: leads.length,
-    leads: leads,
-    prospectName: primaryLead.prospectName,
-    location: primaryLead.location,
-    locationDisplay: primaryLead.locationDisplay,
-    score: primaryLead.score,
-    priority: primaryLead.priority,
-    evidenceSummary: primaryLead.evidenceSummary,
-    qualificationReasons: primaryLead.qualificationReasons,
-    enrichment: primaryLead.enrichment,
-    evidenceLedger: primaryLead.evidenceLedger
+
+    count:
+      leads.length,
+
+    leads:
+      leads,
+
+    // Legacy / single-card compatibility
+    prospectName:
+      primaryLead.prospectName,
+
+    location:
+      primaryLead.location,
+
+    locationDisplay:
+      primaryLead.locationDisplay,
+
+    score:
+      primaryLead.score,
+
+    priority:
+      primaryLead.priority,
+
+    recommendedAction:
+      primaryLead.recommendedAction,
+
+    evidenceSummary:
+      primaryLead.evidenceSummary,
+
+    qualificationReasons:
+      primaryLead.qualificationReasons,
+
+    salesSignals:
+      primaryLead.salesSignals,
+
+    enrichment:
+      primaryLead.enrichment,
+
+    evidenceLedger:
+      primaryLead.evidenceLedger
   };
 }
 
-module.exports = { runLeadPipeline };
+module.exports = {
+  runLeadPipeline
+};
