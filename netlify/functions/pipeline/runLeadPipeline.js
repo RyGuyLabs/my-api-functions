@@ -1,6 +1,8 @@
 const { SunbizProvider } = require("../providers/SunbizProvider");
 const { EvidenceLedgerAdapter } = require("../ledger/EvidenceLedgerAdapter");
 const { enrichProspect } = require("../enrichment/enrichProspect");
+const { QualificationEngine } = require("../qualification/QualificationEngine");
+const { buildUserPayload } = require("../prompts/leadQualifierPrompt");
 
 /**
  * Core Lead Pipeline Execution Engine
@@ -94,6 +96,30 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       };
     }
 
+    // Construct Evidence Ledger record bindings
+    const ledgerBinding = {
+      inputSignalId: evidenceEntry.inputSignalId,
+      sourceContentHash: evidenceEntry.sourceContentHash || evidenceEntry.contentHash || null,
+      canonicalEntityHash: evidenceEntry.canonicalEntityHash || null,
+      signalRecordHash: evidenceEntry.signalRecordHash || null,
+      sourceUrl: sourceUrl
+    };
+
+    // Item 5: Execute Deterministic Qualification Engine
+    const qualification = QualificationEngine.evaluate(
+      normalized,
+      enrichmentResult.data || {},
+      ledgerBinding
+    );
+
+    // Item 6: Construct zero-trust AI user payload using object contract
+    const aiUserPayload = buildUserPayload({
+      canonicalEntity: normalized,
+      enrichment: enrichmentResult.data,
+      evidenceLedger: ledgerBinding,
+      qualification: qualification
+    });
+
     // Format location display string safely while preserving raw structured object
     const location = normalized.location || {};
     let locationDisplay = "Florida";
@@ -113,20 +139,14 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       locationDisplay: locationDisplay,
       entity: normalized,
       enrichment: enrichmentResult,
-      score: null, // Set to null until qualification engine rules are applied
-      priority: "UNQUALIFIED",
-      evidenceSummary: [
-        "Verified live corporate registration via official registry.",
-        "Canonical observation ledger entry generated and hash-bound."
-      ],
-      qualificationReasons: [], // System reasons vs Commercial rules separated
-      evidenceLedger: {
-        inputSignalId: evidenceEntry.inputSignalId,
-        sourceContentHash: evidenceEntry.sourceContentHash || evidenceEntry.contentHash || null,
-        canonicalEntityHash: evidenceEntry.canonicalEntityHash || null,
-        signalRecordHash: evidenceEntry.signalRecordHash || null,
-        sourceUrl: sourceUrl
-      }
+      score: qualification.qualificationScore,
+      priority: qualification.priority,
+      evidenceSummary: qualification.evidence.map(e => e.message),
+      qualificationReasons: qualification.qualificationReasons,
+      salesSignals: qualification.salesSignals,
+      recommendedAction: qualification.recommendedAction,
+      aiUserPayload: aiUserPayload,
+      evidenceLedger: ledgerBinding
     });
   }
 
