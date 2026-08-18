@@ -5,8 +5,12 @@ const crypto = require("crypto");
 const { runLeadPipeline } = require("./pipeline/runLeadPipeline.js");
 
 if (!admin.apps.length) {
+  const serviceAccount = JSON.parse(
+    process.env.FIREBASE_SERVICE_ACCOUNT
+  );
+
   admin.initializeApp({
-    credential: admin.credential.applicationDefault()
+    credential: admin.credential.cert(serviceAccount)
   });
 }
 
