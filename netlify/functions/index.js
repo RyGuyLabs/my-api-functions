@@ -646,9 +646,21 @@ exports.handler =
       // ----------------------------------------------------------------------
 
       const authorization =
-        event.headers?.authorization ||
-        event.headers?.Authorization ||
-        "";
+  event.headers?.authorization ||
+  event.headers?.Authorization ||
+  "";
+
+console.log(
+  "[NETLIFY AUTH HEADER CHECK]",
+  {
+    requestId,
+    authorizationPresent: !!authorization,
+    authorizationPrefix:
+      authorization
+        ? authorization.substring(0, 20)
+        : null
+  }
+);
 
       if (
         !authorization.startsWith(
