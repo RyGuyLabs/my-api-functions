@@ -294,20 +294,19 @@ async function runLeadPipeline({
     // ==========================================================================
 
     let enrichmentResult = {
-
-      data: {
-        website: null,
-        contacts: null,
-        phones: [],
-        emails: [],
-        digitalSignals: []
-      },
-
-      status:
-        "unattempted",
-
-      errors: []
-    };
+  data: {
+    website: null,
+    businessPhone: null,
+    emails: [],
+    phones: [],
+    digitalSignals: [],
+    contacts: [],
+    status: "unavailable",
+    errors: []
+  },
+  status: "unattempted",
+  errors: []
+};
 
     try {
 
