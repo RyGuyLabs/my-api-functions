@@ -9,21 +9,24 @@ const { QualificationEngine } = require("../qualification/QualificationEngine");
  * Runtime-agnostic business logic shared by Firebase and Netlify adapters.
  *
  * Pipeline:
+ *
  *   Registry Search
- *      ↓
+ *        ↓
  *   Normalization
- *      ↓
+ *        ↓
  *   Evidence Ledger
- *      ↓
+ *        ↓
  *   Enrichment
- *      ↓
+ *        ↓
  *   Qualification
- *      ↓
+ *        ↓
  *   Structured Lead Output
  *
  * IMPORTANT:
+ *
  * The AI prompt layer is intentionally NOT a hard dependency here.
- * The core lead pipeline must remain operational even if an optional
+ *
+ * The deterministic pipeline must remain operational even if an optional
  * downstream AI module is unavailable.
  *
  * @param {Object} params
@@ -31,9 +34,16 @@ const { QualificationEngine } = require("../qualification/QualificationEngine");
  * @param {Object} [params.filters]
  * @returns {Promise<Object>}
  */
-async function runLeadPipeline({ geoContext, filters = {} }) {
-  const provider = new SunbizProvider();
-  const ledger = new EvidenceLedgerAdapter();
+async function runLeadPipeline({
+  geoContext,
+  filters = {}
+} = {}) {
+
+  const provider =
+    new SunbizProvider();
+
+  const ledger =
+    new EvidenceLedgerAdapter();
 
   const queryInput =
     filters.industry ||
@@ -52,16 +62,20 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
   let rawRecords;
 
   try {
-    rawRecords = await provider.search(
-      searchGeo,
-      {
-        ...filters,
-        industry: queryInput
-      }
-    );
+
+    rawRecords =
+      await provider.search(
+        searchGeo,
+        {
+          ...filters,
+          industry: queryInput
+        }
+      );
+
   } catch (searchError) {
+
     console.error(
-      `[PIPELINE SEARCH FAILURE] ${provider.name}:`,
+      `[PIPELINE SEARCH FAILURE] ${provider.name || "SunbizProvider"}:`,
       searchError.message
     );
 
@@ -74,28 +88,44 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
   // 2. EMPTY RESULT CONTRACT
   // ==========================================================================
 
-  if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
+  if (
+    !Array.isArray(rawRecords) ||
+    rawRecords.length === 0
+  ) {
+
     return {
       status: "empty",
       count: 0,
       leads: [],
+
       prospectName:
         `No live registry records found for "${queryInput}"`,
+
       location: {
-        state: searchGeo?.states?.[0] || "FL"
+        state:
+          searchGeo?.states?.[0] ||
+          "FL"
       },
+
       locationDisplay:
         searchGeo?.city
           ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
-          : (searchGeo?.states?.[0] || "FL"),
+          : (
+              searchGeo?.states?.[0] ||
+              "FL"
+            ),
+
       score: null,
       priority: "UNQUALIFIED",
+
       evidenceSummary: [
         "Provider query yielded 0 candidate records."
       ],
+
       qualificationReasons: [],
       salesSignals: [],
       recommendedAction: null,
+
       enrichment: null,
       evidenceLedger: null
     };
@@ -107,14 +137,15 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
   // 3. SEQUENTIAL CANDIDATE PROCESSING
   //
   // Intentionally sequential.
-  // Do NOT replace this with Promise.all().
+  //
+  // Do NOT replace with Promise.all().
   //
   // Registry + website + contact enrichment can generate external traffic.
-  // Sequential processing prevents a sudden burst of requests against
-  // third-party services.
+  // Sequential execution limits sudden outbound request bursts.
   // ==========================================================================
 
   for (const raw of rawRecords) {
+
     // ------------------------------------------------------------------------
     // 3A. NORMALIZE REGISTRY RECORD
     // ------------------------------------------------------------------------
@@ -122,24 +153,31 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     let normalized;
 
     try {
+
       normalized =
         typeof provider.normalize === "function"
           ? provider.normalize(raw)
           : raw;
+
     } catch (normalizeError) {
+
       console.error(
-        `[NORMALIZATION FAILURE]`,
-        normalizeError.message
+        `[NORMALIZATION FAILURE] ${normalizeError.message}`
       );
 
-      // One malformed provider record should not destroy the entire batch.
+      // A malformed provider record should not destroy the entire batch.
       continue;
     }
 
-    if (!normalized || !normalized.companyName) {
+    if (
+      !normalized ||
+      !normalized.companyName
+    ) {
+
       console.warn(
         "[PIPELINE] Skipping candidate with no canonical company name."
       );
+
       continue;
     }
 
@@ -151,16 +189,21 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       "https://search.sunbiz.org/";
 
     try {
+
       if (
-        typeof provider.getSourceReference === "function"
+        typeof provider.getSourceReference ===
+        "function"
       ) {
+
         sourceUrl =
           provider.getSourceReference(
             raw,
             normalized
           );
       }
+
     } catch (sourceError) {
+
       console.warn(
         `[SOURCE REFERENCE WARNING] ${normalized.companyName}:`,
         sourceError.message
@@ -174,20 +217,28 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     let evidenceEntry;
 
     try {
-      evidenceEntry = ledger.recordObservation({
-        providerName:
-          provider.name || "SunbizProvider",
 
-        rawPayload: raw,
+      evidenceEntry =
+        ledger.recordObservation({
+          providerName:
+            provider.name ||
+            "SunbizProvider",
 
-        normalizedEntity: normalized,
+          rawPayload:
+            raw,
 
-        sourceUrl: sourceUrl,
+          normalizedEntity:
+            normalized,
 
-        retrievedAt:
-          new Date().toISOString()
-      });
+          sourceUrl:
+            sourceUrl,
+
+          retrievedAt:
+            new Date().toISOString()
+        });
+
     } catch (ledgerError) {
+
       console.error(
         `[LEDGER FAILURE] ${normalized.companyName}:`,
         ledgerError.message
@@ -206,6 +257,7 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       !evidenceEntry ||
       !evidenceEntry.inputSignalId
     ) {
+
       throw new Error(
         `[PIPELINE INTEGRITY FAILURE] Evidence Ledger returned no inputSignalId for entity: ${normalized.companyName}`
       );
@@ -216,6 +268,7 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     // ------------------------------------------------------------------------
 
     const ledgerBinding = {
+
       inputSignalId:
         evidenceEntry.inputSignalId,
 
@@ -241,52 +294,217 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     // ==========================================================================
 
     let enrichmentResult = {
+
       data: {
         website: null,
-        contacts: null
+        contacts: null,
+        phones: [],
+        emails: [],
+        digitalSignals: []
       },
-      status: "unattempted",
+
+      status:
+        "unattempted",
+
       errors: []
     };
 
     try {
+
       const enrichmentData =
-        await enrichProspect(normalized);
+        await enrichProspect(
+          normalized
+        );
+
+      /*
+       * IMPORTANT:
+       *
+       * enrichProspect() currently returns:
+       *
+       * {
+       *   website: websiteReconResult,
+       *   contacts: contactSearchResult
+       * }
+       *
+       * QualificationEngine expects the primary enrichment observations
+       * directly on the supplied enrichment object.
+       *
+       * Normalize that boundary here rather than changing multiple
+       * downstream contracts simultaneously.
+       */
+
+      const websiteData =
+        enrichmentData?.website || null;
+
+      const contactData =
+        enrichmentData?.contacts || null;
+
+      const websiteEmails =
+        Array.isArray(websiteData?.emails)
+          ? websiteData.emails
+          : [];
+
+      const websitePhones =
+        Array.isArray(websiteData?.phones)
+          ? websiteData.phones
+          : [];
+
+      const websiteSignals =
+        Array.isArray(websiteData?.digitalSignals)
+          ? websiteData.digitalSignals
+          : [];
+
+      const contactEmails =
+        Array.isArray(contactData?.emails)
+          ? contactData.emails
+          : Array.isArray(contactData?.publicEmails)
+            ? contactData.publicEmails.map(
+                value => ({
+                  value,
+                  source: "contact_search",
+                  confidence: "low",
+                  verified: false
+                })
+              )
+            : [];
+
+      const contactPhones =
+        Array.isArray(contactData?.phones)
+          ? contactData.phones
+          : contactData?.primaryPhone
+            ? [{
+                value:
+                  contactData.primaryPhone,
+                source:
+                  "contact_search",
+                confidence:
+                  contactData.sourceConfidence ||
+                  "low"
+              }]
+            : [];
+
+      const normalizedEnrichmentData = {
+
+        /*
+         * Preserve original provider-level results.
+         */
+        website:
+          websiteData,
+
+        contacts:
+          contactData,
+
+        /*
+         * Flatten observations for QualificationEngine.
+         */
+        emails: [
+          ...websiteEmails,
+          ...contactEmails
+        ],
+
+        phones: [
+          ...websitePhones,
+          ...contactPhones
+        ],
+
+        digitalSignals:
+          websiteSignals,
+
+        observations: [
+          ...(websiteData
+            ? [{
+                provider:
+                  "WebsiteReconProvider",
+
+                observedAt:
+                  websiteData.observedAt ||
+                  new Date().toISOString(),
+
+                observationType:
+                  "website_reconnaissance"
+              }]
+            : []),
+
+          ...(contactData
+            ? [{
+                provider:
+                  "ContactSearch",
+
+                observedAt:
+                  contactData.searchedAt ||
+                  new Date().toISOString(),
+
+                observationType:
+                  "contact_enrichment"
+              }]
+            : [])
+        ]
+      };
 
       const hasWebsiteData =
-        Boolean(enrichmentData?.website);
+        Boolean(
+          websiteData &&
+          websiteData.status === "success"
+        );
 
       const hasContactData =
-        Boolean(enrichmentData?.contacts);
+        Boolean(
+          contactData &&
+          (
+            contactData.primaryPhone ||
+            contactData.publicEmails?.length ||
+            contactData.emails?.length ||
+            contactData.phones?.length
+          )
+        );
+
+      const hasFlattenedObservations =
+        normalizedEnrichmentData.emails.length > 0 ||
+        normalizedEnrichmentData.phones.length > 0 ||
+        normalizedEnrichmentData.digitalSignals.length > 0;
 
       enrichmentResult = {
-        data: enrichmentData,
+
+        data:
+          normalizedEnrichmentData,
 
         status:
-          hasWebsiteData || hasContactData
-            ? "partial"
+          hasWebsiteData ||
+          hasContactData ||
+          hasFlattenedObservations
+            ? "complete"
             : "empty",
 
         errors: []
       };
+
     } catch (enrichError) {
+
       console.error(
         `[ENRICHMENT ERROR BOUNDARY] ${normalized.companyName}:`,
         enrichError.message
       );
 
       enrichmentResult = {
+
         data: {
           website: null,
-          contacts: null
+          contacts: null,
+          phones: [],
+          emails: [],
+          digitalSignals: []
         },
 
-        status: "failed",
+        status:
+          "failed",
 
         errors: [
           {
-            stage: "enrichProspect",
-            message: enrichError.message
+            stage:
+              "enrichProspect",
+
+            message:
+              enrichError.message
           }
         ]
       };
@@ -299,23 +517,34 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     let qualification;
 
     try {
+
       qualification =
         QualificationEngine.evaluate(
           normalized,
+
           enrichmentResult.data || {},
+
           ledgerBinding
         );
+
     } catch (qualificationError) {
+
       console.error(
         `[QUALIFICATION FAILURE] ${normalized.companyName}:`,
         qualificationError.message
       );
 
-      // Qualification failure should not destroy verified registry data.
-      qualification = {
-        qualificationScore: null,
+      /*
+       * Qualification failure must NOT destroy verified registry data.
+       */
 
-        priority: "UNQUALIFIED",
+      qualification = {
+
+        qualificationScore:
+          null,
+
+        priority:
+          "UNQUALIFIED",
 
         qualificationReasons: [
           "Qualification engine failed; manual review required."
@@ -323,8 +552,11 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
 
         salesSignals: [
           {
-            code: "QUALIFICATION_ENGINE_ERROR",
-            message: qualificationError.message
+            code:
+              "QUALIFICATION_ENGINE_ERROR",
+
+            message:
+              qualificationError.message
           }
         ],
 
@@ -346,13 +578,20 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     let locationDisplay =
       "Florida";
 
-    if (typeof location === "string") {
+    if (
+      typeof location ===
+      "string"
+    ) {
+
       locationDisplay =
         location;
+
     } else if (
       location &&
-      typeof location === "object"
+      typeof location ===
+      "object"
     ) {
+
       locationDisplay =
         [
           location.city,
@@ -366,20 +605,29 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
 
     // ==========================================================================
     // 7. EVIDENCE SUMMARY
-    //
-    // Do NOT assume QualificationEngine.evidence exists.
-    // The current engine exposes qualificationReasons and salesSignals.
     // ==========================================================================
 
     const evidenceSummary = [
+
       "Verified registry observation processed through the active provider.",
 
       "Canonical observation ledger entry generated and hash-bound."
     ];
 
     if (sourceUrl) {
+
       evidenceSummary.push(
         `Authoritative source: ${sourceUrl}`
+      );
+    }
+
+    if (
+      enrichmentResult.status ===
+      "complete"
+    ) {
+
+      evidenceSummary.push(
+        "Secondary public enrichment observations collected."
       );
     }
 
@@ -388,6 +636,7 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     // ==========================================================================
 
     leads.push({
+
       prospectId:
         `prospect_${evidenceEntry.inputSignalId}`,
 
@@ -409,7 +658,8 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
         enrichmentResult,
 
       score:
-        qualification.qualificationScore ?? null,
+        qualification.qualificationScore ??
+        null,
 
       priority:
         qualification.priority ||
@@ -445,31 +695,57 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
   // 9. SAFETY CHECK
   // ==========================================================================
 
-  if (leads.length === 0) {
+  if (
+    leads.length === 0
+  ) {
+
     return {
-      status: "empty",
-      count: 0,
-      leads: [],
+
+      status:
+        "empty",
+
+      count:
+        0,
+
+      leads:
+        [],
+
       prospectName:
         `No valid lead records could be constructed for "${queryInput}"`,
+
       location: {
         state:
-          searchGeo?.states?.[0] || "FL"
+          searchGeo?.states?.[0] ||
+          "FL"
       },
+
       locationDisplay:
         searchGeo?.city
           ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
-          : (searchGeo?.states?.[0] || "FL"),
-      score: null,
-      priority: "UNQUALIFIED",
+          : (
+              searchGeo?.states?.[0] ||
+              "FL"
+            ),
+
+      score:
+        null,
+
+      priority:
+        "UNQUALIFIED",
+
       evidenceSummary: [
         "Provider returned records, but none passed pipeline integrity checks."
       ],
+
       qualificationReasons: [],
       salesSignals: [],
       recommendedAction: null,
-      enrichment: null,
-      evidenceLedger: null
+
+      enrichment:
+        null,
+
+      evidenceLedger:
+        null
     };
   }
 
@@ -481,7 +757,9 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
     leads[0];
 
   return {
-    status: "success",
+
+    status:
+      "success",
 
     count:
       leads.length,
@@ -490,6 +768,7 @@ async function runLeadPipeline({ geoContext, filters = {} }) {
       leads,
 
     // Legacy / single-card compatibility
+
     prospectName:
       primaryLead.prospectName,
 
