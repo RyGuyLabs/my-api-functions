@@ -1,30 +1,58 @@
-function canonicalize(obj) {
-  if (obj === null || typeof obj !== "object") {
-    return obj;
+function canonicalize(value) {
+  // Preserve primitives and null exactly as supplied.
+  if (value === null || typeof value !== "object") {
+    return value;
   }
 
-  if (Array.isArray(obj)) {
-    return obj.map(canonicalize);
+  // Preserve array ordering.
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
   }
 
-  const sortedKeys = Object.keys(obj).sort();
-  const canonicalObj = {};
+  // Recursively sort object keys.
+  const sortedKeys = Object.keys(value).sort();
+
+  const canonicalObject = {};
 
   for (const key of sortedKeys) {
-    const value = obj[key];
-    if (value !== undefined) {
-      canonicalObj[key] = canonicalize(value);
+    const childValue = value[key];
+
+    // Undefined object properties are excluded because
+    // JSON.stringify would omit them anyway.
+    if (childValue !== undefined) {
+      canonicalObject[key] = canonicalize(childValue);
     }
   }
 
-  return canonicalObj;
+  return canonicalObject;
 }
 
-function toCanonicalString(obj) {
-  return JSON.stringify(canonicalize(obj));
+/**
+ * Convert a value into its deterministic canonical JSON representation.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+function toCanonicalString(value) {
+  return JSON.stringify(canonicalize(value));
+}
+
+/**
+ * Compare two values using their canonical representations.
+ *
+ * Useful for deterministic equality checks without
+ * depending on original object key ordering.
+ *
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ */
+function canonicalEqual(left, right) {
+  return toCanonicalString(left) === toCanonicalString(right);
 }
 
 module.exports = {
   canonicalize,
-  toCanonicalString
+  toCanonicalString,
+  canonicalEqual
 };
