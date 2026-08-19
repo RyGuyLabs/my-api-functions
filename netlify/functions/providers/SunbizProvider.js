@@ -78,69 +78,111 @@ class SunbizProvider extends BaseProvider {
    * Search results are registry observations, not qualified leads.
    */
   async search(geoContext = {}, filters = {}) {
-    const query =
-      filters?.query ||
-      filters?.industry ||
-      "";
+  const query =
+    filters?.query ||
+    filters?.industry ||
+    "";
 
-    if (!query.trim()) {
-      return [];
+  if (!query.trim()) {
+    return [];
+  }
+
+  const cleanTerm =
+    this.cleanSearchTerm(query);
+
+  if (!cleanTerm) {
+    return [];
+  }
+
+  const limit =
+    this.normalizeLimit(filters?.limit);
+
+  const searchUrl =
+    `${this.baseUrl}${this.searchPath}` +
+    `?searchTerm=${encodeURIComponent(cleanTerm)}`;
+
+  console.log(
+    `[${this.name}] SEARCH START`,
+    {
+      query: cleanTerm,
+      url: searchUrl,
+      geoContext,
+      limit
     }
+  );
 
-    const cleanTerm = this.cleanSearchTerm(query);
+  try {
+    const response =
+      await this._request(searchUrl);
 
-    if (!cleanTerm) {
-      return [];
-    }
-
-    const limit = this.normalizeLimit(
-      filters?.limit
+    console.log(
+      `[${this.name}] HTTP RESPONSE`,
+      {
+        status: response.status,
+        ok: response.ok,
+        contentType:
+          response.headers.get("content-type") || null
+      }
     );
 
-    const searchUrl =
-      `${this.baseUrl}${this.searchPath}` +
-      `?searchTerm=${encodeURIComponent(cleanTerm)}`;
-
-    try {
-      const response = await this._request(
-        searchUrl
+    if (!response.ok) {
+      throw new Error(
+        `Sunbiz returned HTTP ${response.status}`
       );
-
-      if (!response.ok) {
-        console.warn(
-          `[${this.name}] Registry returned HTTP ${response.status}.`
-        );
-
-        return [];
-      }
-
-      const html = await response.text();
-
-      if (!html) {
-        console.warn(
-          `[${this.name}] Registry returned an empty response.`
-        );
-
-        return [];
-      }
-
-      const records =
-        this._parseSunbizTableHtml(
-          html,
-          searchUrl,
-          limit
-        );
-
-      return records;
-
-    } catch (error) {
-      console.warn(
-        `[${this.name} Search Notice] ${error.message}`
-      );
-
-      return [];
     }
+
+    const html =
+      await response.text();
+
+    console.log(
+      `[${this.name}] RESPONSE BODY`,
+      {
+        length: html.length,
+        preview:
+          html
+            .replace(/\s+/g, " ")
+            .slice(0, 500)
+      }
+    );
+
+    if (!html) {
+      throw new Error(
+        "Sunbiz returned an empty response body."
+      );
+    }
+
+    const records =
+      this._parseSunbizTableHtml(
+        html,
+        searchUrl,
+        limit
+      );
+
+    console.log(
+      `[${this.name}] PARSE RESULT`,
+      {
+        query: cleanTerm,
+        recordCount: records.length
+      }
+    );
+
+    return records;
+
+  } catch (error) {
+
+    console.error(
+      `[${this.name} SEARCH FAILURE]`,
+      {
+        query: cleanTerm,
+        url: searchUrl,
+        message: error.message,
+        stack: error.stack
+      }
+    );
+
+    throw error;
   }
+}
 
   /**
    * Perform controlled HTTP request to Sunbiz.
