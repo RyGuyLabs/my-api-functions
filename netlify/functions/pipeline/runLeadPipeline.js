@@ -40,11 +40,14 @@ async function runLeadPipeline({
   filters = {}
 } = {}) {
 
-  const provider =
+    const provider =
     new SunbizProvider();
 
   const ledger =
     new EvidenceLedgerAdapter();
+
+  const intentParser =
+    new IntentParser();
 
   const queryInput =
     filters.industry ||
