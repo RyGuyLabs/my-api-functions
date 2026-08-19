@@ -7,12 +7,14 @@
  * RESPONSIBILITY:
  * - Store normalized Florida registry observations.
  * - Query locally ingested registry records.
- * - Return registry observations matching SearchIntent.
+ * - Bulk-upsert official registry records.
+ * - Preserve dataset provenance.
  *
  * DOES NOT:
  * - Fetch Sunbiz interactively.
  * - Scrape websites.
  * - Parse natural-language searches.
+ * - Determine industry classification.
  * - Perform enrichment.
  * - Score prospects.
  * - Qualify leads.
@@ -20,16 +22,17 @@
  *
  * ARCHITECTURE:
  *
- * SearchIntent
- *      ↓
- * OfficialFloridaProvider
- *      ↓
+ * Florida Official Data
+ *        ↓
+ * FloridaIngestionService
+ *        ↓
  * FloridaRegistryDatabase
- *      ↓
- * SQLite
- *
- * The database is populated separately by the Florida
- * official-data ingestion process.
+ *        ↓
+ * OfficialFloridaProvider
+ *        ↓
+ * RegistryAcquisitionService
+ *        ↓
+ * SearchIntent
  */
 
 const fs = require("fs");
@@ -38,10 +41,6 @@ const Database = require("better-sqlite3");
 
 class FloridaRegistryDatabase {
 
-  /**
-   * @param {Object} options
-   * @param {string} [options.databasePath]
-   */
   constructor({
     databasePath =
       process.env.FLORIDA_REGISTRY_DB_PATH ||
@@ -58,10 +57,6 @@ class FloridaRegistryDatabase {
     this.databasePath =
       databasePath;
 
-    // ------------------------------------------------------------------------
-    // Ensure database directory exists.
-    // ------------------------------------------------------------------------
-
     const databaseDirectory =
       path.dirname(
         this.databasePath
@@ -74,18 +69,10 @@ class FloridaRegistryDatabase {
       }
     );
 
-    // ------------------------------------------------------------------------
-    // Open SQLite database.
-    // ------------------------------------------------------------------------
-
     this.db =
       new Database(
         this.databasePath
       );
-
-    // ------------------------------------------------------------------------
-    // SQLite configuration.
-    // ------------------------------------------------------------------------
 
     this.db.pragma(
       "journal_mode = WAL"
@@ -95,21 +82,15 @@ class FloridaRegistryDatabase {
       "foreign_keys = ON"
     );
 
-    // ------------------------------------------------------------------------
-    // Initialize schema.
-    // ------------------------------------------------------------------------
-
     this.initializeSchema();
+
+    this.prepareStatements();
   }
 
-  /**
-   * Create the registry table and indexes.
-   *
-   * IMPORTANT:
-   *
-   * This schema stores observed registry data.
-   * It does not store qualification decisions.
-   */
+  // ==========================================================================
+  // SCHEMA
+  // ==========================================================================
+
   initializeSchema() {
 
     this.db.exec(`
@@ -188,408 +169,59 @@ class FloridaRegistryDatabase {
       ON florida_entities(mailing_city);
 
       CREATE INDEX IF NOT EXISTS
+        idx_florida_entities_mailing_state
+      ON florida_entities(mailing_state);
+
+      CREATE INDEX IF NOT EXISTS
         idx_florida_entities_mailing_zip
       ON florida_entities(mailing_zip);
+
+      CREATE TABLE IF NOT EXISTS ingestion_manifests (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        source TEXT NOT NULL,
+
+        acquisition_type TEXT NOT NULL,
+
+        source_file TEXT NOT NULL,
+
+        source_file_sha256 TEXT,
+
+        file_size_bytes INTEGER,
+
+        retrieved_at TEXT NOT NULL,
+
+        lines_read INTEGER NOT NULL DEFAULT 0,
+
+        valid_records INTEGER NOT NULL DEFAULT 0,
+
+        rejected_records INTEGER NOT NULL DEFAULT 0,
+
+        records_ingested INTEGER NOT NULL DEFAULT 0,
+
+        execution_time_seconds REAL,
+
+        status TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS
+        idx_ingestion_manifests_source_file
+      ON ingestion_manifests(source_file);
+
+      CREATE INDEX IF NOT EXISTS
+        idx_ingestion_manifests_retrieved_at
+      ON ingestion_manifests(retrieved_at);
     `);
   }
 
-  /**
-   * Search the locally ingested Florida registry.
-   *
-   * SearchIntent contract:
-   *
-   * {
-   *   industry: {
-   *     canonical,
-   *     keywords,
-   *     classifications
-   *   },
-   *   geography: {
-   *     state,
-   *     city,
-   *     county,
-   *     zip
-   *   },
-   *   limit
-   * }
-   *
-   * IMPORTANT:
-   *
-   * The registry does NOT necessarily contain an industry classification
-   * capable of directly identifying every business type.
-   *
-   * Therefore this first database implementation uses registry name
-   * observations for discovery and leaves broader industry discovery
-   * to the discovery/enrichment layers.
-   */
-  async search(searchIntent) {
+  // ==========================================================================
+  // PREPARED STATEMENTS
+  // ==========================================================================
 
-    if (
-      !searchIntent ||
-      typeof searchIntent !== "object"
-    ) {
-      throw new Error(
-        "FloridaRegistryDatabase.search requires a SearchIntent."
-      );
-    }
+  prepareStatements() {
 
-    const geography =
-      searchIntent.geography || {};
-
-    const industry =
-      searchIntent.industry || {};
-
-    const state =
-      String(
-        geography.state || ""
-      )
-        .trim()
-        .toUpperCase();
-
-    if (state !== "FL") {
-      return [];
-    }
-
-    const limit =
-      Math.min(
-        Math.max(
-          Number.parseInt(
-            searchIntent.limit,
-            10
-          ) || 10,
-          1
-        ),
-        50
-      );
-
-    // ------------------------------------------------------------------------
-    // Build deterministic query.
-    // ------------------------------------------------------------------------
-
-    const conditions = [
-      `
-      (
-        UPPER(principal_state) = @state
-        OR
-        UPPER(mailing_state) = @state
-      )
-      `
-    ];
-
-    const parameters = {
-      state
-    };
-
-    // ------------------------------------------------------------------------
-    // Geographic filtering.
-    // ------------------------------------------------------------------------
-
-    if (
-      geography.city
-    ) {
-
-      conditions.push(`
-        (
-          LOWER(TRIM(principal_city)) =
-            LOWER(TRIM(@city))
-
-          OR
-
-          LOWER(TRIM(mailing_city)) =
-            LOWER(TRIM(@city))
-        )
-      `);
-
-      parameters.city =
-        String(
-          geography.city
-        ).trim();
-    }
-
-    if (
-      geography.zip
-    ) {
-
-      conditions.push(`
-        (
-          TRIM(principal_zip) =
-            TRIM(@zip)
-
-          OR
-
-          TRIM(mailing_zip) =
-            TRIM(@zip)
-        )
-      `);
-
-      parameters.zip =
-        String(
-          geography.zip
-        ).trim();
-    }
-
-    // ------------------------------------------------------------------------
-    // Industry/name discovery.
-    //
-    // This is intentionally conservative.
-    //
-    // We are NOT claiming that a registry-name keyword proves industry
-    // classification.
-    // ------------------------------------------------------------------------
-
-    const industryTerms = [
-      industry.canonical,
-      ...(Array.isArray(industry.keywords)
-        ? industry.keywords
-        : [])
-    ]
-      .map(
-        value =>
-          String(value || "")
-            .trim()
-            .toLowerCase()
-      )
-      .filter(Boolean);
-
-    const uniqueIndustryTerms =
-      [
-        ...new Set(
-          industryTerms
-        )
-      ];
-
-    if (
-      uniqueIndustryTerms.length
-    ) {
-
-      const industryConditions = [];
-
-      uniqueIndustryTerms
-        .slice(0, 10)
-        .forEach(
-          (term, index) => {
-
-            const parameterName =
-              `industryTerm${index}`;
-
-            industryConditions.push(`
-              LOWER(company_name)
-                LIKE @${parameterName}
-            `);
-
-            parameters[
-              parameterName
-            ] =
-              `%${term}%`;
-          }
-        );
-
-      conditions.push(`
-        (
-          ${industryConditions.join(
-            " OR "
-          )}
-        )
-      `);
-    }
-
-    // ------------------------------------------------------------------------
-    // Query.
-    // ------------------------------------------------------------------------
-
-    const sql = `
-      SELECT
-
-        registration_id,
-
-        company_name,
-
-        entity_type,
-
-        status,
-
-        filing_date,
-
-        principal_address_line1,
-
-        principal_address_line2,
-
-        principal_city,
-
-        principal_state,
-
-        principal_zip,
-
-        mailing_address_line1,
-
-        mailing_address_line2,
-
-        mailing_city,
-
-        mailing_state,
-
-        mailing_zip,
-
-        registered_agent_name,
-
-        source_file,
-
-        source_type,
-
-        source_retrieved_at,
-
-        record_updated_at
-
-      FROM florida_entities
-
-      WHERE
-        ${conditions.join(
-          " AND "
-        )}
-
-      ORDER BY
-        company_name ASC
-
-      LIMIT @limit
-    `;
-
-    parameters.limit =
-      limit;
-
-    const rows =
-      this.db
-        .prepare(sql)
-        .all(parameters);
-
-    return rows.map(
-      row =>
-        this.normalizeRecord(
-          row
-        )
-    );
-  }
-
-  /**
-   * Convert database row into the provider-neutral registry observation
-   * structure.
-   */
-  normalizeRecord(row) {
-
-    return {
-
-      registrationId:
-        row.registration_id ||
-        null,
-
-      companyName:
-        row.company_name ||
-        null,
-
-      entityType:
-        row.entity_type ||
-        null,
-
-      status:
-        row.status ||
-        "UNKNOWN",
-
-      formationDate:
-        row.filing_date ||
-        null,
-
-      principalAddress: {
-
-        line1:
-          row.principal_address_line1 ||
-          null,
-
-        line2:
-          row.principal_address_line2 ||
-          null,
-
-        city:
-          row.principal_city ||
-          null,
-
-        state:
-          row.principal_state ||
-          null,
-
-        zip:
-          row.principal_zip ||
-          null
-      },
-
-      mailingAddress: {
-
-        line1:
-          row.mailing_address_line1 ||
-          null,
-
-        line2:
-          row.mailing_address_line2 ||
-          null,
-
-        city:
-          row.mailing_city ||
-          null,
-
-        state:
-          row.mailing_state ||
-          null,
-
-        zip:
-          row.mailing_zip ||
-          null
-      },
-
-      registeredAgent:
-        row.registered_agent_name ||
-        null,
-
-      source: {
-
-        file:
-          row.source_file ||
-          null,
-
-        sourceType:
-          row.source_type ||
-          "official_state_dataset",
-
-        retrievedAt:
-          row.source_retrieved_at ||
-          null,
-
-        recordUpdatedAt:
-          row.record_updated_at ||
-          null
-      }
-    };
-  }
-
-  /**
-   * Insert or update an official registry record.
-   *
-   * This method will be used by the future Florida data-ingestion job.
-   */
-  upsertRecord(record) {
-
-    if (
-      !record ||
-      !record.registrationId ||
-      !record.companyName
-    ) {
-
-      throw new Error(
-        "Florida registry record requires registrationId and companyName."
-      );
-    }
-
-    const now =
-      new Date().toISOString();
-
-    const statement =
+    this.upsertStatement =
       this.db.prepare(`
         INSERT INTO florida_entities (
 
@@ -719,7 +351,505 @@ class FloridaRegistryDatabase {
             excluded.updated_at
       `);
 
-    statement.run({
+    this.upsertBatchTransaction =
+      this.db.transaction(
+        records => {
+
+          let affected =
+            0;
+
+          for (
+            const record of records
+          ) {
+
+            this.upsertStatement.run(
+              this.toDatabaseRecord(
+                record
+              )
+            );
+
+            affected++;
+          }
+
+          return affected;
+        }
+      );
+
+    this.recordManifestStatement =
+      this.db.prepare(`
+        INSERT INTO ingestion_manifests (
+
+          source,
+          acquisition_type,
+          source_file,
+          source_file_sha256,
+          file_size_bytes,
+          retrieved_at,
+          lines_read,
+          valid_records,
+          rejected_records,
+          records_ingested,
+          execution_time_seconds,
+          status
+
+        )
+
+        VALUES (
+
+          @source,
+          @acquisitionType,
+          @sourceFile,
+          @sourceFileSha256,
+          @fileSizeBytes,
+          @retrievedAt,
+          @linesRead,
+          @validRecords,
+          @rejectedRecords,
+          @recordsIngested,
+          @executionTimeSeconds,
+          @status
+
+        )
+      `);
+  }
+
+  // ==========================================================================
+  // SEARCH
+  // ==========================================================================
+
+  async search(searchIntent) {
+
+    if (
+      !searchIntent ||
+      typeof searchIntent !== "object" ||
+      Array.isArray(searchIntent)
+    ) {
+
+      throw new Error(
+        "FloridaRegistryDatabase.search requires a SearchIntent."
+      );
+    }
+
+    const geography =
+      searchIntent.geography || {};
+
+    const industry =
+      searchIntent.industry || {};
+
+    const state =
+      String(
+        geography.state || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    if (
+      state !== "FL"
+    ) {
+      return [];
+    }
+
+    const limit =
+      Math.min(
+        Math.max(
+          Number.parseInt(
+            searchIntent.limit,
+            10
+          ) || 10,
+          1
+        ),
+        50
+      );
+
+    const conditions = [
+
+      `(
+        UPPER(principal_state) = @state
+        OR
+        UPPER(mailing_state) = @state
+      )`
+
+    ];
+
+    const parameters = {
+      state
+    };
+
+    // ------------------------------------------------------------------------
+    // CITY
+    // ------------------------------------------------------------------------
+
+    if (
+      geography.city
+    ) {
+
+      conditions.push(`
+        (
+          LOWER(TRIM(principal_city)) =
+            LOWER(TRIM(@city))
+
+          OR
+
+          LOWER(TRIM(mailing_city)) =
+            LOWER(TRIM(@city))
+        )
+      `);
+
+      parameters.city =
+        String(
+          geography.city
+        ).trim();
+    }
+
+    // ------------------------------------------------------------------------
+    // ZIP
+    // ------------------------------------------------------------------------
+
+    if (
+      geography.zip
+    ) {
+
+      const normalizedZip =
+        String(
+          geography.zip
+        )
+          .trim()
+          .split("-")[0];
+
+      conditions.push(`
+        (
+          SUBSTR(
+            TRIM(principal_zip),
+            1,
+            5
+          ) = @zip
+
+          OR
+
+          SUBSTR(
+            TRIM(mailing_zip),
+            1,
+            5
+          ) = @zip
+        )
+      `);
+
+      parameters.zip =
+        normalizedZip;
+    }
+
+    // ------------------------------------------------------------------------
+    // INDUSTRY DISCOVERY
+    //
+    // IMPORTANT:
+    //
+    // This is a registry-name search only.
+    // It does NOT establish industry classification.
+    // ------------------------------------------------------------------------
+
+    const industryTerms = [
+
+      industry.canonical,
+
+      ...(Array.isArray(
+        industry.keywords
+      )
+        ? industry.keywords
+        : [])
+
+    ]
+      .map(
+        value =>
+          String(
+            value || ""
+          )
+            .trim()
+            .toLowerCase()
+      )
+      .filter(Boolean);
+
+    const uniqueIndustryTerms =
+      [
+        ...new Set(
+          industryTerms
+        )
+      ];
+
+    if (
+      uniqueIndustryTerms.length > 0
+    ) {
+
+      const industryConditions = [];
+
+      uniqueIndustryTerms
+        .slice(0, 10)
+        .forEach(
+          (term, index) => {
+
+            const parameterName =
+              `industryTerm${index}`;
+
+            industryConditions.push(
+              `
+                LOWER(company_name)
+                LIKE @${parameterName}
+              `
+            );
+
+            parameters[
+              parameterName
+            ] =
+              `%${term}%`;
+          }
+        );
+
+      conditions.push(`
+        (
+          ${industryConditions.join(
+            " OR "
+          )}
+        )
+      `);
+    }
+
+    // ------------------------------------------------------------------------
+    // QUERY
+    // ------------------------------------------------------------------------
+
+    const sql = `
+
+      SELECT
+
+        registration_id,
+        company_name,
+        entity_type,
+        status,
+        filing_date,
+
+        principal_address_line1,
+        principal_address_line2,
+        principal_city,
+        principal_state,
+        principal_zip,
+
+        mailing_address_line1,
+        mailing_address_line2,
+        mailing_city,
+        mailing_state,
+        mailing_zip,
+
+        registered_agent_name,
+
+        source_file,
+        source_type,
+        source_retrieved_at,
+        record_updated_at
+
+      FROM florida_entities
+
+      WHERE
+        ${conditions.join(" AND ")}
+
+      ORDER BY
+        company_name ASC
+
+      LIMIT @limit
+
+    `;
+
+    parameters.limit =
+      limit;
+
+    const rows =
+      this.db
+        .prepare(sql)
+        .all(
+          parameters
+        );
+
+    return rows.map(
+      row =>
+        this.normalizeRecord(
+          row
+        )
+    );
+  }
+
+  // ==========================================================================
+  // NORMALIZATION
+  // ==========================================================================
+
+  normalizeRecord(row) {
+
+    return {
+
+      registrationId:
+        row.registration_id ||
+        null,
+
+      companyName:
+        row.company_name ||
+        null,
+
+      entityType:
+        row.entity_type ||
+        null,
+
+      status:
+        row.status ||
+        "UNKNOWN",
+
+      formationDate:
+        row.filing_date ||
+        null,
+
+      principalAddress: {
+
+        line1:
+          row.principal_address_line1 ||
+          null,
+
+        line2:
+          row.principal_address_line2 ||
+          null,
+
+        city:
+          row.principal_city ||
+          null,
+
+        state:
+          row.principal_state ||
+          null,
+
+        zip:
+          row.principal_zip ||
+          null
+      },
+
+      mailingAddress: {
+
+        line1:
+          row.mailing_address_line1 ||
+          null,
+
+        line2:
+          row.mailing_address_line2 ||
+          null,
+
+        city:
+          row.mailing_city ||
+          null,
+
+        state:
+          row.mailing_state ||
+          null,
+
+        zip:
+          row.mailing_zip ||
+          null
+      },
+
+      registeredAgent:
+        row.registered_agent_name ||
+        null,
+
+      source: {
+
+        file:
+          row.source_file ||
+          null,
+
+        sourceType:
+          row.source_type ||
+          "official_state_dataset",
+
+        retrievedAt:
+          row.source_retrieved_at ||
+          null,
+
+        recordUpdatedAt:
+          row.record_updated_at ||
+          null
+      }
+    };
+  }
+
+  // ==========================================================================
+  // UPSERT
+  // ==========================================================================
+
+  upsertRecord(record) {
+
+    if (
+      !record ||
+      !record.registrationId ||
+      !record.companyName
+    ) {
+
+      throw new Error(
+        "Florida registry record requires registrationId and companyName."
+      );
+    }
+
+    this.upsertStatement.run(
+      this.toDatabaseRecord(
+        record
+      )
+    );
+  }
+
+  // ==========================================================================
+  // BULK UPSERT
+  // ==========================================================================
+
+  upsertBatch(records) {
+
+    if (
+      !Array.isArray(records)
+    ) {
+
+      throw new Error(
+        "FloridaRegistryDatabase.upsertBatch requires an array."
+      );
+    }
+
+    if (
+      records.length === 0
+    ) {
+      return 0;
+    }
+
+    for (
+      const record of records
+    ) {
+
+      if (
+        !record ||
+        !record.registrationId ||
+        !record.companyName
+      ) {
+
+        throw new Error(
+          "Florida registry batch contains a record without registrationId or companyName."
+        );
+      }
+    }
+
+    return this.upsertBatchTransaction(
+      records
+    );
+  }
+
+  // ==========================================================================
+  // DATABASE MAPPING
+  // ==========================================================================
+
+  toDatabaseRecord(record) {
+
+    const now =
+      new Date().toISOString();
+
+    return {
 
       registrationId:
         record.registrationId,
@@ -804,12 +934,89 @@ class FloridaRegistryDatabase {
 
       updatedAt:
         now
+    };
+  }
+
+  // ==========================================================================
+  // INGESTION MANIFEST
+  // ==========================================================================
+
+  recordIngestionManifest(
+    manifest
+  ) {
+
+    if (
+      !manifest ||
+      typeof manifest !== "object"
+    ) {
+
+      throw new Error(
+        "recordIngestionManifest requires a manifest object."
+      );
+    }
+
+    this.recordManifestStatement.run({
+
+      source:
+        manifest.source ||
+        "Florida Division of Corporations",
+
+      acquisitionType:
+        manifest.acquisitionType ||
+        "unknown",
+
+      sourceFile:
+        manifest.sourceFile ||
+        "unknown",
+
+      sourceFileSha256:
+        manifest.sourceFileSha256 ||
+        null,
+
+      fileSizeBytes:
+        Number(
+          manifest.fileSizeBytes
+        ) || null,
+
+      retrievedAt:
+        manifest.retrievedAt ||
+        new Date().toISOString(),
+
+      linesRead:
+        Number(
+          manifest.linesRead
+        ) || 0,
+
+      validRecords:
+        Number(
+          manifest.validRecords
+        ) || 0,
+
+      rejectedRecords:
+        Number(
+          manifest.rejectedRecords
+        ) || 0,
+
+      recordsIngested:
+        Number(
+          manifest.recordsIngested
+        ) || 0,
+
+      executionTimeSeconds:
+        Number(
+          manifest.executionTimeSeconds
+        ) || 0,
+
+      status:
+        manifest.status ||
+        "unknown"
     });
   }
 
-  /**
-   * Close the database connection.
-   */
+  // ==========================================================================
+  // CLOSE
+  // ==========================================================================
+
   close() {
 
     if (
