@@ -1,8 +1,17 @@
-const { SunbizProvider } = require("../providers/SunbizProvider");
-const { EvidenceLedgerAdapter } = require("../ledger/EvidenceLedgerAdapter");
-const { enrichProspect } = require("../enrichment/enrichProspect");
-const { QualificationEngine } = require("../qualification/QualificationEngine");
-const { IntentParser } = require("../intent/IntentParser");
+const { SunbizProvider } =
+  require("../providers/SunbizProvider");
+
+const { EvidenceLedgerAdapter } =
+  require("../ledger/EvidenceLedgerAdapter");
+
+const { enrichProspect } =
+  require("../enrichment/enrichProspect");
+
+const { QualificationEngine } =
+  require("../qualification/QualificationEngine");
+
+const { IntentParser } =
+  require("../intent/IntentParser");
 
 /**
  * Core Lead Pipeline Execution Engine
@@ -11,6 +20,10 @@ const { IntentParser } = require("../intent/IntentParser");
  *
  * Pipeline:
  *
+ *    Raw Search Request
+ *        ↓
+ *    Intent Parsing / Validation
+ *        ↓
  *    Registry Search
  *        ↓
  *    Normalization
@@ -40,7 +53,7 @@ async function runLeadPipeline({
   filters = {}
 } = {}) {
 
-    const provider =
+  const provider =
     new SunbizProvider();
 
   const ledger =
@@ -49,10 +62,25 @@ async function runLeadPipeline({
   const intentParser =
     new IntentParser();
 
+  // ==========================================================================
+  // 0. RAW SEARCH INPUT
+  // ==========================================================================
+  //
+  // The pipeline accepts the existing transport contract:
+  //
+  // filters.industry
+  // filters.query
+  //
+  // We preserve that contract so Firebase and Netlify do not need to change.
+  // ==========================================================================
+
   const queryInput =
-    filters.industry ||
-    filters.query ||
-    "Roofing Contractors";
+    String(
+      filters.industry ||
+      filters.query ||
+      ""
+    )
+      .trim();
 
   const searchGeo =
     geoContext || {
@@ -60,36 +88,47 @@ async function runLeadPipeline({
     };
 
   // ==========================================================================
-  // SEARCH INTENT PARSING
+  // 1. SEARCH INTENT PARSING
   // ==========================================================================
   //
-  // Convert the human search request into the structured SearchIntent
-  // required by the provider layer.
+  // IntentParser validates and structures the human search request.
   //
   // Example:
   //
   // "solar contractors in Tampa FL"
   //
-  // becomes:
+  // becomes approximately:
   //
   // {
   //   industry: {
   //     canonical: "solar contractor",
-  //     ...
+  //     keywords: [...],
+  //     classifications: ["238210"]
   //   },
+  //
   //   geography: {
   //     state: "FL",
   //     city: "Tampa",
-  //     county: "Hillsborough"
-  //   }
+  //     county: "Hillsborough",
+  //     zip: null
+  //   },
+  //
+  //   limit: 10
   // }
   //
-  // IntentParser performs no registry search.
+  // IntentParser does NOT perform the registry search.
   // ==========================================================================
 
   let searchIntent;
 
   try {
+
+    if (!queryInput) {
+
+      throw new Error(
+        "A search query is required."
+      );
+    }
 
     searchIntent =
       intentParser.parse(
@@ -123,6 +162,7 @@ async function runLeadPipeline({
     );
 
     return {
+
       status:
         "invalid_intent",
 
@@ -169,6 +209,7 @@ async function runLeadPipeline({
       ],
 
       qualificationReasons: [],
+
       salesSignals: [],
 
       recommendedAction:
@@ -181,142 +222,358 @@ async function runLeadPipeline({
         null
     };
   }
-  
+
   // ==========================================================================
-  // 1. REGISTRY SEARCH
+  // 1A. RESOLVE SEARCH GEOGRAPHY
+  // ==========================================================================
+  //
+  // IntentParser has authoritative knowledge of supported Florida geography.
+  //
+  // We use the parsed geography when available, while preserving the original
+  // transport geoContext as a fallback.
+  //
+  // IMPORTANT:
+  //
+  // This does NOT claim that Sunbiz returned the company from this location.
+  // The provider remains responsible for actual registry observations.
+  // ==========================================================================
+
+  const parsedGeography =
+    searchIntent?.geography || null;
+
+  const resolvedGeoContext = {
+
+    ...searchGeo,
+
+    ...(parsedGeography
+      ? {
+          state:
+            parsedGeography.state,
+
+          city:
+            parsedGeography.city,
+
+          county:
+            parsedGeography.county,
+
+          zip:
+            parsedGeography.zip
+        }
+      : {}),
+
+    states:
+      parsedGeography?.state
+        ? [parsedGeography.state]
+        : (
+            Array.isArray(
+              searchGeo?.states
+            )
+              ? searchGeo.states
+              : ["FL"]
+          )
+  };
+
+  // ==========================================================================
+  // 1B. BUILD PROVIDER FILTERS
+  // ==========================================================================
+  //
+  // CRITICAL:
+  //
+  // SunbizProvider.search() expects:
+  //
+  //     search(geoContext, filters)
+  //
+  // It does NOT expect a SearchIntent as its first argument.
+  //
+  // Therefore we translate the validated SearchIntent back into the provider
+  // contract here.
+  //
+  // The raw query is preserved because SunbizProvider currently performs a
+  // ByName search using filters.query / filters.industry.
+  // ==========================================================================
+
+  const providerFilters = {
+
+    ...filters,
+
+    query:
+      queryInput,
+
+    industry:
+      queryInput,
+
+    limit:
+      searchIntent?.limit ||
+      filters.limit ||
+      10,
+
+    classifications:
+      searchIntent?.industry?.classifications ||
+      [],
+
+    canonicalIndustry:
+      searchIntent?.industry?.canonical ||
+      null
+  };
+
+  console.log(
+    "[PIPELINE PROVIDER REQUEST]",
+    {
+      provider:
+        provider.name,
+
+      query:
+        providerFilters.query,
+
+      canonicalIndustry:
+        providerFilters.canonicalIndustry,
+
+      classifications:
+        providerFilters.classifications,
+
+      geography:
+        resolvedGeoContext,
+
+      limit:
+        providerFilters.limit
+    }
+  );
+
+  // ==========================================================================
+  // 2. REGISTRY SEARCH
   // ==========================================================================
 
   let searchResult;
 
   try {
-        searchResult =
+
+    searchResult =
       await provider.search(
-        searchIntent
+        resolvedGeoContext,
+        providerFilters
       );
+
   } catch (searchError) {
+
     console.error(
       `[PIPELINE SEARCH FAILURE] ${provider.name || "SunbizProvider"}:`,
       searchError.message
     );
 
     searchResult = {
-      providerStatus: "unavailable",
-      provider: provider.name || "SunbizProvider",
-      httpStatus: null,
-      records: [],
-      errorType: searchError?.name || "PIPELINE_SEARCH_EXCEPTION"
+
+      providerStatus:
+        "unavailable",
+
+      provider:
+        provider.name ||
+        "SunbizProvider",
+
+      httpStatus:
+        null,
+
+      records:
+        [],
+
+      errorType:
+        searchError?.name ||
+        "PIPELINE_SEARCH_EXCEPTION"
     };
   }
 
   // ==========================================================================
-  // 1A. PROVIDER UNAVAILABLE CONTRACT GUARD
+  // 2A. PROVIDER UNAVAILABLE CONTRACT GUARD
   // ==========================================================================
 
-  if (searchResult?.providerStatus === "unavailable") {
+  if (
+    searchResult?.providerStatus ===
+    "unavailable"
+  ) {
+
     console.warn(
       `[PIPELINE] Provider ${provider.name} is currently unavailable. ErrorType: ${searchResult.errorType}`
     );
 
     return {
-      status: "unavailable",
-      providerStatus: "unavailable",
-      errorType: searchResult.errorType || "HTTP_ERROR",
-      httpStatus: searchResult.httpStatus || null,
-      count: 0,
-      leads: [],
 
-      prospectName: `State registry search is temporarily unavailable for "${queryInput}"`,
+      status:
+        "unavailable",
+
+      providerStatus:
+        "unavailable",
+
+      errorType:
+        searchResult.errorType ||
+        "HTTP_ERROR",
+
+      httpStatus:
+        searchResult.httpStatus ||
+        null,
+
+      count:
+        0,
+
+      leads:
+        [],
+
+      prospectName:
+        `State registry search is temporarily unavailable for "${queryInput}"`,
 
       location: {
-        state: searchGeo?.states?.[0] || "FL"
+        state:
+          resolvedGeoContext?.states?.[0] ||
+          "FL",
+
+        city:
+          resolvedGeoContext?.city ||
+          null,
+
+        county:
+          resolvedGeoContext?.county ||
+          null
       },
 
-      locationDisplay: searchGeo?.city
-        ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
-        : (searchGeo?.states?.[0] || "FL"),
+      locationDisplay:
+        resolvedGeoContext?.city
+          ? `${resolvedGeoContext.city}, ${resolvedGeoContext?.states?.[0] || "FL"}`
+          : (
+              resolvedGeoContext?.states?.[0] ||
+              "FL"
+            ),
 
-      score: null,
-      priority: "UNQUALIFIED",
+      score:
+        null,
+
+      priority:
+        "UNQUALIFIED",
 
       evidenceSummary: [
         `State registry provider (${provider.name}) returned status: unavailable (${searchResult.errorType || "HTTP_ERROR"}).`
       ],
 
       qualificationReasons: [],
-      salesSignals: [],
-      recommendedAction: "Retry search after registry service recovers.",
 
-      enrichment: null,
-      evidenceLedger: null
+      salesSignals: [],
+
+      recommendedAction:
+        "Retry search after registry service recovers.",
+
+      enrichment:
+        null,
+
+      evidenceLedger:
+        null
     };
   }
 
-  const rawRecords = Array.isArray(searchResult?.records)
-    ? searchResult.records
-    : Array.isArray(searchResult)
-      ? searchResult
-      : [];
-
   // ==========================================================================
-  // 2. EMPTY RESULT CONTRACT
+  // 2B. NORMALIZE PROVIDER RESPONSE
   // ==========================================================================
 
-  if (rawRecords.length === 0) {
+  const rawRecords =
+    Array.isArray(
+      searchResult?.records
+    )
+      ? searchResult.records
+      : Array.isArray(
+          searchResult
+        )
+          ? searchResult
+          : [];
+
+  // ==========================================================================
+  // 3. EMPTY RESULT CONTRACT
+  // ==========================================================================
+
+  if (
+    rawRecords.length ===
+    0
+  ) {
 
     return {
-      status: "empty",
-      count: 0,
-      leads: [],
+
+      status:
+        "empty",
+
+      providerStatus:
+        searchResult?.providerStatus ||
+        "success",
+
+      count:
+        0,
+
+      leads:
+        [],
 
       prospectName:
         `No live registry records found for "${queryInput}"`,
 
       location: {
         state:
-          searchGeo?.states?.[0] ||
-          "FL"
+          resolvedGeoContext?.states?.[0] ||
+          "FL",
+
+        city:
+          resolvedGeoContext?.city ||
+          null,
+
+        county:
+          resolvedGeoContext?.county ||
+          null
       },
 
       locationDisplay:
-        searchGeo?.city
-          ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
+        resolvedGeoContext?.city
+          ? `${resolvedGeoContext.city}, ${resolvedGeoContext?.states?.[0] || "FL"}`
           : (
-              searchGeo?.states?.[0] ||
+              resolvedGeoContext?.states?.[0] ||
               "FL"
             ),
 
-      score: null,
-      priority: "UNQUALIFIED",
+      score:
+        null,
+
+      priority:
+        "UNQUALIFIED",
 
       evidenceSummary: [
         "Provider query yielded 0 candidate records."
       ],
 
       qualificationReasons: [],
-      salesSignals: [],
-      recommendedAction: null,
 
-      enrichment: null,
-      evidenceLedger: null
+      salesSignals: [],
+
+      recommendedAction:
+        null,
+
+      enrichment:
+        null,
+
+      evidenceLedger:
+        null
     };
   }
 
   const leads = [];
 
   // ==========================================================================
-  // 3. SEQUENTIAL CANDIDATE PROCESSING
+  // 4. SEQUENTIAL CANDIDATE PROCESSING
   //
   // Intentionally sequential.
+  //
   // Do NOT replace with Promise.all().
   //
   // Registry + website + contact enrichment can generate external traffic.
   // Sequential execution limits sudden outbound request bursts.
   // ==========================================================================
 
-  for (const raw of rawRecords) {
+  for (
+    const raw of rawRecords
+  ) {
 
     // ------------------------------------------------------------------------
-    // 3A. NORMALIZE REGISTRY RECORD
+    // 4A. NORMALIZE REGISTRY RECORD
     // ------------------------------------------------------------------------
 
     let normalized;
@@ -324,17 +581,21 @@ async function runLeadPipeline({
     try {
 
       normalized =
-        typeof provider.normalize === "function"
-          ? provider.normalize(raw)
+        typeof provider.normalize ===
+        "function"
+          ? provider.normalize(
+              raw
+            )
           : raw;
 
-    } catch (normalizeError) {
+    } catch (
+      normalizeError
+    ) {
 
       console.error(
         `[NORMALIZATION FAILURE] ${normalizeError.message}`
       );
 
-      // A malformed provider record should not destroy the entire batch.
       continue;
     }
 
@@ -351,7 +612,7 @@ async function runLeadPipeline({
     }
 
     // ------------------------------------------------------------------------
-    // 3B. RESOLVE AUTHORITATIVE SOURCE URL
+    // 4B. RESOLVE AUTHORITATIVE SOURCE URL
     // ------------------------------------------------------------------------
 
     let sourceUrl =
@@ -371,7 +632,9 @@ async function runLeadPipeline({
           );
       }
 
-    } catch (sourceError) {
+    } catch (
+      sourceError
+    ) {
 
       console.warn(
         `[SOURCE REFERENCE WARNING] ${normalized.companyName}:`,
@@ -380,7 +643,7 @@ async function runLeadPipeline({
     }
 
     // ------------------------------------------------------------------------
-    // 3C. RECORD EVIDENCE
+    // 4C. RECORD EVIDENCE
     // ------------------------------------------------------------------------
 
     let evidenceEntry;
@@ -389,6 +652,7 @@ async function runLeadPipeline({
 
       evidenceEntry =
         ledger.recordObservation({
+
           providerName:
             provider.name ||
             "SunbizProvider",
@@ -406,7 +670,9 @@ async function runLeadPipeline({
             new Date().toISOString()
         });
 
-    } catch (ledgerError) {
+    } catch (
+      ledgerError
+    ) {
 
       console.error(
         `[LEDGER FAILURE] ${normalized.companyName}:`,
@@ -419,7 +685,7 @@ async function runLeadPipeline({
     }
 
     // ------------------------------------------------------------------------
-    // 3D. STRICT LEDGER IDENTITY REQUIREMENT
+    // 4D. STRICT LEDGER IDENTITY REQUIREMENT
     // ------------------------------------------------------------------------
 
     if (
@@ -433,7 +699,7 @@ async function runLeadPipeline({
     }
 
     // ------------------------------------------------------------------------
-    // 3E. CONSTRUCT LEDGER BINDING
+    // 4E. CONSTRUCT LEDGER BINDING
     // ------------------------------------------------------------------------
 
     const ledgerBinding = {
@@ -459,22 +725,43 @@ async function runLeadPipeline({
     };
 
     // ==========================================================================
-    // 4. ENRICHMENT
+    // 5. ENRICHMENT
     // ==========================================================================
 
     let enrichmentResult = {
+
       data: {
-        website: null,
-        businessPhone: null,
-        emails: [],
-        phones: [],
-        digitalSignals: [],
-        contacts: [],
-        status: "unavailable",
-        errors: []
+
+        website:
+          null,
+
+        businessPhone:
+          null,
+
+        emails:
+          [],
+
+        phones:
+          [],
+
+        digitalSignals:
+          [],
+
+        contacts:
+          [],
+
+        status:
+          "unavailable",
+
+        errors:
+          []
       },
-      status: "unattempted",
-      errors: []
+
+      status:
+        "unattempted",
+
+      errors:
+        []
     };
 
     try {
@@ -484,87 +771,85 @@ async function runLeadPipeline({
           normalized
         );
 
-      /*
-       * IMPORTANT:
-       *
-       * enrichProspect() currently returns:
-       *
-       * {
-       *   website: websiteReconResult,
-       *   contacts: contactSearchResult
-       * }
-       *
-       * QualificationEngine expects the primary enrichment observations
-       * directly on the supplied enrichment object.
-       *
-       * Normalize that boundary here rather than changing multiple
-       * downstream contracts simultaneously.
-       */
-
       const websiteData =
-        enrichmentData?.website || null;
+        enrichmentData?.website ||
+        null;
 
       const contactData =
-        enrichmentData?.contacts || null;
+        enrichmentData?.contacts ||
+        null;
 
       const websiteEmails =
-        Array.isArray(websiteData?.emails)
+        Array.isArray(
+          websiteData?.emails
+        )
           ? websiteData.emails
           : [];
 
       const websitePhones =
-        Array.isArray(websiteData?.phones)
+        Array.isArray(
+          websiteData?.phones
+        )
           ? websiteData.phones
           : [];
 
       const websiteSignals =
-        Array.isArray(websiteData?.digitalSignals)
+        Array.isArray(
+          websiteData?.digitalSignals
+        )
           ? websiteData.digitalSignals
           : [];
 
       const contactEmails =
-        Array.isArray(contactData?.emails)
+        Array.isArray(
+          contactData?.emails
+        )
           ? contactData.emails
-          : Array.isArray(contactData?.publicEmails)
-            ? contactData.publicEmails.map(
-                value => ({
-                  value,
-                  source: "contact_search",
-                  confidence: "low",
-                  verified: false
-                })
-              )
-            : [];
+          : Array.isArray(
+              contactData?.publicEmails
+            )
+              ? contactData.publicEmails.map(
+                  value => ({
+                    value,
+                    source:
+                      "contact_search",
+                    confidence:
+                      "low",
+                    verified:
+                      false
+                  })
+                )
+              : [];
 
       const contactPhones =
-        Array.isArray(contactData?.phones)
+        Array.isArray(
+          contactData?.phones
+        )
           ? contactData.phones
           : contactData?.primaryPhone
-            ? [{
-                value:
-                  contactData.primaryPhone,
-                source:
-                  "contact_search",
-                confidence:
-                  contactData.sourceConfidence ||
-                  "low"
-              }]
+            ? [
+                {
+                  value:
+                    contactData.primaryPhone,
+
+                  source:
+                    "contact_search",
+
+                  confidence:
+                    contactData.sourceConfidence ||
+                    "low"
+                }
+              ]
             : [];
 
       const normalizedEnrichmentData = {
 
-        /*
-         * Preserve original provider-level results.
-         */
         website:
           websiteData,
 
         contacts:
           contactData,
 
-        /*
-         * Flatten observations for QualificationEngine.
-         */
         emails: [
           ...websiteEmails,
           ...contactEmails
@@ -579,32 +864,37 @@ async function runLeadPipeline({
           websiteSignals,
 
         observations: [
+
           ...(websiteData
-            ? [{
-                provider:
-                  "WebsiteReconProvider",
+            ? [
+                {
+                  provider:
+                    "WebsiteReconProvider",
 
-                observedAt:
-                  websiteData.observedAt ||
-                  new Date().toISOString(),
+                  observedAt:
+                    websiteData.observedAt ||
+                    new Date().toISOString(),
 
-                observationType:
-                  "website_reconnaissance"
-              }]
+                  observationType:
+                    "website_reconnaissance"
+                }
+              ]
             : []),
 
           ...(contactData
-            ? [{
-                provider:
-                  "ContactSearch",
+            ? [
+                {
+                  provider:
+                    "ContactSearch",
 
-                observedAt:
-                  contactData.searchedAt ||
-                  new Date().toISOString(),
+                  observedAt:
+                    contactData.searchedAt ||
+                    new Date().toISOString(),
 
-                observationType:
-                  "contact_enrichment"
-              }]
+                  observationType:
+                    "contact_enrichment"
+                }
+              ]
             : [])
         ]
       };
@@ -612,7 +902,8 @@ async function runLeadPipeline({
       const hasWebsiteData =
         Boolean(
           websiteData &&
-          websiteData.status === "success"
+          websiteData.status ===
+            "success"
         );
 
       const hasContactData =
@@ -627,9 +918,12 @@ async function runLeadPipeline({
         );
 
       const hasFlattenedObservations =
-        normalizedEnrichmentData.emails.length > 0 ||
-        normalizedEnrichmentData.phones.length > 0 ||
-        normalizedEnrichmentData.digitalSignals.length > 0;
+        normalizedEnrichmentData.emails.length >
+          0 ||
+        normalizedEnrichmentData.phones.length >
+          0 ||
+        normalizedEnrichmentData.digitalSignals.length >
+          0;
 
       enrichmentResult = {
 
@@ -643,10 +937,13 @@ async function runLeadPipeline({
             ? "complete"
             : "empty",
 
-        errors: []
+        errors:
+          []
       };
 
-    } catch (enrichError) {
+    } catch (
+      enrichError
+    ) {
 
       console.error(
         `[ENRICHMENT ERROR BOUNDARY] ${normalized.companyName}:`,
@@ -654,35 +951,58 @@ async function runLeadPipeline({
       );
 
       enrichmentResult = {
+
         data: {
-          website: null,
-          businessPhone: null,
-          emails: [],
-          phones: [],
-          digitalSignals: [],
-          contacts: [],
-          status: "failed",
+
+          website:
+            null,
+
+          businessPhone:
+            null,
+
+          emails:
+            [],
+
+          phones:
+            [],
+
+          digitalSignals:
+            [],
+
+          contacts:
+            [],
+
+          status:
+            "failed",
+
           errors: [
             {
-              stage: "enrichProspect",
-              message: enrichError.message
+              stage:
+                "enrichProspect",
+
+              message:
+                enrichError.message
             }
           ]
         },
 
-        status: "failed",
+        status:
+          "failed",
 
         errors: [
           {
-            stage: "enrichProspect",
-            message: enrichError.message
+            stage:
+              "enrichProspect",
+
+            message:
+              enrichError.message
           }
         ]
       };
     }
 
     // ==========================================================================
-    // 5. DETERMINISTIC QUALIFICATION
+    // 6. DETERMINISTIC QUALIFICATION
     // ==========================================================================
 
     let qualification;
@@ -691,23 +1011,23 @@ async function runLeadPipeline({
 
       qualification =
         QualificationEngine.evaluate(
+
           normalized,
 
-          enrichmentResult.data || {},
+          enrichmentResult.data ||
+            {},
 
           ledgerBinding
         );
 
-    } catch (qualificationError) {
+    } catch (
+      qualificationError
+    ) {
 
       console.error(
         `[QUALIFICATION FAILURE] ${normalized.companyName}:`,
         qualificationError.message
       );
-
-      /*
-       * Qualification failure must NOT destroy verified registry data.
-       */
 
       qualification = {
 
@@ -740,11 +1060,12 @@ async function runLeadPipeline({
     }
 
     // ==========================================================================
-    // 6. LOCATION NORMALIZATION
+    // 7. LOCATION NORMALIZATION
     // ==========================================================================
 
     const location =
-      normalized.location || {};
+      normalized.location ||
+      {};
 
     let locationDisplay =
       "Florida";
@@ -775,7 +1096,7 @@ async function runLeadPipeline({
     }
 
     // ==========================================================================
-    // 7. EVIDENCE SUMMARY
+    // 8. EVIDENCE SUMMARY
     // ==========================================================================
 
     const evidenceSummary = [
@@ -785,7 +1106,9 @@ async function runLeadPipeline({
       "Canonical observation ledger entry generated and hash-bound."
     ];
 
-    if (sourceUrl) {
+    if (
+      sourceUrl
+    ) {
 
       evidenceSummary.push(
         `Authoritative source: ${sourceUrl}`
@@ -803,7 +1126,7 @@ async function runLeadPipeline({
     }
 
     // ==========================================================================
-    // 8. STRUCTURED LEAD OBJECT
+    // 9. STRUCTURED LEAD OBJECT
     // ==========================================================================
 
     leads.push({
@@ -863,11 +1186,12 @@ async function runLeadPipeline({
   }
 
   // ==========================================================================
-  // 9. SAFETY CHECK
+  // 10. SAFETY CHECK
   // ==========================================================================
 
   if (
-    leads.length === 0
+    leads.length ===
+    0
   ) {
 
     return {
@@ -886,15 +1210,23 @@ async function runLeadPipeline({
 
       location: {
         state:
-          searchGeo?.states?.[0] ||
-          "FL"
+          resolvedGeoContext?.states?.[0] ||
+          "FL",
+
+        city:
+          resolvedGeoContext?.city ||
+          null,
+
+        county:
+          resolvedGeoContext?.county ||
+          null
       },
 
       locationDisplay:
-        searchGeo?.city
-          ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
+        resolvedGeoContext?.city
+          ? `${resolvedGeoContext.city}, ${resolvedGeoContext?.states?.[0] || "FL"}`
           : (
-              searchGeo?.states?.[0] ||
+              resolvedGeoContext?.states?.[0] ||
               "FL"
             ),
 
@@ -909,8 +1241,11 @@ async function runLeadPipeline({
       ],
 
       qualificationReasons: [],
+
       salesSignals: [],
-      recommendedAction: null,
+
+      recommendedAction:
+        null,
 
       enrichment:
         null,
@@ -921,7 +1256,7 @@ async function runLeadPipeline({
   }
 
   // ==========================================================================
-  // 10. PRIMARY LEAD / LEGACY ROOT BINDINGS
+  // 11. PRIMARY LEAD / LEGACY ROOT BINDINGS
   // ==========================================================================
 
   const primaryLead =
@@ -978,3 +1313,4 @@ async function runLeadPipeline({
 module.exports = {
   runLeadPipeline
 };
+```
