@@ -189,13 +189,10 @@ async function runLeadPipeline({
   let searchResult;
 
   try {
-    searchResult = await provider.search(
-      searchGeo,
-      {
-        ...filters,
-        industry: queryInput
-      }
-    );
+        searchResult =
+      await provider.search(
+        searchIntent
+      );
   } catch (searchError) {
     console.error(
       `[PIPELINE SEARCH FAILURE] ${provider.name || "SunbizProvider"}:`,
