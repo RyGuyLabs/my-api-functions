@@ -298,19 +298,40 @@ class SunbizProvider extends BaseProvider {
 
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 
             "Accept":
-              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
 
             "Accept-Language":
               "en-US,en;q=0.9",
 
-            "Cache-Control":
-              "no-cache",
+            "Sec-Ch-Ua":
+              '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
 
-            "Pragma":
-              "no-cache"
+            "Sec-Ch-Ua-Mobile":
+              "?0",
+
+            "Sec-Ch-Ua-Platform":
+              '"Windows"',
+
+            "Sec-Fetch-Dest":
+              "document",
+
+            "Sec-Fetch-Mode":
+              "navigate",
+
+            "Sec-Fetch-Site":
+              "none",
+
+            "Sec-Fetch-User":
+              "?1",
+
+            "Upgrade-Insecure-Requests":
+              "1",
+
+            "Cache-Control":
+              "max-age=0"
           },
 
           redirect:
@@ -468,11 +489,8 @@ class SunbizProvider extends BaseProvider {
    * Parse Sunbiz search result HTML.
    *
    * IMPORTANT:
-   * This parser only maps values that are actually present
-   * in the returned registry HTML.
-   *
-   * It does NOT manufacture location, filing date,
-   * registered-agent, or status values.
+   * Target the search results table specifically to skip layout/header tables,
+   * and ignore header rows or navigation links.
    */
   _parseSunbizTableHtml(
     html,
@@ -481,6 +499,15 @@ class SunbizProvider extends BaseProvider {
   ) {
     const records = [];
 
+    const tableMatch = html.match(/<table\b[^>]*>([\s\S]*?)<\/table>/gi);
+    if (!tableMatch) return [];
+
+    const searchResultTable = tableMatch.find(tbl => 
+      tbl.includes("SearchResultDetail") || 
+      tbl.includes("Inquiry/CorporationSearch") || 
+      tbl.includes("<th")
+    ) || tableMatch[0];
+
     const rowRegex =
       /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
 
@@ -488,13 +515,17 @@ class SunbizProvider extends BaseProvider {
 
     while (
       (rowMatch =
-        rowRegex.exec(html)) !== null &&
+        rowRegex.exec(searchResultTable)) !== null &&
       records.length <
         limit
     ) {
 
       const rowHtml =
         rowMatch[1];
+
+      if (/<th\b/i.test(rowHtml)) {
+        continue;
+      }
 
       const cells =
         this._extractTableCells(
@@ -507,13 +538,6 @@ class SunbizProvider extends BaseProvider {
       ) {
         continue;
       }
-
-      console.log(
-        `[${this.name}] PARSED ROW`,
-        {
-          cells
-        }
-      );
 
       const entityName =
         this.cleanText(
@@ -532,10 +556,19 @@ class SunbizProvider extends BaseProvider {
 
       if (
         !entityName ||
-        !docNum
+        !docNum ||
+        entityName.toLowerCase().includes("corporate name") ||
+        docNum.toLowerCase().includes("document number")
       ) {
         continue;
       }
+
+      console.log(
+        `[${this.name}] PARSED ROW`,
+        {
+          cells
+        }
+      );
 
       /*
        * Never substitute search geography for actual
