@@ -130,14 +130,22 @@ async function runLeadPipeline({
       );
     }
 
-    searchIntent =
-      intentParser.parse(
-        queryInput,
-        {
-          limit:
-            filters.limit || 10
-        }
-      );
+   const intentQuery =
+  searchGeo?.city &&
+  searchGeo?.states?.[0]
+    ? `${queryInput} in ${searchGeo.city}, ${searchGeo.states[0]}`
+    : searchGeo?.states?.[0]
+      ? `${queryInput} in ${searchGeo.states[0]}`
+      : queryInput;
+
+searchIntent =
+  intentParser.parse(
+    intentQuery,
+    {
+      limit:
+        filters.limit || 10
+    }
+  );
 
     console.log(
       "[PIPELINE SEARCH INTENT]",
