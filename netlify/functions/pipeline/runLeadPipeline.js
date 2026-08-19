@@ -62,26 +62,26 @@ async function runLeadPipeline({
   let searchResult;
 
   try {
-
-    searchResult =
-      await provider.search(
-        searchGeo,
-        {
-          ...filters,
-          industry: queryInput
-        }
-      );
-
+    searchResult = await provider.search(
+      searchGeo,
+      {
+        ...filters,
+        industry: queryInput
+      }
+    );
   } catch (searchError) {
-
     console.error(
       `[PIPELINE SEARCH FAILURE] ${provider.name || "SunbizProvider"}:`,
       searchError.message
     );
 
-    throw new Error(
-      `Lead registry search failed: ${searchError.message}`
-    );
+    searchResult = {
+      providerStatus: "unavailable",
+      provider: provider.name || "SunbizProvider",
+      httpStatus: null,
+      records: [],
+      errorType: searchError?.name || "PIPELINE_SEARCH_EXCEPTION"
+    };
   }
 
   // ==========================================================================
