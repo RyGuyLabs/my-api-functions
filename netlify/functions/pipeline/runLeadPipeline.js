@@ -60,6 +60,129 @@ async function runLeadPipeline({
     };
 
   // ==========================================================================
+  // SEARCH INTENT PARSING
+  // ==========================================================================
+  //
+  // Convert the human search request into the structured SearchIntent
+  // required by the provider layer.
+  //
+  // Example:
+  //
+  // "solar contractors in Tampa FL"
+  //
+  // becomes:
+  //
+  // {
+  //   industry: {
+  //     canonical: "solar contractor",
+  //     ...
+  //   },
+  //   geography: {
+  //     state: "FL",
+  //     city: "Tampa",
+  //     county: "Hillsborough"
+  //   }
+  // }
+  //
+  // IntentParser performs no registry search.
+  // ==========================================================================
+
+  let searchIntent;
+
+  try {
+
+    searchIntent =
+      intentParser.parse(
+        queryInput,
+        {
+          limit:
+            filters.limit || 10
+        }
+      );
+
+    console.log(
+      "[PIPELINE SEARCH INTENT]",
+      JSON.stringify(
+        searchIntent,
+        null,
+        2
+      )
+    );
+
+  } catch (intentError) {
+
+    console.error(
+      "[PIPELINE INTENT PARSE FAILURE]",
+      {
+        message:
+          intentError.message,
+
+        query:
+          queryInput
+      }
+    );
+
+    return {
+      status:
+        "invalid_intent",
+
+      providerStatus:
+        "not_attempted",
+
+      errorType:
+        "INTENT_PARSE_ERROR",
+
+      httpStatus:
+        null,
+
+      count:
+        0,
+
+      leads:
+        [],
+
+      prospectName:
+        `Unable to interpret search "${queryInput}"`,
+
+      location: {
+        state:
+          searchGeo?.states?.[0] ||
+          "FL"
+      },
+
+      locationDisplay:
+        searchGeo?.city
+          ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
+          : (
+              searchGeo?.states?.[0] ||
+              "FL"
+            ),
+
+      score:
+        null,
+
+      priority:
+        "UNQUALIFIED",
+
+      evidenceSummary: [
+        intentError.message
+      ],
+
+      qualificationReasons: [],
+      salesSignals: [],
+
+      recommendedAction:
+        "Use a supported industry and Florida geographic location.",
+
+      enrichment:
+        null,
+
+      evidenceLedger:
+        null
+    };
+  }
+  
+  // ==========================================================================
   // 1. REGISTRY SEARCH
   // ==========================================================================
 
