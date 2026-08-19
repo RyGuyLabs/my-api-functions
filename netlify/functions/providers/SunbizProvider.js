@@ -188,42 +188,54 @@ class SunbizProvider extends BaseProvider {
    * Perform controlled HTTP request to Sunbiz.
    */
   async _request(url) {
-    const controller =
-      new AbortController();
+  const controller =
+    new AbortController();
 
-    const timeoutId =
-      setTimeout(() => {
-        controller.abort();
-      }, this.timeoutMs);
+  const timeoutId =
+    setTimeout(() => {
+      controller.abort();
+    }, this.timeoutMs);
 
-    try {
-      return await fetch(url, {
-        method: "GET",
+  try {
+    return await fetch(url, {
+      method: "GET",
 
-        headers: {
-          "User-Agent":
-            "RyGuyLabs Lead Intelligence / Public Registry Research",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
 
-          "Accept":
-            "text/html,application/xhtml+xml"
-        },
+        "Accept":
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
 
-        signal: controller.signal
-      });
+        "Accept-Language":
+          "en-US,en;q=0.9",
 
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw new Error(
-          `Sunbiz request timed out after ${this.timeoutMs}ms`
-        );
-      }
+        "Cache-Control":
+          "no-cache",
 
-      throw error;
+        "Pragma":
+          "no-cache"
+      },
 
-    } finally {
-      clearTimeout(timeoutId);
+      redirect: "follow",
+
+      signal: controller.signal
+    });
+
+  } catch (error) {
+
+    if (error?.name === "AbortError") {
+      throw new Error(
+        `Sunbiz request timed out after ${this.timeoutMs}ms`
+      );
     }
+
+    throw error;
+
+  } finally {
+    clearTimeout(timeoutId);
   }
+}
 
   /**
    * Normalize search term.
