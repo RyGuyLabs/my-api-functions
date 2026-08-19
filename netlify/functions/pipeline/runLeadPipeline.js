@@ -10,17 +10,17 @@ const { QualificationEngine } = require("../qualification/QualificationEngine");
  *
  * Pipeline:
  *
- *   Registry Search
+ *    Registry Search
  *        ↓
- *   Normalization
+ *    Normalization
  *        ↓
- *   Evidence Ledger
+ *    Evidence Ledger
  *        ↓
- *   Enrichment
+ *    Enrichment
  *        ↓
- *   Qualification
+ *    Qualification
  *        ↓
- *   Structured Lead Output
+ *    Structured Lead Output
  *
  * IMPORTANT:
  *
@@ -59,11 +59,11 @@ async function runLeadPipeline({
   // 1. REGISTRY SEARCH
   // ==========================================================================
 
-  let rawRecords;
+  let searchResult;
 
   try {
 
-    rawRecords =
+    searchResult =
       await provider.search(
         searchGeo,
         {
@@ -85,13 +85,59 @@ async function runLeadPipeline({
   }
 
   // ==========================================================================
+  // 1A. PROVIDER UNAVAILABLE CONTRACT GUARD
+  // ==========================================================================
+
+  if (searchResult?.providerStatus === "unavailable") {
+    console.warn(
+      `[PIPELINE] Provider ${provider.name} is currently unavailable. ErrorType: ${searchResult.errorType}`
+    );
+
+    return {
+      status: "unavailable",
+      providerStatus: "unavailable",
+      errorType: searchResult.errorType || "HTTP_ERROR",
+      httpStatus: searchResult.httpStatus || null,
+      count: 0,
+      leads: [],
+
+      prospectName: `State registry search is temporarily unavailable for "${queryInput}"`,
+
+      location: {
+        state: searchGeo?.states?.[0] || "FL"
+      },
+
+      locationDisplay: searchGeo?.city
+        ? `${searchGeo.city}, ${searchGeo?.states?.[0] || "FL"}`
+        : (searchGeo?.states?.[0] || "FL"),
+
+      score: null,
+      priority: "UNQUALIFIED",
+
+      evidenceSummary: [
+        `State registry provider (${provider.name}) returned status: unavailable (${searchResult.errorType || "HTTP_ERROR"}).`
+      ],
+
+      qualificationReasons: [],
+      salesSignals: [],
+      recommendedAction: "Retry search after registry service recovers.",
+
+      enrichment: null,
+      evidenceLedger: null
+    };
+  }
+
+  const rawRecords = Array.isArray(searchResult?.records)
+    ? searchResult.records
+    : Array.isArray(searchResult)
+      ? searchResult
+      : [];
+
+  // ==========================================================================
   // 2. EMPTY RESULT CONTRACT
   // ==========================================================================
 
-  if (
-    !Array.isArray(rawRecords) ||
-    rawRecords.length === 0
-  ) {
+  if (rawRecords.length === 0) {
 
     return {
       status: "empty",
@@ -137,7 +183,6 @@ async function runLeadPipeline({
   // 3. SEQUENTIAL CANDIDATE PROCESSING
   //
   // Intentionally sequential.
-  //
   // Do NOT replace with Promise.all().
   //
   // Registry + website + contact enrichment can generate external traffic.
@@ -294,19 +339,19 @@ async function runLeadPipeline({
     // ==========================================================================
 
     let enrichmentResult = {
-  data: {
-    website: null,
-    businessPhone: null,
-    emails: [],
-    phones: [],
-    digitalSignals: [],
-    contacts: [],
-    status: "unavailable",
-    errors: []
-  },
-  status: "unattempted",
-  errors: []
-};
+      data: {
+        website: null,
+        businessPhone: null,
+        emails: [],
+        phones: [],
+        digitalSignals: [],
+        contacts: [],
+        status: "unavailable",
+        errors: []
+      },
+      status: "unattempted",
+      errors: []
+    };
 
     try {
 
@@ -485,31 +530,31 @@ async function runLeadPipeline({
       );
 
       enrichmentResult = {
-  data: {
-    website: null,
-    businessPhone: null,
-    emails: [],
-    phones: [],
-    digitalSignals: [],
-    contacts: [],
-    status: "failed",
-    errors: [
-      {
-        stage: "enrichProspect",
-        message: enrichError.message
-      }
-    ]
-  },
+        data: {
+          website: null,
+          businessPhone: null,
+          emails: [],
+          phones: [],
+          digitalSignals: [],
+          contacts: [],
+          status: "failed",
+          errors: [
+            {
+              stage: "enrichProspect",
+              message: enrichError.message
+            }
+          ]
+        },
 
-  status: "failed",
+        status: "failed",
 
-  errors: [
-    {
-      stage: "enrichProspect",
-      message: enrichError.message
-    }
-  ]
-};
+        errors: [
+          {
+            stage: "enrichProspect",
+            message: enrichError.message
+          }
+        ]
+      };
     }
 
     // ==========================================================================
