@@ -72,7 +72,9 @@ class RegistryAcquisitionService {
    * @param {Object} searchIntent
    * @returns {Promise<Object>}
    */
-  async search(searchIntent) {
+  async search(
+    searchIntent
+  ) {
 
     if (
       !searchIntent ||
@@ -95,12 +97,6 @@ class RegistryAcquisitionService {
 
     } catch (error) {
 
-      /*
-       * Preserve the provider failure as an acquisition-layer error.
-       *
-       * We intentionally do NOT silently convert exceptions into
-       * successful empty searches.
-       */
       console.error(
         `[RegistryAcquisitionService] Provider search failed`,
         {
@@ -113,11 +109,18 @@ class RegistryAcquisitionService {
         }
       );
 
+      /*
+       * IMPORTANT:
+       * Do not convert provider exceptions into empty searches.
+       *
+       * An empty result and provider failure are
+       * fundamentally different states.
+       */
       throw error;
     }
 
     /*
-     * A provider must return an object.
+     * Provider response must be an object.
      */
     if (
       !response ||
@@ -133,9 +136,11 @@ class RegistryAcquisitionService {
     }
 
     /*
-     * Normalize missing records into an empty array.
+     * Records must always be an array.
      *
-     * We do NOT silently convert malformed non-array values.
+     * Missing records are normalized to [] because
+     * a valid provider response may legitimately contain
+     * zero records.
      */
     if (
       response.records === undefined
@@ -169,12 +174,13 @@ class RegistryAcquisitionService {
     }
 
     /*
-     * A provider that successfully executes without explicitly
-     * declaring a status is treated as successful only when records
-     * are present or the provider explicitly returned an empty result.
+     * ProviderStatus is authoritative.
      *
-     * We avoid inventing "unavailable" here because the provider is
-     * responsible for reporting upstream availability.
+     * If the provider does not explicitly provide one,
+     * treat the completed call as successful.
+     *
+     * This does NOT mean records were found.
+     * A successful search may legitimately contain zero records.
      */
     if (
       !response.providerStatus
@@ -212,11 +218,16 @@ class RegistryAcquisitionService {
       sourceType:
         "unknown",
 
+      geography:
+        [],
+
       capabilities:
         [],
 
       limitations:
-        []
+        [
+          "capability_profile_unavailable"
+        ]
     };
   }
 
