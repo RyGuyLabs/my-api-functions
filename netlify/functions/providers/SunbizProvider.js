@@ -251,8 +251,15 @@ class SunbizProvider extends BaseProvider {
         );
 
       if (cells.length < 3) {
-        continue;
-      }
+  continue;
+}
+
+console.log(
+  `[${this.name}] PARSED ROW`,
+  {
+    cells
+  }
+);
 
       const entityName =
         this.cleanText(cells[0]);
