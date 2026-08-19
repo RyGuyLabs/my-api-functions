@@ -251,35 +251,54 @@ searchIntent =
 
   const resolvedGeoContext = {
 
-    ...searchGeo,
+  ...searchGeo,
 
-    ...(parsedGeography
-      ? {
-          state:
-            parsedGeography.state,
+  ...(parsedGeography?.state
+    ? {
+        state:
+          parsedGeography.state,
 
-          city:
-            parsedGeography.city,
+        states: [
+          parsedGeography.state
+        ]
+      }
+    : {}),
 
-          county:
-            parsedGeography.county,
+  ...(parsedGeography?.city
+    ? {
+        city:
+          parsedGeography.city
+      }
+    : {}),
 
-          zip:
-            parsedGeography.zip
-        }
-      : {}),
+  ...(parsedGeography?.county
+    ? {
+        county:
+          parsedGeography.county
+      }
+    : {}),
 
-    states:
-      parsedGeography?.state
-        ? [parsedGeography.state]
-        : (
-            Array.isArray(
-              searchGeo?.states
-            )
-              ? searchGeo.states
-              : ["FL"]
-          )
-  };
+  ...(parsedGeography?.zip
+    ? {
+        zip:
+          parsedGeography.zip
+      }
+    : {}),
+
+  states:
+    parsedGeography?.state
+      ? [
+          parsedGeography.state
+        ]
+      : (
+          Array.isArray(
+            searchGeo?.states
+          ) &&
+          searchGeo.states.length > 0
+            ? searchGeo.states
+            : ["FL"]
+        )
+};
 
   // ==========================================================================
   // 1B. BUILD PROVIDER FILTERS
