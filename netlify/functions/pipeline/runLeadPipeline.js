@@ -2,6 +2,7 @@ const { SunbizProvider } = require("../providers/SunbizProvider");
 const { EvidenceLedgerAdapter } = require("../ledger/EvidenceLedgerAdapter");
 const { enrichProspect } = require("../enrichment/enrichProspect");
 const { QualificationEngine } = require("../qualification/QualificationEngine");
+const { IntentParser } = require("../intent/IntentParser");
 
 /**
  * Core Lead Pipeline Execution Engine
