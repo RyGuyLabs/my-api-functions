@@ -17,10 +17,12 @@
  * - Determine whether a company is a qualified lead.
  * - Perform enrichment.
  */
+
 function createSearchIntent({
   industry,
   geography,
-  limit = 10
+  limit = 10,
+  searchMode = "industry"
 } = {}) {
 
   // ==========================================================================
@@ -32,18 +34,15 @@ function createSearchIntent({
     typeof industry !== "object" ||
     Array.isArray(industry)
   ) {
-
     throw new Error(
       "SearchIntent requires an industry object."
     );
   }
 
   if (
-    typeof industry.canonical !==
-      "string" ||
+    typeof industry.canonical !== "string" ||
     !industry.canonical.trim()
   ) {
-
     throw new Error(
       "SearchIntent requires an industry object with a valid canonical string."
     );
@@ -58,18 +57,15 @@ function createSearchIntent({
     typeof geography !== "object" ||
     Array.isArray(geography)
   ) {
-
     throw new Error(
       "SearchIntent requires a geography object."
     );
   }
 
   if (
-    typeof geography.state !==
-      "string" ||
+    typeof geography.state !== "string" ||
     !geography.state.trim()
   ) {
-
     throw new Error(
       "SearchIntent requires a geography object with a valid state abbreviation."
     );
@@ -80,18 +76,29 @@ function createSearchIntent({
       .trim()
       .toUpperCase();
 
-  /*
-   * State/jurisdiction abbreviations are intentionally
-   * represented as two-character codes.
-   */
-  if (
-    !/^[A-Z]{2}$/.test(state)
-  ) {
-
+  if (!/^[A-Z]{2}$/.test(state)) {
     throw new Error(
       `SearchIntent geography.state must be a two-letter jurisdiction code. Received: "${geography.state}".`
     );
   }
+
+  // ==========================================================================
+  // SEARCH MODE
+  // ==========================================================================
+
+  const allowedSearchModes = [
+    "industry",
+    "keyword",
+    "entity_name"
+  ];
+
+  const normalizedSearchMode =
+    typeof searchMode === "string" &&
+    allowedSearchModes.includes(
+      searchMode.trim().toLowerCase()
+    )
+      ? searchMode.trim().toLowerCase()
+      : "industry";
 
   // ==========================================================================
   // LIMIT NORMALIZATION
@@ -119,16 +126,13 @@ function createSearchIntent({
   // ==========================================================================
 
   const keywords =
-    Array.isArray(
-      industry.keywords
-    )
+    Array.isArray(industry.keywords)
       ? [
           ...new Set(
             industry.keywords
               .filter(
                 keyword =>
-                  typeof keyword ===
-                  "string"
+                  typeof keyword === "string"
               )
               .map(
                 keyword =>
@@ -142,16 +146,13 @@ function createSearchIntent({
       : [];
 
   const classifications =
-    Array.isArray(
-      industry.classifications
-    )
+    Array.isArray(industry.classifications)
       ? [
           ...new Set(
             industry.classifications
               .filter(
                 classification =>
-                  typeof classification ===
-                  "string"
+                  typeof classification === "string"
               )
               .map(
                 classification =>
@@ -160,7 +161,6 @@ function createSearchIntent({
               .filter(Boolean)
           )
         ]
-      ]
       : [];
 
   // ==========================================================================
@@ -168,24 +168,18 @@ function createSearchIntent({
   // ==========================================================================
 
   const city =
-    typeof geography.city ===
-    "string"
-      ? geography.city.trim() ||
-        null
+    typeof geography.city === "string"
+      ? geography.city.trim() || null
       : null;
 
   const county =
-    typeof geography.county ===
-    "string"
-      ? geography.county.trim() ||
-        null
+    typeof geography.county === "string"
+      ? geography.county.trim() || null
       : null;
 
   const zip =
-    typeof geography.zip ===
-    "string" ||
-    typeof geography.zip ===
-    "number"
+    typeof geography.zip === "string" ||
+    typeof geography.zip === "number"
       ? String(
           geography.zip
         ).trim() || null
@@ -198,7 +192,10 @@ function createSearchIntent({
   return {
 
     version:
-      "1.0",
+      "1.1",
+
+    searchMode:
+      normalizedSearchMode,
 
     industry: {
 
