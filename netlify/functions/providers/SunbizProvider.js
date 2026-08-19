@@ -88,14 +88,26 @@ class SunbizProvider extends BaseProvider {
       "";
 
     if (!query.trim()) {
-      return [];
+      return {
+        providerStatus: "success",
+        provider: this.name,
+        httpStatus: 200,
+        records: [],
+        errorType: null
+      };
     }
 
     const cleanTerm =
       this.cleanSearchTerm(query);
 
     if (!cleanTerm) {
-      return [];
+      return {
+        providerStatus: "success",
+        provider: this.name,
+        httpStatus: 200,
+        records: [],
+        errorType: null
+      };
     }
 
     const limit =
@@ -197,14 +209,25 @@ class SunbizProvider extends BaseProvider {
       );
 
       // ----------------------------------------------------------------------
-      // HTTP FAILURE
+      // HTTP FAILURE (e.g. 403, 503, etc.)
       // ----------------------------------------------------------------------
 
       if (!response.ok) {
-
-        throw new Error(
-          `Sunbiz returned HTTP ${response.status}`
+        console.warn(
+          `[${this.name}] Registry provider unavailable`,
+          {
+            status: response.status,
+            query: cleanTerm
+          }
         );
+
+        return {
+          providerStatus: "unavailable",
+          provider: this.name,
+          httpStatus: response.status,
+          records: [],
+          errorType: "HTTP_ERROR"
+        };
       }
 
       // ----------------------------------------------------------------------
@@ -212,10 +235,21 @@ class SunbizProvider extends BaseProvider {
       // ----------------------------------------------------------------------
 
       if (!responseBody) {
-
-        throw new Error(
-          "Sunbiz returned an empty response body."
+        console.warn(
+          `[${this.name}] Registry provider returned empty response body`,
+          {
+            status: response.status,
+            query: cleanTerm
+          }
         );
+
+        return {
+          providerStatus: "unavailable",
+          provider: this.name,
+          httpStatus: response.status,
+          records: [],
+          errorType: "EMPTY_RESPONSE"
+        };
       }
 
       // ----------------------------------------------------------------------
@@ -238,7 +272,13 @@ class SunbizProvider extends BaseProvider {
         }
       );
 
-      return records;
+      return {
+        providerStatus: "success",
+        provider: this.name,
+        httpStatus: 200,
+        records: records,
+        errorType: null
+      };
 
     } catch (error) {
 
@@ -259,16 +299,19 @@ class SunbizProvider extends BaseProvider {
       );
 
       // ----------------------------------------------------------------------
-      // IMPORTANT:
+      // PROVIDER UNAVAILABLE CONTRACT RETURN
       //
-      // Provider failure is NOT the same thing as "zero results."
-      //
-      // The pipeline intentionally receives the exception so the API can
-      // report provider failure rather than falsely telling the user that
-      // the registry contained no matching companies.
+      // Return structured availability metadata with actual error type
+      // instead of throwing raw network exceptions.
       // ----------------------------------------------------------------------
 
-      throw error;
+      return {
+        providerStatus: "unavailable",
+        provider: this.name,
+        httpStatus: null,
+        records: [],
+        errorType: error?.name || "NETWORK_ERROR"
+      };
     }
   }
 
