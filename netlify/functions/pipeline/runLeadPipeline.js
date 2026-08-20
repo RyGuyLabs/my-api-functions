@@ -65,14 +65,6 @@ async function runLeadPipeline({
   // ==========================================================================
   // 0. RAW SEARCH INPUT
   // ==========================================================================
-  //
-  // The pipeline accepts the existing transport contract:
-  //
-  // filters.industry
-  // filters.query
-  //
-  // We preserve that contract so Firebase and Netlify do not need to change.
-  // ==========================================================================
 
   const queryInput =
     String(
@@ -89,34 +81,6 @@ async function runLeadPipeline({
 
   // ==========================================================================
   // 1. SEARCH INTENT PARSING
-  // ==========================================================================
-  //
-  // IntentParser validates and structures the human search request.
-  //
-  // Example:
-  //
-  // "solar contractors in Tampa FL"
-  //
-  // becomes approximately:
-  //
-  // {
-  //   industry: {
-  //     canonical: "solar contractor",
-  //     keywords: [...],
-  //     classifications: ["238210"]
-  //   },
-  //
-  //   geography: {
-  //     state: "FL",
-  //     city: "Tampa",
-  //     county: "Hillsborough",
-  //     zip: null
-  //   },
-  //
-  //   limit: 10
-  // }
-  //
-  // IntentParser does NOT perform the registry search.
   // ==========================================================================
 
   let searchIntent;
@@ -234,17 +198,6 @@ searchIntent =
   // ==========================================================================
   // 1A. RESOLVE SEARCH GEOGRAPHY
   // ==========================================================================
-  //
-  // IntentParser has authoritative knowledge of supported Florida geography.
-  //
-  // We use the parsed geography when available, while preserving the original
-  // transport geoContext as a fallback.
-  //
-  // IMPORTANT:
-  //
-  // This does NOT claim that Sunbiz returned the company from this location.
-  // The provider remains responsible for actual registry observations.
-  // ==========================================================================
 
   const parsedGeography =
     searchIntent?.geography || null;
@@ -303,21 +256,7 @@ searchIntent =
   // ==========================================================================
   // 1B. BUILD PROVIDER FILTERS
   // ==========================================================================
-  //
-  // CRITICAL:
-  //
-  // SunbizProvider.search() expects:
-  //
-  //     search(geoContext, filters)
-  //
-  // It does NOT expect a SearchIntent as its first argument.
-  //
-  // Therefore we translate the validated SearchIntent back into the provider
-  // contract here.
-  //
-  // The raw query is preserved because SunbizProvider currently performs a
-  // ByName search using filters.query / filters.industry.
-  // ==========================================================================
+
 
   const providerFilters = {
 
@@ -584,24 +523,13 @@ searchIntent =
 
   const leads = [];
 
-  // ==========================================================================
   // 4. SEQUENTIAL CANDIDATE PROCESSING
-  //
-  // Intentionally sequential.
-  //
-  // Do NOT replace with Promise.all().
-  //
-  // Registry + website + contact enrichment can generate external traffic.
-  // Sequential execution limits sudden outbound request bursts.
-  // ==========================================================================
 
   for (
     const raw of rawRecords
   ) {
 
-    // ------------------------------------------------------------------------
     // 4A. NORMALIZE REGISTRY RECORD
-    // ------------------------------------------------------------------------
 
     let normalized;
 
