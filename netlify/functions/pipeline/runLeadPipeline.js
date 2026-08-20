@@ -347,14 +347,17 @@ searchIntent =
     };
   }
 
-  // ==========================================================================
   // 2A. PROVIDER UNAVAILABLE CONTRACT GUARD
-  // ==========================================================================
 
   if (
-    searchResult?.providerStatus ===
-    "unavailable"
-  ) {
+  [
+    "unavailable",
+    "blocked",
+    "rate_limited"
+  ].includes(
+    searchResult?.providerStatus
+  )
+) {
 
     console.warn(
       `[PIPELINE] Provider ${provider.name} is currently unavailable. ErrorType: ${searchResult.errorType}`
@@ -432,9 +435,7 @@ searchIntent =
     };
   }
 
-  // ==========================================================================
   // 2B. NORMALIZE PROVIDER RESPONSE
-  // ==========================================================================
 
   const rawRecords =
     Array.isArray(
@@ -447,9 +448,7 @@ searchIntent =
           ? searchResult
           : [];
 
-  // ==========================================================================
   // 3. EMPTY RESULT CONTRACT
-  // ==========================================================================
 
   if (
     rawRecords.length ===
