@@ -1,3 +1,4 @@
+```javascript
 const { BaseProvider } = require("./BaseProvider.js");
 
 /**
@@ -35,7 +36,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Describe the provider's actual capabilities.
+   * Provider capability declaration.
    */
   getCapabilityProfile() {
     return {
@@ -72,11 +73,13 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Search Sunbiz for candidate corporate records.
+   * Search the Sunbiz public registry.
    *
-   * IMPORTANT:
-   * Search results are registry observations,
-   * not qualified leads.
+   * Contract:
+   *
+   * search(geoContext, filters)
+   *
+   * Returns a normalized provider result object.
    */
   async search(
     geoContext = {},
@@ -87,7 +90,7 @@ class SunbizProvider extends BaseProvider {
       filters?.industry ||
       "";
 
-    if (!query.trim()) {
+    if (!String(query).trim()) {
       return {
         providerStatus: "success",
         provider: this.name,
@@ -130,14 +133,25 @@ class SunbizProvider extends BaseProvider {
     );
 
     try {
-      // ----------------------------------------------------------------------
-      // HTTP REQUEST
-      // ----------------------------------------------------------------------
-
       const response =
         await this._request(
           searchUrl
         );
+
+      const contentType =
+        response.headers.get(
+          "content-type"
+        ) || null;
+
+      const contentLength =
+        response.headers.get(
+          "content-length"
+        ) || null;
+
+      const location =
+        response.headers.get(
+          "location"
+        ) || null;
 
       console.log(
         `[${this.name}] HTTP RESPONSE`,
@@ -148,32 +162,13 @@ class SunbizProvider extends BaseProvider {
           ok:
             response.ok,
 
-          contentType:
-            response.headers.get(
-              "content-type"
-            ) || null,
+          contentType,
 
-          contentLength:
-            response.headers.get(
-              "content-length"
-            ) || null,
+          contentLength,
 
-          location:
-            response.headers.get(
-              "location"
-            ) || null
+          location
         }
       );
-
-      // ----------------------------------------------------------------------
-      // IMPORTANT:
-      //
-      // Read the response body ONCE.
-      //
-      // We need the body even for an HTTP error because a 403 response
-      // may contain diagnostic information explaining why Sunbiz rejected
-      // the request.
-      // ----------------------------------------------------------------------
 
       const responseBody =
         await response.text();
@@ -194,13 +189,6 @@ class SunbizProvider extends BaseProvider {
         }
       );
 
-      // ----------------------------------------------------------------------
-      // RESPONSE HEADERS
-      //
-      // Useful for determining whether the response came from an upstream
-      // access-control layer, redirect, proxy, CDN, or the application.
-      // ----------------------------------------------------------------------
-
       console.log(
         `[${this.name}] RESPONSE HEADERS`,
         this.getDiagnosticHeaders(
@@ -209,24 +197,53 @@ class SunbizProvider extends BaseProvider {
       );
 
       // ----------------------------------------------------------------------
-      // HTTP FAILURE (e.g. 403, 503, etc.)
+      // HTTP FAILURE CLASSIFICATION
       // ----------------------------------------------------------------------
 
       if (!response.ok) {
+        const failure =
+          this.classifyHttpFailure(
+            response,
+            responseBody
+          );
+
         console.warn(
-          `[${this.name}] Registry provider unavailable`,
+          `[${this.name}] REGISTRY REQUEST FAILED`,
           {
-            status: response.status,
-            query: cleanTerm
+            status:
+              response.status,
+
+            providerStatus:
+              failure.providerStatus,
+
+            errorType:
+              failure.errorType,
+
+            server:
+              response.headers.get(
+                "server"
+              ) || null,
+
+            query:
+              cleanTerm
           }
         );
 
         return {
-          providerStatus: "unavailable",
-          provider: this.name,
-          httpStatus: response.status,
-          records: [],
-          errorType: "HTTP_ERROR"
+          providerStatus:
+            failure.providerStatus,
+
+          provider:
+            this.name,
+
+          httpStatus:
+            response.status,
+
+          records:
+            [],
+
+          errorType:
+            failure.errorType
         };
       }
 
@@ -234,21 +251,75 @@ class SunbizProvider extends BaseProvider {
       // EMPTY RESPONSE
       // ----------------------------------------------------------------------
 
-      if (!responseBody) {
+      if (!responseBody.trim()) {
         console.warn(
-          `[${this.name}] Registry provider returned empty response body`,
+          `[${this.name}] REGISTRY PROVIDER RETURNED EMPTY RESPONSE BODY`,
           {
-            status: response.status,
-            query: cleanTerm
+            status:
+              response.status,
+
+            query:
+              cleanTerm
           }
         );
 
         return {
-          providerStatus: "unavailable",
-          provider: this.name,
-          httpStatus: response.status,
-          records: [],
-          errorType: "EMPTY_RESPONSE"
+          providerStatus:
+            "unavailable",
+
+          provider:
+            this.name,
+
+          httpStatus:
+            response.status,
+
+          records:
+            [],
+
+          errorType:
+            "EMPTY_RESPONSE"
+        };
+      }
+
+      // ----------------------------------------------------------------------
+      // CLOUDFLARE CHALLENGE DETECTION
+      //
+      // This is intentionally checked even after the HTTP status test because
+      // challenge pages can occasionally arrive through unexpected statuses.
+      // ----------------------------------------------------------------------
+
+      if (
+        this.isCloudflareChallenge(
+          response,
+          responseBody
+        )
+      ) {
+        console.warn(
+          `[${this.name}] CLOUDFLARE CHALLENGE DETECTED`,
+          {
+            status:
+              response.status,
+
+            query:
+              cleanTerm
+          }
+        );
+
+        return {
+          providerStatus:
+            "blocked",
+
+          provider:
+            this.name,
+
+          httpStatus:
+            response.status,
+
+          records:
+            [],
+
+          errorType:
+            "CLOUDFLARE_CHALLENGE"
         };
       }
 
@@ -266,26 +337,36 @@ class SunbizProvider extends BaseProvider {
       console.log(
         `[${this.name}] PARSE RESULT`,
         {
-          query: cleanTerm,
+          query:
+            cleanTerm,
+
           recordCount:
             records.length
         }
       );
 
       return {
-        providerStatus: "success",
-        provider: this.name,
-        httpStatus: 200,
-        records: records,
-        errorType: null
+        providerStatus:
+          "success",
+
+        provider:
+          this.name,
+
+        httpStatus:
+          response.status,
+
+        records,
+
+        errorType:
+          null
       };
 
     } catch (error) {
-
       console.error(
         `[${this.name} SEARCH FAILURE]`,
         {
-          query: cleanTerm,
+          query:
+            cleanTerm,
 
           url:
             searchUrl,
@@ -293,46 +374,200 @@ class SunbizProvider extends BaseProvider {
           message:
             error.message,
 
+          name:
+            error.name,
+
           stack:
             error.stack
         }
       );
 
-      // ----------------------------------------------------------------------
-      // PROVIDER UNAVAILABLE CONTRACT RETURN
-      //
-      // Return structured availability metadata with actual error type
-      // instead of throwing raw network exceptions.
-      // ----------------------------------------------------------------------
+      let errorType =
+        "NETWORK_ERROR";
+
+      if (
+        error?.name ===
+        "AbortError"
+      ) {
+        errorType =
+          "REQUEST_TIMEOUT";
+      }
+
+      if (
+        String(
+          error?.message || ""
+        )
+          .toLowerCase()
+          .includes("timed out")
+      ) {
+        errorType =
+          "REQUEST_TIMEOUT";
+      }
 
       return {
-        providerStatus: "unavailable",
-        provider: this.name,
-        httpStatus: null,
-        records: [],
-        errorType: error?.name || "NETWORK_ERROR"
+        providerStatus:
+          "unavailable",
+
+        provider:
+          this.name,
+
+        httpStatus:
+          null,
+
+        records:
+          [],
+
+        errorType
       };
     }
   }
 
   /**
-   * Perform controlled HTTP request to Sunbiz.
+   * Classify an unsuccessful registry HTTP response.
    *
-   * IMPORTANT:
-   * These headers describe a normal browser-style request.
-   * They are not intended to bypass access controls.
+   * This distinguishes:
+   * - Cloudflare/browser challenges
+   * - rate limiting
+   * - server-side registry failures
+   * - generic HTTP errors
+   */
+  classifyHttpFailure(
+    response,
+    responseBody = ""
+  ) {
+    const status =
+      response?.status;
+
+    if (
+      this.isCloudflareChallenge(
+        response,
+        responseBody
+      )
+    ) {
+      return {
+        providerStatus:
+          "blocked",
+
+        errorType:
+          "CLOUDFLARE_CHALLENGE"
+      };
+    }
+
+    if (
+      status === 429
+    ) {
+      return {
+        providerStatus:
+          "rate_limited",
+
+        errorType:
+          "RATE_LIMITED"
+      };
+    }
+
+    if (
+      status >= 500 &&
+      status <= 599
+    ) {
+      return {
+        providerStatus:
+          "unavailable",
+
+        errorType:
+          "REGISTRY_SERVER_ERROR"
+      };
+    }
+
+    if (
+      status === 401 ||
+      status === 403
+    ) {
+      return {
+        providerStatus:
+          "blocked",
+
+        errorType:
+          "REGISTRY_ACCESS_DENIED"
+      };
+    }
+
+    return {
+      providerStatus:
+        "unavailable",
+
+      errorType:
+        "HTTP_ERROR"
+    };
+  }
+
+  /**
+   * Determine whether the response appears to be a Cloudflare challenge.
+   *
+   * This does NOT attempt to bypass Cloudflare.
+   */
+  isCloudflareChallenge(
+    response,
+    responseBody = ""
+  ) {
+    const server =
+      response?.headers?.get(
+        "server"
+      ) || "";
+
+    const body =
+      String(
+        responseBody || ""
+      ).toLowerCase();
+
+    const serverIndicatesCloudflare =
+      server
+        .toLowerCase()
+        .includes(
+          "cloudflare"
+        );
+
+    const bodyIndicatesCloudflare =
+      body.includes(
+        "challenges.cloudflare.com"
+      ) ||
+      body.includes(
+        "just a moment"
+      ) ||
+      body.includes(
+        "cf-chl-"
+      ) ||
+      body.includes(
+        "cloudflare ray id"
+      ) ||
+      body.includes(
+        "challenge-platform"
+      );
+
+    return (
+      serverIndicatesCloudflare &&
+      bodyIndicatesCloudflare
+    ) || (
+      response?.status === 403 &&
+      bodyIndicatesCloudflare
+    );
+  }
+
+  /**
+   * Perform the outbound registry request.
    */
   async _request(url) {
     const controller =
       new AbortController();
 
     const timeoutId =
-      setTimeout(() => {
-        controller.abort();
-      }, this.timeoutMs);
+      setTimeout(
+        () => {
+          controller.abort();
+        },
+        this.timeoutMs
+      );
 
     try {
-
       return await fetch(
         url,
         {
@@ -344,37 +579,10 @@ class SunbizProvider extends BaseProvider {
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 
             "Accept":
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 
             "Accept-Language":
-              "en-US,en;q=0.9",
-
-            "Sec-Ch-Ua":
-              '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-
-            "Sec-Ch-Ua-Mobile":
-              "?0",
-
-            "Sec-Ch-Ua-Platform":
-              '"Windows"',
-
-            "Sec-Fetch-Dest":
-              "document",
-
-            "Sec-Fetch-Mode":
-              "navigate",
-
-            "Sec-Fetch-Site":
-              "none",
-
-            "Sec-Fetch-User":
-              "?1",
-
-            "Upgrade-Insecure-Requests":
-              "1",
-
-            "Cache-Control":
-              "max-age=0"
+              "en-US,en;q=0.9"
           },
 
           redirect:
@@ -386,21 +594,24 @@ class SunbizProvider extends BaseProvider {
       );
 
     } catch (error) {
-
       if (
         error?.name ===
         "AbortError"
       ) {
+        const timeoutError =
+          new Error(
+            `Sunbiz request timed out after ${this.timeoutMs}ms`
+          );
 
-        throw new Error(
-          `Sunbiz request timed out after ${this.timeoutMs}ms`
-        );
+        timeoutError.name =
+          "AbortError";
+
+        throw timeoutError;
       }
 
       throw error;
 
     } finally {
-
       clearTimeout(
         timeoutId
       );
@@ -408,11 +619,10 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Produce a bounded diagnostic preview of the provider response.
+   * Create a bounded diagnostic preview.
    *
    * IMPORTANT:
-   * We intentionally do not dump the entire HTML response into
-   * Netlify logs.
+   * Do not log entire provider responses.
    */
   createSafePreview(
     value
@@ -432,10 +642,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Extract a small set of diagnostic response headers.
-   *
-   * These are intentionally limited to headers useful for diagnosing
-   * HTTP access, redirects, caching, and upstream request handling.
+   * Extract useful response headers for diagnostics.
    */
   getDiagnosticHeaders(
     response
@@ -460,7 +667,6 @@ class SunbizProvider extends BaseProvider {
     for (
       const name of headerNames
     ) {
-
       const value =
         response.headers.get(
           name
@@ -529,11 +735,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Parse Sunbiz search result HTML.
-   *
-   * IMPORTANT:
-   * Target the search results table specifically to skip layout/header tables,
-   * and ignore header rows or navigation links.
+   * Parse the Sunbiz search-result table.
    */
   _parseSunbizTableHtml(
     html,
@@ -542,14 +744,51 @@ class SunbizProvider extends BaseProvider {
   ) {
     const records = [];
 
-    const tableMatch = html.match(/<table\b[^>]*>([\s\S]*?)<\/table>/gi);
-    if (!tableMatch) return [];
+    const tableRegex =
+      /<table\b[^>]*>([\s\S]*?)<\/table>/gi;
 
-    const searchResultTable = tableMatch.find(tbl => 
-      tbl.includes("SearchResultDetail") || 
-      tbl.includes("Inquiry/CorporationSearch") || 
-      tbl.includes("<th")
-    ) || tableMatch[0];
+    const tables = [];
+
+    let tableMatch;
+
+    while (
+      (
+        tableMatch =
+          tableRegex.exec(
+            html
+          )
+      ) !== null
+    ) {
+      tables.push(
+        tableMatch[1]
+      );
+    }
+
+    if (
+      tables.length ===
+      0
+    ) {
+      console.warn(
+        `[${this.name}] No HTML tables found in registry response.`
+      );
+
+      return [];
+    }
+
+    const searchResultTable =
+      tables.find(
+        tableHtml =>
+          /SearchResultDetail/i.test(
+            tableHtml
+          ) ||
+          /Inquiry\/CorporationSearch/i.test(
+            tableHtml
+          ) ||
+          /<th\b/i.test(
+            tableHtml
+          )
+      ) ||
+      tables[0];
 
     const rowRegex =
       /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
@@ -557,16 +796,23 @@ class SunbizProvider extends BaseProvider {
     let rowMatch;
 
     while (
-      (rowMatch =
-        rowRegex.exec(searchResultTable)) !== null &&
+      (
+        rowMatch =
+          rowRegex.exec(
+            searchResultTable
+          )
+      ) !== null &&
       records.length <
         limit
     ) {
-
       const rowHtml =
         rowMatch[1];
 
-      if (/<th\b/i.test(rowHtml)) {
+      if (
+        /<th\b/i.test(
+          rowHtml
+        )
+      ) {
         continue;
       }
 
@@ -599,9 +845,27 @@ class SunbizProvider extends BaseProvider {
 
       if (
         !entityName ||
-        !docNum ||
-        entityName.toLowerCase().includes("corporate name") ||
-        docNum.toLowerCase().includes("document number")
+        !docNum
+      ) {
+        continue;
+      }
+
+      if (
+        entityName
+          .toLowerCase()
+          .includes(
+            "corporate name"
+          )
+      ) {
+        continue;
+      }
+
+      if (
+        docNum
+          .toLowerCase()
+          .includes(
+            "document number"
+          )
       ) {
         continue;
       }
@@ -609,14 +873,12 @@ class SunbizProvider extends BaseProvider {
       console.log(
         `[${this.name}] PARSED ROW`,
         {
-          cells
+          entityName,
+          docNum,
+          status
         }
       );
 
-      /*
-       * Never substitute search geography for actual
-       * registry geography.
-       */
       records.push({
         cor_number:
           docNum,
@@ -661,7 +923,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Extract table-cell text while tolerating nested markup.
+   * Extract table cells.
    */
   _extractTableCells(
     rowHtml
@@ -674,12 +936,13 @@ class SunbizProvider extends BaseProvider {
     let match;
 
     while (
-      (match =
-        cellRegex.exec(
-          rowHtml
-        )) !== null
+      (
+        match =
+          cellRegex.exec(
+            rowHtml
+          )
+      ) !== null
     ) {
-
       cells.push(
         this.cleanText(
           match[1]
@@ -720,6 +983,10 @@ class SunbizProvider extends BaseProvider {
         "'"
       )
       .replace(
+        /&apos;/gi,
+        "'"
+      )
+      .replace(
         /\s+/g,
         " "
       )
@@ -727,10 +994,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Normalize raw provider observation into the universal
-   * Prospect entity structure.
-   *
-   * Missing values remain null.
+   * Normalize a raw Sunbiz record into the canonical provider entity.
    */
   normalize(
     rawRecord = {}
@@ -810,7 +1074,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Convert structured location into UI-safe display text.
+   * Format normalized location.
    */
   formatLocation(
     location = {}
@@ -819,7 +1083,9 @@ class SunbizProvider extends BaseProvider {
       location.city,
       location.state,
       location.zip
-    ].filter(Boolean);
+    ].filter(
+      Boolean
+    );
 
     return parts.length
       ? parts.join(", ")
@@ -827,7 +1093,7 @@ class SunbizProvider extends BaseProvider {
   }
 
   /**
-   * Generate authoritative source reference.
+   * Return the authoritative source reference for a record.
    */
   getSourceReference(
     raw,
@@ -870,3 +1136,4 @@ class SunbizProvider extends BaseProvider {
 module.exports = {
   SunbizProvider
 };
+```
