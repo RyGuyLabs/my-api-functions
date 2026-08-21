@@ -1,4 +1,3 @@
-```javascript
 const { BaseProvider } = require("./BaseProvider.js");
 
 /**
@@ -1136,4 +1135,3 @@ class SunbizProvider extends BaseProvider {
 module.exports = {
   SunbizProvider
 };
-```
