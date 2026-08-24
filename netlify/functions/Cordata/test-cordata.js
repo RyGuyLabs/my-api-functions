@@ -1,53 +1,36 @@
-// cordata/test-cordata.js
-import fs from 'node:fs';
-import path from 'node:path';
-import { CordataParser } from './CordataParser.js';
+import fs from 'fs';
+import path from 'path';
+import { parseCordataRecord } from './CordataParser.js';
 
-const sampleFilePath = path.resolve('./daily_sample.txt');
-
-function runValidation() {
-  console.log('--- STAGE 2: CORDATA DECODER VALIDATION ---');
+function runStage2Validation(filePath, count = 5) {
+  console.log(`\n================ CORDATA STAGE 2 VALIDATION ================`);
   
-  if (!fs.existsSync(sampleFilePath)) {
-    console.error(`Error: Sample file not found at ${sampleFilePath}`);
-    process.exit(1);
+  if (!fs.existsSync(filePath)) {
+    console.error(`Error: Sample file not found at ${filePath}`);
+    return;
   }
 
-  const fileContent = fs.readFileSync(sampleFilePath, 'utf-8');
-  const lines = fileContent.split('\n').filter(l => l.length >= 200);
+  const fileContent = fs.readFileSync(filePath, 'utf8');
+  const records = fileContent.match(/.{1,1440}/g) || [];
 
-  console.log(`Loaded ${lines.length} valid records from daily_sample.txt.\n`);
+  console.log(`Parsed ${records.length} records. Showing first ${count}:\n`);
 
-  const sampleCount = Math.min(20, lines.length);
-  const parsedRecords = [];
-  let errorCount = 0;
-
-  for (let i = 0; i < sampleCount; i++) {
+  records.slice(0, count).forEach((rawRecord, index) => {
     try {
-      const parsed = CordataParser.parseRecord(lines[i]);
-      parsedRecords.push(parsed);
-
-      // Validation Checks (catch offset misalignments)
-      if (!parsed.legalName || parsed.legalName.length < 2) {
-        console.warn(`[Line ${i + 1}] Warning: Unusually short legalName: "${parsed.legalName}"`);
-        errorCount++;
-      }
-      if (parsed.principalAddress.zip && !/^\d{5}/.test(parsed.principalAddress.zip)) {
-        console.warn(`[Line ${i + 1}] Warning: Malformed Zip Code detected: "${parsed.principalAddress.zip}"`);
-      }
+      const parsed = parseCordataRecord(rawRecord);
+      console.log(`--- RECORD #${index + 1} [Doc: ${parsed.company.documentNumber}] ---`);
+      console.log(`Legal Name: "${parsed.company.legalName}"`);
+      console.log(`Principal:  "${parsed.principalAddress.street}, ${parsed.principalAddress.city}, ${parsed.principalAddress.state} ${parsed.principalAddress.zip}"`);
+      console.log(`People/Slots (${parsed.people.length} found):`);
+      parsed.people.forEach(p => {
+        console.log(`   Slot ${p.slot}: ${p.roleAndNameRaw || p.nameRaw} | ${p.street}, ${p.city}, ${p.state} ${p.zip}`);
+      });
+      console.log(`------------------------------------------------------------\n`);
     } catch (err) {
-      console.error(`[Line ${i + 1}] Parsing failed:`, err.message);
-      errorCount++;
+      console.error(`Error parsing record #${index + 1}:`, err.message);
     }
-  }
-
-  console.log('--- SAMPLE PARSED RECORD (RECORD #1) ---');
-  console.log(JSON.stringify(parsedRecords[0], null, 2));
-
-  console.log('\n--- VALIDATION SUMMARY ---');
-  console.log(`Processed: ${sampleCount} records`);
-  console.log(`Errors/Warnings: ${errorCount}`);
-  console.log(errorCount === 0 ? 'STATUS: SUCCESS (100% Valid Offsets)' : 'STATUS: REQUIRES OFFSET ADJUSTMENT');
+  });
 }
 
-runValidation();
+const samplePath = path.resolve(process.cwd(), 'cordata0.txt');
+runStage2Validation(samplePath, 5);
