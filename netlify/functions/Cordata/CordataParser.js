@@ -172,54 +172,46 @@ function parseRepeatingSlots(rawRecord) {
       continue;
     }
 
-    const role = slotChunk
-      .slice(
-        map.subFields.role.start,
-        map.subFields.role.end
-      )
-      .trim();
+    const role = sliceField(
+      slotChunk,
+      map.subFields.role
+    );
 
-    const lastNameOrg = slotChunk
-      .slice(
-        map.subFields.lastNameOrg.start,
-        map.subFields.lastNameOrg.end
-      )
-      .trim();
+    const lastNameOrg = sliceField(
+      slotChunk,
+      map.subFields.lastNameOrg
+    );
 
-    const firstNameCont = slotChunk
-      .slice(
-        map.subFields.firstNameCont.start,
-        map.subFields.firstNameCont.end
-      )
-      .trim();
+    /*
+     * CordataFieldMap.js defines this field as `firstName`.
+     * Do NOT use `firstNameCont` here.
+     */
+    const firstName = sliceField(
+      slotChunk,
+      map.subFields.firstName
+    ).replace(/\s+/g, ' ');
 
     /*
      * A slot with no identity information is not a person.
      */
-    if (!role && !lastNameOrg && !firstNameCont) {
+    if (!role && !lastNameOrg && !firstName) {
       continue;
     }
 
-    const addressNum = slotChunk
-      .slice(
-        map.subFields.addressNum.start,
-        map.subFields.addressNum.end
-      )
-      .trim();
+    const addressNum = sliceField(
+      slotChunk,
+      map.subFields.addressNum
+    );
 
-    const streetAddress = slotChunk
-      .slice(
-        map.subFields.streetAddress.start,
-        map.subFields.streetAddress.end
-      )
-      .trim();
+    const streetAddress = sliceField(
+      slotChunk,
+      map.subFields.streetAddress
+    );
 
-    const city = slotChunk
-      .slice(
-        map.subFields.city.start,
-        map.subFields.city.end
-      )
-      .trim();
+    const city = sliceField(
+      slotChunk,
+      map.subFields.city
+    );
 
     const stateZipChunk = slotChunk.slice(
       map.subFields.stateZipChunk.start,
@@ -228,23 +220,36 @@ function parseRepeatingSlots(rawRecord) {
 
     const { state, zip } = parseStateAndZip(stateZipChunk);
 
-    const street = `${addressNum} ${streetAddress}`.trim();
+    /*
+     * IMPORTANT:
+     * The source fixed-width format splits the street number
+     * across addressNum + streetAddress.
+     *
+     * Example:
+     *   addressNum    = "1"
+     *   streetAddress = "120 SW 76TH COURT"
+     *
+     * Therefore concatenate with NO separator:
+     *   "1" + "120 SW 76TH COURT"
+     *   -> "1120 SW 76TH COURT"
+     */
+    const street = `${addressNum}${streetAddress}`.trim();
 
     people.push({
       slot,
 
       role: role || null,
 
-      // Keep the new normalized field.
+      // Normalized surname / organization field.
       lastNameOrg: lastNameOrg || null,
 
-      // Keep the old compatibility field because
-      // CordataProvider.js currently references nameRaw.
+      // Compatibility field used by existing provider code.
       nameRaw: lastNameOrg || null,
 
-      firstName: firstNameCont || null,
+      firstName: firstName || null,
 
-      firstNameCont: firstNameCont || null,
+      // Compatibility field for downstream code that may still expect it.
+      firstNameCont: firstName || null,
 
       street,
       city,
@@ -261,7 +266,6 @@ function parseRepeatingSlots(rawRecord) {
 
   return people;
 }
-
 /**
  * Parse complete 1,440-character Cordata record.
  */
