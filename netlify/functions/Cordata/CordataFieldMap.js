@@ -42,7 +42,7 @@ export const CORDATA_FIELD_MAP = {
     zip:       { start: 558, end: 568 }
   },
 
-  // Primary Officer / Officer 1
+  // Officer 1
   officer1: {
     role:      { start: 571, end: 575 },        // e.g. AMBR, P, VP, MGR
     lastName:  { start: 575, end: 593 },
@@ -52,5 +52,65 @@ export const CORDATA_FIELD_MAP = {
     city:      { start: 644, end: 672 },
     state:     { start: 672, end: 674 },
     zip:       { start: 674, end: 684 }
+  },
+
+  // Officer 2
+  officer2: {
+    role:      { start: 684, end: 688 },
+    lastName:  { start: 688, end: 706 },
+    firstName: { start: 706, end: 716 },
+    middle:    { start: 716, end: 717 },
+    address1:  { start: 717, end: 757 },
+    city:      { start: 757, end: 785 },
+    state:     { start: 785, end: 787 },
+    zip:       { start: 787, end: 797 }
+  },
+
+  // Officer 3
+  officer3: {
+    role:      { start: 797, end: 801 },
+    lastName:  { start: 801, end: 819 },
+    firstName: { start: 819, end: 829 },
+    middle:    { start: 829, end: 830 },
+    address1:  { start: 830, end: 870 },
+    city:      { start: 870, end: 898 },
+    state:     { start: 898, end: 900 },
+    zip:       { start: 900, end: 910 }
+  },
+
+  // Officer 4
+  officer4: {
+    role:      { start: 910, end: 914 },
+    lastName:  { start: 914, end: 932 },
+    firstName: { start: 932, end: 942 },
+    middle:    { start: 942, end: 943 },
+    address1:  { start: 943, end: 983 },
+    city:      { start: 983, end: 1011 },
+    state:     { start: 1011, end: 1013 },
+    zip:       { start: 1013, end: 1023 }
+  },
+
+  // Officer 5
+  officer5: {
+    role:      { start: 1023, end: 1027 },
+    lastName:  { start: 1027, end: 1045 },
+    firstName: { start: 1045, end: 1055 },
+    middle:    { start: 1055, end: 1056 },
+    address1:  { start: 1056, end: 1096 },
+    city:      { start: 1096, end: 1124 },
+    state:     { start: 1124, end: 1126 },
+    zip:       { start: 1126, end: 1136 }
+  },
+
+  // Officer 6
+  officer6: {
+    role:      { start: 1136, end: 1140 },
+    lastName:  { start: 1140, end: 1158 },
+    firstName: { start: 1158, end: 1168 },
+    middle:    { start: 1168, end: 1169 },
+    address1:  { start: 1169, end: 1209 },
+    city:      { start: 1209, end: 1237 },
+    state:     { start: 1237, end: 1239 },
+    zip:       { start: 1239, end: 1249 }
   }
 };
