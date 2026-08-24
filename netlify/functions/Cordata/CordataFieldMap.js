@@ -1,10 +1,10 @@
 /**
- * Florida DOS Cordata/Sunbiz Fixed-Width Offset Map (1,440 Bytes)
+ * Florida DOS Cordata/Sunbiz Canonical Offset Map (1,440 Bytes Fixed-Width)
  */
 export const CORDATA_FIELD_MAP = {
   RECORD_LENGTH: 1440,
 
-  // Corporate Header
+  // Corporate Header (Offsets 0 - 535)
   header: {
     documentNumber: { start: 0, end: 12 },
     legalName:      { start: 12, end: 204 },
@@ -32,32 +32,32 @@ export const CORDATA_FIELD_MAP = {
     zip:      { start: 384, end: 394 }
   },
 
-  // Primary Person / Slot 1 Structure (536 - 667, Width 132)
+  // Primary Person / Slot 1 (Offsets 536 - 667)
   slot1: {
-    code:         { start: 536, end: 540 },
-    year:         { start: 540, end: 544 },
-    lastNameOrg:  { start: 544, end: 564 },
-    firstName:    { start: 564, end: 578 },
-    middleInitial:{ start: 578, end: 579 },
-    addressPrefix:{ start: 580, end: 586 },
-    streetAddress:{ start: 586, end: 620 },
-    city:         { start: 620, end: 640 },
-    stateZipChunk:{ start: 640, end: 668 } // FL34223 stitched region
+    code:          { start: 536, end: 540 },
+    year:          { start: 540, end: 544 },
+    lastNameOrg:   { start: 544, end: 564 },
+    firstName:     { start: 564, end: 578 },
+    middleInitial: { start: 578, end: 579 },
+    addressPrefix: { start: 580, end: 586 },
+    streetAddress: { start: 586, end: 620 },
+    city:          { start: 620, end: 640 },
+    stateZipChunk: { start: 640, end: 668 }
   },
 
-  // Repeating Relationship Slots (Slots 2 through 7: Stride +128)
+  // Repeating Relationship Slots (Slots 2 to 7, Offset 668+, Stride 128)
   repeatingSlots: {
     startOffset: 668,
     stride: 128,
     count: 6,
     subFields: {
-      roleAndName:    { start: 0, end: 24 },   // 668-691
-      firstNameCont:  { start: 24, end: 40 },  // 692-707
-      addressNum:     { start: 40, end: 48 },  // 708-715
-      streetAddress:  { start: 48, end: 88 },  // 716-755
-      city:           { start: 88, end: 104 }, // 756-771
-      padding:        { start: 104, end: 112 },// 772-779
-      stateZipChunk:  { start: 112, end: 128 } // 780-795
+      roleAndName:   { start: 0, end: 24 },
+      firstNameCont: { start: 24, end: 40 },
+      addressNum:    { start: 40, end: 48 },
+      streetAddress: { start: 48, end: 88 },
+      city:          { start: 88, end: 104 },
+      padding:       { start: 104, end: 112 },
+      stateZipChunk: { start: 112, end: 128 }
     }
   }
 };
