@@ -26,7 +26,6 @@ function runValidation() {
   }
 
   const sampleCount = Math.min(20, records.length);
-
   let errorCount = 0;
 
   for (let i = 0; i < sampleCount; i++) {
