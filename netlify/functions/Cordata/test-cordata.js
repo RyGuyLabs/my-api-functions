@@ -1,36 +1,84 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { parseCordataRecord } from './CordataParser.js';
 
-function runStage2Validation(filePath, count = 5) {
-  console.log(`\n================ CORDATA STAGE 2 VALIDATION ================`);
-  
-  if (!fs.existsSync(filePath)) {
-    console.error(`Error: Sample file not found at ${filePath}`);
-    return;
+const sampleFilePath = path.resolve('./daily_sample.txt');
+
+function runValidation() {
+  console.log('--- STAGE 2: CORDATA DECODER VALIDATION ---');
+
+  if (!fs.existsSync(sampleFilePath)) {
+    console.error(`Error: Sample file not found at ${sampleFilePath}`);
+    process.exit(1);
   }
 
-  const fileContent = fs.readFileSync(filePath, 'utf8');
-  const records = fileContent.match(/.{1,1440}/g) || [];
+  const fileContent = fs.readFileSync(sampleFilePath, 'utf8');
 
-  console.log(`Parsed ${records.length} records. Showing first ${count}:\n`);
+  const records = fileContent
+    .split(/\r?\n/)
+    .filter(line => line.length === 1440);
 
-  records.slice(0, count).forEach((rawRecord, index) => {
+  console.log(`Loaded ${records.length} exact 1,440-character records.\n`);
+
+  if (records.length === 0) {
+    console.error('No exact 1,440-character records found.');
+    process.exit(1);
+  }
+
+  const sampleCount = Math.min(20, records.length);
+
+  let errorCount = 0;
+
+  for (let i = 0; i < sampleCount; i++) {
     try {
-      const parsed = parseCordataRecord(rawRecord);
-      console.log(`--- RECORD #${index + 1} [Doc: ${parsed.company.documentNumber}] ---`);
-      console.log(`Legal Name: "${parsed.company.legalName}"`);
-      console.log(`Principal:  "${parsed.principalAddress.street}, ${parsed.principalAddress.city}, ${parsed.principalAddress.state} ${parsed.principalAddress.zip}"`);
-      console.log(`People/Slots (${parsed.people.length} found):`);
-      parsed.people.forEach(p => {
-        console.log(`   Slot ${p.slot}: ${p.roleAndNameRaw || p.nameRaw} | ${p.street}, ${p.city}, ${p.state} ${p.zip}`);
-      });
-      console.log(`------------------------------------------------------------\n`);
+      const parsed = parseCordataRecord(records[i]);
+
+      if (!parsed.company.documentNumber) {
+        throw new Error('Missing document number');
+      }
+
+      if (!parsed.company.legalName) {
+        throw new Error('Missing legal name');
+      }
+
+      if (parsed.rawRecord.length !== 1440) {
+        throw new Error(
+          `Raw record length changed: ${parsed.rawRecord.length}`
+        );
+      }
     } catch (err) {
-      console.error(`Error parsing record #${index + 1}:`, err.message);
+      console.error(`[Record ${i + 1}] FAILED: ${err.message}`);
+      errorCount++;
     }
-  });
+  }
+
+  console.log('\n--- SAMPLE PARSED RECORD ---');
+
+  const firstRecord = parseCordataRecord(records[0]);
+
+  console.dir(
+    {
+      company: firstRecord.company,
+      principalAddress: firstRecord.principalAddress,
+      mailingAddress: firstRecord.mailingAddress,
+      people: firstRecord.people
+    },
+    {
+      depth: null,
+      maxArrayLength: 20
+    }
+  );
+
+  console.log('\n--- VALIDATION SUMMARY ---');
+  console.log(`Processed: ${sampleCount}`);
+  console.log(`Errors:    ${errorCount}`);
+
+  if (errorCount === 0) {
+    console.log('\nSTAGE 2 BASIC VALIDATION: PASSED');
+  } else {
+    console.log('\nSTAGE 2 BASIC VALIDATION: FAILED');
+    process.exitCode = 1;
+  }
 }
 
-const samplePath = path.resolve(process.cwd(), 'cordata0.txt');
-runStage2Validation(samplePath, 5);
+runValidation();
