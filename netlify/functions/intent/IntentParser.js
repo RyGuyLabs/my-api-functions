@@ -306,40 +306,95 @@ class IntentParser {
   /**
    * Resolve industry vocabulary.
    */
-  resolveIndustry(
-    normalizedInput
+  resolveIndustry(normalizedInput) {
+
+  // ------------------------------------------------------------------------
+  // FIRST: Try the explicitly recognized industry definitions.
+  //
+  // These retain their existing canonical names, keywords, and
+  // classifications.
+  // ------------------------------------------------------------------------
+
+  for (
+    const definition of
+      this.industryDefinitions
   ) {
 
-    for (
-      const definition of
-        this.industryDefinitions
-    ) {
+    const matched =
+      definition.keywords.some(
+        keyword =>
+          normalizedInput.includes(
+            keyword.toLowerCase()
+          )
+      );
 
-      const matched =
-        definition.keywords.some(
-          keyword =>
-            normalizedInput.includes(
-              keyword.toLowerCase()
-            )
-        );
+    if (matched) {
 
-      if (matched) {
+      return {
+        canonical:
+          definition.canonical,
 
-        return {
-          canonical:
-            definition.canonical,
+        keywords:
+          definition.keywords,
 
-          keywords:
-            definition.keywords,
-
-          classifications:
-            definition.classifications
-        };
-      }
+        classifications:
+          definition.classifications
+      };
     }
+  }
 
+  // ------------------------------------------------------------------------
+  // FALLBACK: Preserve a plausible user-supplied industry concept.
+  //
+  // The IntentParser must not use the small deterministic vocabulary
+  // above as a hard gate for the entire lead-generation platform.
+  //
+  // Industry expansion / relevance logic can enrich this concept later.
+  // ------------------------------------------------------------------------
+
+  const geographyTerms = [
+    ...Object.keys(this.floridaGeographies),
+    ...Object.values(this.floridaGeographies)
+      .map(geo => geo.city.toLowerCase()),
+    "florida",
+    "fl"
+  ];
+
+  let industryText =
+    normalizedInput;
+
+  for (const term of geographyTerms) {
+
+    industryText =
+      industryText.replace(
+        new RegExp(
+          `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+          "gi"
+        ),
+        " "
+      );
+  }
+
+  industryText =
+    industryText
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!industryText) {
     return null;
   }
+
+  return {
+    canonical:
+      industryText,
+
+    keywords: [
+      industryText
+    ],
+
+    classifications: []
+  };
+}
 
   /**
    * Resolve geography.
