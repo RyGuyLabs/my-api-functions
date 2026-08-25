@@ -380,13 +380,25 @@ if (!industry) {
       );
   }
 
-  industryText =
-    industryText
-      .replace(
-        /\s+/g,
-        " "
-      )
-      .trim();
+      industryText =
+      industryText
+        .replace(
+          /\s+in\s*$/i,
+          ""
+        )
+        .replace(
+          /\s+in\s+/i,
+          " "
+        )
+        .replace(
+          /[,]+/g,
+          " "
+        )
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim();
 
   if (!industryText) {
     return null;
