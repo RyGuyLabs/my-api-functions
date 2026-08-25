@@ -306,13 +306,15 @@ if (!industry) {
   /**
    * Resolve industry vocabulary.
    */
-  resolveIndustry(normalizedInput) {
+  resolveIndustry(
+  normalizedInput,
+  rawInput = normalizedInput
+) {
 
   // ------------------------------------------------------------------------
-  // FIRST: Try the explicitly recognized industry definitions.
+  // KNOWN INDUSTRY MATCH
   //
-  // These retain their existing canonical names, keywords, and
-  // classifications.
+  // Known vocabulary provides enhanced metadata, but it is NOT a hard gate.
   // ------------------------------------------------------------------------
 
   for (
@@ -338,11 +340,85 @@ if (!industry) {
           definition.keywords,
 
         classifications:
-          definition.classifications
+          definition.classifications,
+
+        resolution:
+          "known"
       };
     }
   }
 
+  // ------------------------------------------------------------------------
+  // OPEN-ENDED INDUSTRY FALLBACK
+  //
+  // Preserve legitimate user-supplied industry terminology even when that
+  // industry has not yet been added to the deterministic vocabulary.
+  //
+  // Do NOT invent classifications here.
+  // ------------------------------------------------------------------------
+
+  const geographyTerms = [
+    ...Object.keys(
+      this.floridaGeographies
+    ),
+    ...Object.values(
+      this.floridaGeographies
+    )
+      .map(
+        geography =>
+          geography.city.toLowerCase()
+      ),
+    "florida",
+    "fl"
+  ];
+
+  let industryText =
+    String(rawInput)
+      .toLowerCase();
+
+  for (
+    const term of geographyTerms
+  ) {
+
+    industryText =
+      industryText.replace(
+        new RegExp(
+          `\\b${term.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+          )}\\b`,
+          "gi"
+        ),
+        " "
+      );
+  }
+
+  industryText =
+    industryText
+      .replace(
+        /\s+/g,
+        " "
+      )
+      .trim();
+
+  if (!industryText) {
+    return null;
+  }
+
+  return {
+    canonical:
+      industryText,
+
+    keywords: [
+      industryText
+    ],
+
+    classifications: [],
+
+    resolution:
+      "user_defined"
+  };
+}
   // ------------------------------------------------------------------------
   // FALLBACK: Preserve a plausible user-supplied industry concept.
   //
