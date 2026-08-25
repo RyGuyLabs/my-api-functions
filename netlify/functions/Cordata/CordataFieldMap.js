@@ -60,3 +60,7 @@ const CORDATA_FIELD_MAP = {
   }
 };
 EOF
+
+module.exports = {
+  CORDATA_FIELD_MAP
+};
