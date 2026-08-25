@@ -424,6 +424,17 @@ if (!industry) {
   }
 
   return {
+  canonical:
+    industryText,
+
+  keywords: [
+    industryText
+  ],
+
+  classifications: []
+};
+
+  return {
     canonical:
       industryText,
 
