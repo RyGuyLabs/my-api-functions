@@ -247,43 +247,21 @@ class IntentParser {
       rawInput
         .toLowerCase();
 
-    // ------------------------------------------------------------------------
-    // INDUSTRY
-    // ------------------------------------------------------------------------
+   // ------------------------------------------------------------------------
+// INDUSTRY
+// ------------------------------------------------------------------------
 
-    const industry =
-      this.resolveIndustry(
-        normalizedInput
-      );
+const industry =
+  this.resolveIndustry(
+    normalizedInput
+  );
 
-        if (!industry) {
+if (!industry) {
 
-      // ----------------------------------------------------------------------
-      // GENERIC INDUSTRY FALLBACK
-      //
-      // The lead-generation platform is intentionally not restricted to a
-      // finite industry vocabulary. Known industries receive expanded
-      // vocabulary/classifications above; otherwise preserve the user's
-      // business query as the canonical search concept and allow downstream
-      // acquisition/relevance layers to determine appropriate matches.
-      // ----------------------------------------------------------------------
-
-      industry = {
-        canonical:
-          this.extractIndustryQuery(
-            normalizedInput
-          ),
-
-        keywords: [
-          this.extractIndustryQuery(
-            normalizedInput
-          )
-        ],
-
-        classifications: []
-      };
-    }
-
+  throw new Error(
+    `Unable to determine a usable industry concept from search: "${rawInput}".`
+  );
+}
     // ------------------------------------------------------------------------
     // GEOGRAPHY
     // ------------------------------------------------------------------------
