@@ -253,7 +253,8 @@ class IntentParser {
 
 const industry =
   this.resolveIndustry(
-    normalizedInput
+    normalizedInput,
+    rawInput
   );
 
 if (!industry) {
