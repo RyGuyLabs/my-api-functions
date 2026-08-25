@@ -1,4 +1,3 @@
-cat << 'EOF' > cordata/CordataParser.js
 import { CORDATA_FIELD_MAP } from './CordataFieldMap.js';
 
 /**
@@ -326,4 +325,3 @@ export class CordataParser {
     };
   }
 }
-EOF
