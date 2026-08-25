@@ -6,8 +6,9 @@
  *
  * RESPONSIBILITY:
  * - Store normalized Florida registry observations.
+ * - Store raw fixed-width state lines and associated people records.
  * - Query locally ingested registry records.
- * - Bulk-upsert official registry records.
+ * - Bulk-upsert official registry records atomically.
  * - Preserve dataset provenance.
  *
  * DOES NOT:
@@ -23,15 +24,15 @@
  * ARCHITECTURE:
  *
  * Florida Official Data
- *        ↓
+ *         ↓
  * FloridaIngestionService
- *        ↓
+ *         ↓
  * FloridaRegistryDatabase
- *        ↓
+ *         ↓
  * OfficialFloridaProvider
- *        ↓
+ *         ↓
  * RegistryAcquisitionService
- *        ↓
+ *         ↓
  * SearchIntent
  */
 
@@ -175,6 +176,68 @@ class FloridaRegistryDatabase {
       CREATE INDEX IF NOT EXISTS
         idx_florida_entities_mailing_zip
       ON florida_entities(mailing_zip);
+
+      CREATE TABLE IF NOT EXISTS florida_raw_records (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        registration_id TEXT NOT NULL UNIQUE,
+
+        raw_line TEXT NOT NULL,
+
+        source_file TEXT,
+
+        created_at TEXT NOT NULL,
+
+        updated_at TEXT NOT NULL,
+
+        FOREIGN KEY (registration_id)
+          REFERENCES florida_entities(registration_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS
+        idx_florida_raw_records_reg_id
+      ON florida_raw_records(registration_id);
+
+      CREATE TABLE IF NOT EXISTS florida_people (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        registration_id TEXT NOT NULL,
+
+        person_title TEXT,
+
+        name TEXT NOT NULL,
+
+        address_line1 TEXT,
+
+        address_line2 TEXT,
+
+        city TEXT,
+
+        state TEXT,
+
+        zip TEXT,
+
+        source_file TEXT,
+
+        created_at TEXT NOT NULL,
+
+        updated_at TEXT NOT NULL,
+
+        FOREIGN KEY (registration_id)
+          REFERENCES florida_entities(registration_id)
+          ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS
+        idx_florida_people_reg_id
+      ON florida_people(registration_id);
+
+      CREATE INDEX IF NOT EXISTS
+        idx_florida_people_name
+      ON florida_people(name);
 
       CREATE TABLE IF NOT EXISTS ingestion_manifests (
 
@@ -351,22 +414,214 @@ class FloridaRegistryDatabase {
             excluded.updated_at
       `);
 
+    this.upsertRawRecordStatement =
+      this.db.prepare(`
+        INSERT INTO florida_raw_records (
+
+          registration_id,
+          raw_line,
+          source_file,
+          created_at,
+          updated_at
+
+        )
+
+        VALUES (
+
+          @registrationId,
+          @rawLine,
+          @sourceFile,
+          @createdAt,
+          @updatedAt
+
+        )
+
+        ON CONFLICT(registration_id)
+        DO UPDATE SET
+
+          raw_line =
+            excluded.raw_line,
+
+          source_file =
+            excluded.source_file,
+
+          updated_at =
+            excluded.updated_at
+      `);
+
+    this.deletePeopleByRegIdStatement =
+      this.db.prepare(`
+        DELETE FROM florida_people
+        WHERE registration_id = ?
+      `);
+
+    this.insertPersonStatement =
+      this.db.prepare(`
+        INSERT INTO florida_people (
+
+          registration_id,
+          person_title,
+          name,
+          address_line1,
+          address_line2,
+          city,
+          state,
+          zip,
+          source_file,
+          created_at,
+          updated_at
+
+        )
+
+        VALUES (
+
+          @registrationId,
+          @personTitle,
+          @name,
+          @addressLine1,
+          @addressLine2,
+          @city,
+          @state,
+          @zip,
+          @sourceFile,
+          @createdAt,
+          @updatedAt
+
+        )
+      `);
+
     this.upsertBatchTransaction =
       this.db.transaction(
         records => {
 
-          let affected =
-            0;
+          let affected = 0;
 
-          for (
-            const record of records
-          ) {
+          for (const record of records) {
 
             this.upsertStatement.run(
-              this.toDatabaseRecord(
-                record
-              )
+              this.toDatabaseRecord(record)
             );
+
+            affected++;
+          }
+
+          return affected;
+        }
+      );
+
+    this.upsertFullBatchTransaction =
+      this.db.transaction(
+        bundleRecords => {
+
+          let affected = 0;
+
+          for (const item of bundleRecords) {
+
+            const entityRecord =
+              item.parsed || item;
+
+            const rawLine =
+              item.raw || null;
+
+            const people =
+              Array.isArray(item.people)
+                ? item.people
+                : [];
+
+            if (
+              !entityRecord ||
+              !entityRecord.registrationId ||
+              !entityRecord.companyName
+            ) {
+
+              throw new Error(
+                "Full batch record requires valid parsed data with registrationId and companyName."
+              );
+            }
+
+            const dbEntity =
+              this.toDatabaseRecord(entityRecord);
+
+            this.upsertStatement.run(dbEntity);
+
+            if (rawLine) {
+
+              this.upsertRawRecordStatement.run({
+
+                registrationId:
+                  dbEntity.registrationId,
+
+                rawLine:
+                  String(rawLine),
+
+                sourceFile:
+                  dbEntity.sourceFile,
+
+                createdAt:
+                  dbEntity.createdAt,
+
+                updatedAt:
+                  dbEntity.updatedAt
+              });
+            }
+
+            this.deletePeopleByRegIdStatement.run(
+              dbEntity.registrationId
+            );
+
+            for (const person of people) {
+
+              if (person && person.name) {
+
+                this.insertPersonStatement.run({
+
+                  registrationId:
+                    dbEntity.registrationId,
+
+                  personTitle:
+                    person.title ||
+                    person.personTitle ||
+                    null,
+
+                  name:
+                    person.name,
+
+                  addressLine1:
+                    person.address?.line1 ||
+                    person.addressLine1 ||
+                    null,
+
+                  addressLine2:
+                    person.address?.line2 ||
+                    person.addressLine2 ||
+                    null,
+
+                  city:
+                    person.address?.city ||
+                    person.city ||
+                    null,
+
+                  state:
+                    person.address?.state ||
+                    person.state ||
+                    null,
+
+                  zip:
+                    person.address?.zip ||
+                    person.zip ||
+                    null,
+
+                  sourceFile:
+                    dbEntity.sourceFile,
+
+                  createdAt:
+                    dbEntity.createdAt,
+
+                  updatedAt:
+                    dbEntity.updatedAt
+                });
+              }
+            }
 
             affected++;
           }
@@ -837,6 +1092,36 @@ class FloridaRegistryDatabase {
 
     return this.upsertBatchTransaction(
       records
+    );
+  }
+
+  /**
+   * Atomically stores structured parsed entities, original raw fixed-width lines,
+   * and associated people in a single database transaction.
+   *
+   * @param {Array<Object>} bundleRecords - Array of objects structured as:
+   *   {
+   *     parsed: Object, // Cordata entity object (required)
+   *     raw: String,    // Raw 1,440-character fixed-width record line (optional)
+   *     people: Array   // Array of officer/person objects (optional)
+   *   }
+   * @returns {number} Count of affected bundled records.
+   */
+  upsertFullRecordBatch(bundleRecords) {
+
+    if (!Array.isArray(bundleRecords)) {
+
+      throw new Error(
+        "FloridaRegistryDatabase.upsertFullRecordBatch requires an array."
+      );
+    }
+
+    if (bundleRecords.length === 0) {
+      return 0;
+    }
+
+    return this.upsertFullBatchTransaction(
+      bundleRecords
     );
   }
 
