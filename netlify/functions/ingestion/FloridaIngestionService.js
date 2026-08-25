@@ -2,6 +2,7 @@ const fs = require("fs");
 const readline = require("readline");
 const path = require("path");
 const crypto = require("crypto");
+const { CordataParser } = require("./CordataParser");
 
 /**
  * FloridaIngestionService
@@ -11,10 +12,10 @@ const crypto = require("crypto");
  *
  * RESPONSIBILITY:
  * - Read official registry files.
- * - Parse fixed-width records.
- * - Normalize whitespace.
- * - Validate minimum record integrity.
- * - Bulk upsert records into the registry database.
+ * - Validate 1,440-byte record boundaries.
+ * - Delegate record parsing to CordataParser.
+ * - Normalize whitespace and record attributes.
+ * - Bulk-upsert parsed entities, raw lines, and officer/people data into the database via atomic transaction.
  * - Produce an auditable ingestion manifest.
  *
  * DOES NOT:
@@ -29,148 +30,56 @@ const crypto = require("crypto");
  * ARCHITECTURAL ROLE:
  *
  * Florida Official Data Files
- *          ↓
+ *           ↓
  * FloridaIngestionService
- *          ↓
+ *           ↓
  * FloridaRegistryDatabase
- *          ↓
+ *           ↓
  * OfficialFloridaProvider
- *          ↓
+ *           ↓
  * RegistryAcquisitionService
  */
-
-/**
- * IMPORTANT:
- *
- * These offsets MUST correspond to the currently published
- * Florida Division of Corporations data-file specification.
- *
- * Do not modify these values based on assumptions about the
- * Sunbiz website UI.
- *
- * Fixed-width offsets are 0-indexed and the `end` position is
- * exclusive, matching String.prototype.substring().
- */
-const FLORIDA_FIXED_WIDTH_SCHEMA = {
-  documentNumber: {
-    start: 0,
-    end: 12
-  },
-
-  entityName: {
-    start: 12,
-    end: 204
-  },
-
-  status: {
-    start: 204,
-    end: 210
-  },
-
-  filingDate: {
-    start: 210,
-    end: 218
-  },
-
-  principalAddress: {
-    start: 218,
-    end: 260
-  },
-
-  principalCity: {
-    start: 260,
-    end: 288
-  },
-
-  principalState: {
-    start: 288,
-    end: 290
-  },
-
-  principalZip: {
-    start: 290,
-    end: 299
-  },
-
-  mailingAddress: {
-    start: 299,
-    end: 341
-  },
-
-  mailingCity: {
-    start: 341,
-    end: 369
-  },
-
-  mailingState: {
-    start: 369,
-    end: 371
-  },
-
-  mailingZip: {
-    start: 371,
-    end: 380
-  }
-};
 
 class FloridaIngestionService {
 
   /**
    * @param {Object} options
    * @param {Object} options.database
-   * @param {Object} [options.schemaSpec]
-   * @param {number} [options.minimumRecordLength]
+   * @param {CordataParser} [options.parser]
+   * @param {number} [options.expectedRecordLength]
    */
   constructor({
     database,
-    schemaSpec = FLORIDA_FIXED_WIDTH_SCHEMA,
-    minimumRecordLength = 380
+    parser = new CordataParser(),
+    expectedRecordLength = 1440
   } = {}) {
 
     if (
       !database ||
-      typeof database.upsertBatch !== "function"
+      (typeof database.upsertFullRecordBatch !== "function" &&
+       typeof database.upsertBatch !== "function")
     ) {
 
       throw new Error(
-        "FloridaIngestionService requires a database with upsertBatch()."
+        "FloridaIngestionService requires a database with upsertFullRecordBatch() or upsertBatch()."
       );
     }
 
     this.database = database;
-
-    this.schemaSpec =
-      schemaSpec;
-
-    this.minimumRecordLength =
-      minimumRecordLength;
+    this.parser = parser;
+    this.expectedRecordLength = expectedRecordLength;
   }
 
   // ==========================================================================
-  // FIELD NORMALIZATION
+  // BOUNDARY VALIDATION & RECORD PARSING
   // ==========================================================================
 
-  normalizeValue(value) {
-
-    if (
-      value === null ||
-      value === undefined
-    ) {
-      return null;
-    }
-
-    const normalized =
-      String(value)
-        .replace(/\s+/g, " ")
-        .trim();
-
-    return normalized || null;
-  }
-
-  // ==========================================================================
-  // FIXED-WIDTH PARSING
-  // ==========================================================================
-
+  /**
+   * Validates 1,440-byte record boundary and delegates to CordataParser.
+   *
+   * @param {string} line
+   * @returns {Object|null} Bundle record containing { parsed, raw, people } or null if invalid.
+   */
   parseLine(line) {
 
     if (
@@ -181,91 +90,32 @@ class FloridaIngestionService {
     }
 
     /*
-     * A fixed-width record shorter than the expected schema is
-     * potentially truncated or malformed.
-     *
-     * Do NOT silently construct a partial authoritative record.
+     * Validate exact/minimum record boundary to ensure we don't process
+     * truncated fixed-width state lines.
      */
-    if (
-      line.length <
-      this.minimumRecordLength
-    ) {
+    if (line.length < this.expectedRecordLength) {
       return null;
     }
 
-    const record = {};
-
-    for (
-      const [field, definition]
-      of Object.entries(this.schemaSpec)
-    ) {
-
-      const {
-        start,
-        end
-      } = definition;
+    try {
+      const parsedRecord = this.parser.parseLine(line);
 
       if (
-        !Number.isInteger(start) ||
-        !Number.isInteger(end) ||
-        start < 0 ||
-        end <= start
+        !parsedRecord ||
+        !parsedRecord.registrationId ||
+        !parsedRecord.companyName
       ) {
-
-        throw new Error(
-          `Invalid fixed-width schema definition for field "${field}".`
-        );
+        return null;
       }
 
-      const rawValue =
-        line.substring(
-          start,
-          end
-        );
-
-      record[field] =
-        this.normalizeValue(
-          rawValue
-        );
-    }
-
-    /*
-     * These fields establish the minimum identity
-     * required for an authoritative corporate record.
-     */
-    if (
-      !record.documentNumber ||
-      !record.entityName
-    ) {
+      return {
+        parsed: parsedRecord,
+        raw: line,
+        people: parsedRecord.people || []
+      };
+    } catch (err) {
       return null;
     }
-
-    /*
-     * Normalize known jurisdiction data.
-     */
-    if (
-      record.principalState
-    ) {
-      record.principalState =
-        record.principalState
-          .toUpperCase();
-    }
-
-    if (
-      record.mailingState
-    ) {
-      record.mailingState =
-        record.mailingState
-          .toUpperCase();
-    }
-
-    /*
-     * Preserve the original YYYYMMDD value unless
-     * the database layer explicitly requires a Date.
-     *
-     * We do not reinterpret official source values here.
-     */
-    return record;
   }
 
   // ==========================================================================
@@ -398,28 +248,37 @@ class FloridaIngestionService {
     let rejectedRecords = 0;
     let recordsIngested = 0;
 
+    const sourceFileName = path.basename(absolutePath);
+
     for await (
       const line of rl
     ) {
 
       linesRead++;
 
-      const record =
+      const recordBundle =
         this.parseLine(
           line
         );
 
-      if (!record) {
+      if (!recordBundle) {
 
         rejectedRecords++;
 
         continue;
       }
 
+      // Attach source metadata to entity record
+      recordBundle.parsed.source = {
+        file: sourceFileName,
+        sourceType: "official_state_dataset",
+        retrievedAt: new Date().toISOString()
+      };
+
       validRecords++;
 
       batch.push(
-        record
+        recordBundle
       );
 
       if (
@@ -427,10 +286,7 @@ class FloridaIngestionService {
         batchSize
       ) {
 
-        const insertedCount =
-          await this.database.upsertBatch(
-            batch
-          );
+        const insertedCount = await this.commitBatch(batch);
 
         recordsIngested +=
           Number(insertedCount) || 0;
@@ -447,10 +303,7 @@ class FloridaIngestionService {
       batch.length > 0
     ) {
 
-      const insertedCount =
-        await this.database.upsertBatch(
-          batch
-        );
+      const insertedCount = await this.commitBatch(batch);
 
       recordsIngested +=
         Number(insertedCount) || 0;
@@ -475,10 +328,7 @@ class FloridaIngestionService {
 
       acquisitionType,
 
-      sourceFile:
-        path.basename(
-          absolutePath
-        ),
+      sourceFile: sourceFileName,
 
       sourcePath:
         absolutePath,
@@ -506,13 +356,6 @@ class FloridaIngestionService {
         "success"
     };
 
-    /*
-     * Manifest recording is intentionally separate from
-     * prospect-level evidence.
-     *
-     * This records the provenance of the dataset ingestion
-     * itself.
-     */
     if (
       typeof this.database
         .recordIngestionManifest ===
@@ -527,9 +370,24 @@ class FloridaIngestionService {
 
     return manifest;
   }
+
+  /**
+   * Commits batch using database transaction methods.
+   *
+   * @param {Array<Object>} batch
+   * @returns {Promise<number>} Number of records ingested.
+   */
+  async commitBatch(batch) {
+    if (typeof this.database.upsertFullRecordBatch === "function") {
+      return await this.database.upsertFullRecordBatch(batch);
+    }
+    
+    // Fallback if raw/people structures aren't accepted by traditional upsertBatch
+    const parsedOnly = batch.map(item => item.parsed);
+    return await this.database.upsertBatch(parsedOnly);
+  }
 }
 
 module.exports = {
-  FloridaIngestionService,
-  FLORIDA_FIXED_WIDTH_SCHEMA
+  FloridaIngestionService
 };
