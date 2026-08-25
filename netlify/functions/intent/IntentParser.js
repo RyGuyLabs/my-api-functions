@@ -251,17 +251,35 @@ class IntentParser {
 // INDUSTRY
 // ------------------------------------------------------------------------
 
-const industry =
+let industry =
   this.resolveIndustry(
-    normalizedInput,
-    rawInput
+    normalizedInput
   );
 
 if (!industry) {
 
-  throw new Error(
-    `Unable to determine a usable industry concept from search: "${rawInput}".`
-  );
+  const industryQuery =
+    this.extractIndustryQuery(
+      normalizedInput
+    );
+
+  if (!industryQuery) {
+
+    throw new Error(
+      `Unable to determine an industry concept from search: "${rawInput}".`
+    );
+  }
+
+  industry = {
+    canonical:
+      industryQuery,
+
+    keywords: [
+      industryQuery
+    ],
+
+    classifications: []
+  };
 }
     // ------------------------------------------------------------------------
     // GEOGRAPHY
