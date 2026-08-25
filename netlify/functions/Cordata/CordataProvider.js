@@ -3,7 +3,9 @@
  * Adapter layer converting parsed Sunbiz/Cordata raw records
  * into standardized Lead Pipeline objects.
  */
-import { parseCordataRecord } from './CordataParser.js';
+const {
+  parseCordataRecord
+} = require("./CordataParser.js");
 
 export class CordataProvider {
   constructor(options = {}) {
@@ -88,3 +90,7 @@ export class CordataProvider {
     });
   }
 }
+
+module.exports = {
+  CordataProvider
+};
