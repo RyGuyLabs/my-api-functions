@@ -1,4 +1,3 @@
-cat << 'EOF' > cordata/CordataFieldMap.js
 /**
  * Florida DOS Cordata/Sunbiz Canonical Offset Map (1,440 Bytes Fixed-Width)
  * Precision calibrated against real payload
@@ -59,7 +58,7 @@ const CORDATA_FIELD_MAP = {
     }
   }
 };
-EOF
+
 
 module.exports = {
   CORDATA_FIELD_MAP
