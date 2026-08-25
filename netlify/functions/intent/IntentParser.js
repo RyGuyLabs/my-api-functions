@@ -324,48 +324,17 @@ if (!industry) {
   /**
    * Resolve industry vocabulary.
    */
-  resolveIndustry(
-  normalizedInput,
-  rawInput = normalizedInput
-) {
+  const industry =
+  this.resolveIndustry(
+    normalizedInput
+  );
 
-  // ------------------------------------------------------------------------
-  // KNOWN INDUSTRY MATCH
-  //
-  // Known vocabulary provides enhanced metadata, but it is NOT a hard gate.
-  // ------------------------------------------------------------------------
+if (!industry) {
 
-  for (
-    const definition of
-      this.industryDefinitions
-  ) {
-
-    const matched =
-      definition.keywords.some(
-        keyword =>
-          normalizedInput.includes(
-            keyword.toLowerCase()
-          )
-      );
-
-    if (matched) {
-
-      return {
-        canonical:
-          definition.canonical,
-
-        keywords:
-          definition.keywords,
-
-        classifications:
-          definition.classifications,
-
-        resolution:
-          "known"
-      };
-    }
-  }
-
+  throw new Error(
+    `Unable to determine an industry concept from search: "${rawInput}".`
+  );
+}
   // ------------------------------------------------------------------------
   // OPEN-ENDED INDUSTRY FALLBACK
   //
