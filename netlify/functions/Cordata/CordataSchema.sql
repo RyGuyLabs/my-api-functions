@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS cordata_entities (
     filing_date VARCHAR(10),
     effective_date VARCHAR(10),
     fei_number VARCHAR(20),
+    classification_code VARCHAR(10),
+    fei_status_raw VARCHAR(10),
+    jurisdiction_code VARCHAR(5),
     state_of_inc VARCHAR(5),
     principal_address JSONB,
     mailing_address JSONB,
@@ -37,5 +40,8 @@ CREATE TABLE IF NOT EXISTS cordata_officers (
     zip VARCHAR(10)
 );
 
-CREATE INDEX IF NOT EXISTS idx_cordata_doc_num ON cordata_entities(document_number);
-CREATE INDEX IF NOT EXISTS idx_cordata_officer_doc ON cordata_officers(document_number);
+CREATE INDEX IF NOT EXISTS idx_cordata_doc_num
+ON cordata_entities(document_number);
+
+CREATE INDEX IF NOT EXISTS idx_cordata_officer_doc
+ON cordata_officers(document_number);
