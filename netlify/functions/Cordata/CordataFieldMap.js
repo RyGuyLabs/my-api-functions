@@ -1,33 +1,36 @@
 /**
  * Florida DOS Cordata/Sunbiz Canonical Offset Map (1,440 Bytes Fixed-Width)
- * Precision calibrated against real payload
+ * Precision calibrated against real payload boundaries.
  */
-const CORDATA_FIELD_MAP = {
+export const CORDATA_FIELD_MAP = {
   RECORD_LENGTH: 1440,
 
   header: {
-    documentNumber: { start: 0, end: 12 },
-    legalName:      { start: 12, end: 192 },
-    status:         { start: 192, end: 193 },
-    entityType:     { start: 193, end: 200 }, // Expands to capture AFLAL/FLAL
-    filingDate:     { start: 472, end: 480 }, // Clean MM/DD/YYYY numeric string
-    effectiveDate:  { start: 480, end: 488 },
-    feiNumber:      { start: 488, end: 502 },
-    state:          { start: 500, end: 504 }
+    documentNumber:   { start: 0,   end: 12 },
+    legalName:        { start: 12,  end: 204 },
+    classificationCode:{ start: 204, end: 209 },
+    reservedPadding:  { start: 209, end: 220 },
+    filingDate:       { start: 472, end: 480 },
+    feiNumber:        { start: 480, end: 494 },
+    feiStatusRaw:     { start: 494, end: 503 },
+    jurisdictionCode: { start: 503, end: 505 },
+    reservedTail:     { start: 505, end: 536 }
   },
 
   principalAddress: {
-    address1: { start: 216, end: 274 },
-    city:     { start: 274, end: 326 },
-    state:    { start: 326, end: 330 },
-    zip:      { start: 330, end: 342 }
+    address1: { start: 220, end: 304 },
+    city:     { start: 304, end: 332 },
+    state:    { start: 332, end: 334 },
+    zip:      { start: 334, end: 344 },
+    country:  { start: 344, end: 346 }
   },
 
   mailingAddress: {
-    address1: { start: 342, end: 400 },
-    city:     { start: 400, end: 452 },
-    state:    { start: 452, end: 456 },
-    zip:      { start: 456, end: 468 }  // Starts clean at 456 -> '33144'
+    address1: { start: 346, end: 430 },
+    city:     { start: 430, end: 458 },
+    state:    { start: 458, end: 460 },
+    zip:      { start: 460, end: 470 },
+    country:  { start: 470, end: 472 }
   },
 
   slot1: {
@@ -36,8 +39,8 @@ const CORDATA_FIELD_MAP = {
     lastNameOrg:   { start: 544, end: 564 },
     firstName:     { start: 564, end: 578 },
     middleInitial: { start: 578, end: 580 },
-    addressPrefix: { start: 580, end: 588 }, // Absorbs leftover 'P'
-    streetAddress: { start: 588, end: 620 }, // Clean street
+    addressPrefix: { start: 580, end: 588 },
+    streetAddress: { start: 588, end: 620 },
     city:          { start: 620, end: 640 },
     stateZipChunk: { start: 640, end: 668 }
   },
@@ -47,18 +50,15 @@ const CORDATA_FIELD_MAP = {
     stride: 128,
     count: 6,
     subFields: {
-      role:          { start: 0, end: 6 },     // Captures 'AMBR'
-      lastNameOrg:   { start: 6, end: 24 },    // Captures 'BORGES'
-      firstName:     { start: 24, end: 40 },   // Captures 'JOANN M'
-      addressNum:    { start: 40, end: 48 },
+      role:          { start: 0,  end: 4 },
+      entityType:    { start: 4,  end: 5 },
+      lastNameOrg:   { start: 5,  end: 25 },
+      firstName:     { start: 25, end: 39 },
+      nameQualifier: { start: 39, end: 47 },
+      addressNum:    { start: 47, end: 48 },
       streetAddress: { start: 48, end: 88 },
-      city:          { start: 88, end: 104 },
-      padding:       { start: 104, end: 112 },
-      stateZipChunk: { start: 112, end: 128 }
+      city:          { start: 88, end: 116 },
+      stateZipChunk: { start: 116, end: 128 }
     }
   }
-};
-
-module.exports = {
-  CORDATA_FIELD_MAP
 };
