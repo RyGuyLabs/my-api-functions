@@ -1,0 +1,27 @@
+# Node dependencies
+node_modules/
+
+# Local datasets and generated data
+daily_sample.txt
+data/
+
+# Local environment/secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary SQLite artifacts
+*.db-wal
+*.db-shm
