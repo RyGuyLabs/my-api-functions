@@ -1,96 +1,119 @@
-/**
- * CordataProvider.js
- * Adapter layer converting parsed Sunbiz/Cordata raw records
- * into standardized Lead Pipeline objects.
- */
-const {
-  parseCordataRecord
-} = require("./CordataParser.js");
+import { parseCordataRecord } from './CordataParser.js';
 
 export class CordataProvider {
-  constructor(options = {}) {
+  constructor() {
     this.providerName = 'Florida_DOS_Cordata';
     this.version = '1.0.0';
-    this.options = options;
   }
 
-  /**
-   * Transforms a 1,440-character raw string into a normalized Lead Entity.
-   * Maintains strict architectural boundaries by storing the full raw text in evidenceLedger.
-   */
-  processRecord(raw1440Record) {
-    // 1. Execute Core Stage 1/2 Parsing
-    const parsed = parseCordataRecord(raw1440Record);
+  processRecord(rawRecord) {
+    if (!rawRecord || rawRecord.length !== 1440) {
+      throw new Error(`Invalid record length: ${rawRecord ? rawRecord.length : 0}. Expected 1440.`);
+    }
 
-    // 2. Extract Primary Officer/Person if present
-    const primaryPerson = parsed.people.length > 0 ? parsed.people[0] : null;
+    const parsed = parseCordataRecord(rawRecord);
 
-    // 3. Construct Normalized Pipeline Payload
-    return {
-      // System & Evidence Metadata
-      provider: this.providerName,
-      processedAt: new Date().toISOString(),
-      evidenceLedger: {
-        rawRecord: parsed.rawRecord,
-        schemaVersion: 'DOS_1440_FIXED_WIDTH',
-        recordLength: parsed.rawRecord.length
-      },
-
-      // Corporate Identity
-      entity: {
-        documentNumber: parsed.company.documentNumber,
-        legalName: parsed.company.legalName,
-        status: parsed.company.status,
-        entityType: parsed.company.entityType,
-        filingDate: parsed.company.filingDate,
-        effectiveDate: parsed.company.effectiveDate,
-        feiNumber: parsed.company.feiNumber,
-        stateOfInc: parsed.company.state
-      },
-
-      // Address Entities
-      addresses: {
-        principal: parsed.principalAddress,
-        mailing: parsed.mailingAddress
-      },
-
-      // Associated Officers/Persons (Slots 1-7)
-      officers: parsed.people.map(person => ({
-        slot: person.slot,
-        rawIdentifier: person.roleAndNameRaw || person.nameRaw,
-        firstName: person.firstName || null,
-        lastNameOrOrg: person.nameRaw || null,
-        street: person.street,
-        city: person.city,
-        state: person.state,
-        zip: person.zip
-      })),
-
-      // Direct Contact Hooks for Downstream Qualification Engine
-      primaryContact: primaryPerson ? {
-        name: primaryPerson.roleAndNameRaw || primaryPerson.nameRaw,
-        street: primaryPerson.street,
-        city: primaryPerson.city,
-        state: primaryPerson.state,
-        zip: primaryPerson.zip
-      } : null
+    const entity = {
+      documentNumber: parsed.company.documentNumber,
+      legalName: parsed.company.legalName,
+      classificationCode: parsed.company.classificationCode,
+      filingDate: parsed.company.filingDate,
+      feiNumber: parsed.company.feiNumber || null,
+      feiStatusRaw: parsed.company.feiStatusRaw || null,
+      jurisdictionCode: parsed.company.jurisdictionCode || null
     };
+
+    const addresses = {
+      principal: parsed.principalAddress,
+      mailing: parsed.mailingAddress
+    };
+
+    const officers = (parsed.people || []).map((person) => ({
+      slot: person.slot,
+      role: person.role || null,
+      entityType: person.entityType || null,
+      rawIdentifier: person.roleAndNameRaw || person.nameRaw || null,
+      firstName: person.firstName || null,
+      lastNameOrOrg: person.lastNameOrg || null,
+      nameQualifier: person.nameQualifier || null,
+      street: person.street || null,
+      city: person.city || null,
+      state: person.state || null,
+      zip: person.zip || null
+    }));
+
+    // Primary contact selection: Prefer first person where slot >= 2, fall back to people[0], or null
+    let primaryContact = null;
+    if (parsed.people && parsed.people.length > 0) {
+      const slot2PlusPerson = parsed.people.find((p) => p.slot >= 2);
+      const selectedPerson = slot2PlusPerson || parsed.people[0];
+
+      const name = [selectedPerson.firstName, selectedPerson.lastNameOrg]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      primaryContact = {
+        name: name || null,
+        slot: selectedPerson.slot,
+        role: selectedPerson.role || null,
+        entityType: selectedPerson.entityType || null,
+        rawIdentifier: selectedPerson.roleAndNameRaw || selectedPerson.nameRaw || null,
+        firstName: selectedPerson.firstName || null,
+        lastNameOrOrg: selectedPerson.lastNameOrg || null,
+        nameQualifier: selectedPerson.nameQualifier || null,
+        street: selectedPerson.street || null,
+        city: selectedPerson.city || null,
+        state: selectedPerson.state || null,
+        zip: selectedPerson.zip || null
+      };
+    }
+
+    const evidenceLedger = {
+      rawRecord: parsed.rawRecord,
+      schemaVersion: 'DOS_1440_FIXED_WIDTH',
+      recordLength: parsed.rawRecord.length
+    };
+
+   return {
+  provider: this.providerName,
+  providerName: this.providerName,
+  version: this.version,
+  processedAt: new Date().toISOString(),
+  entity,
+  addresses,
+  officers,
+  primaryContact,
+  evidenceLedger
+};
   }
 
-  /**
-   * Batch processes an array of raw 1,440-character record strings.
-   */
-  processBatch(rawRecords = []) {
-    return rawRecords.map(record => {
+  processBatch(rawRecords) {
+    if (!Array.isArray(rawRecords)) {
+      throw new Error('Input must be an array of raw record strings.');
+    }
+
+    const results = [];
+
+    for (let i = 0; i < rawRecords.length; i++) {
+      const rawRecord = rawRecords[i];
       try {
-        return { success: true, lead: this.processRecord(record) };
+        const lead = this.processRecord(rawRecord);
+        results.push({
+          success: true,
+          lead,
+          recordIndex: i
+        });
       } catch (err) {
-        return { success: false, error: err.message, rawRecord: record };
+        results.push({
+          success: false,
+          error: err.message,
+          rawRecord,
+          recordIndex: i
+        });
       }
-    });
+    }
+
+    return results;
   }
 }
-
-module.exports = {
-  CordataProvider
-};
