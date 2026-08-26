@@ -49,7 +49,7 @@ const CORDATA_FIELD_MAP = {
     subFields: {
       role:          { start: 0, end: 6 },     // Captures 'AMBR'
       lastNameOrg:   { start: 6, end: 24 },    // Captures 'BORGES'
-      firstNameCont: { start: 24, end: 40 },   // Captures 'JOANN M'
+      firstName:     { start: 24, end: 40 },   // Captures 'JOANN M'
       addressNum:    { start: 40, end: 48 },
       streetAddress: { start: 48, end: 88 },
       city:          { start: 88, end: 104 },
