@@ -27,8 +27,12 @@ try {
 
   // Provider & Ledger assertions
   assert.strictEqual(lead.provider, 'Florida_DOS_Cordata');
-  assert.strictEqual(lead.providerName, 'Florida_DOS_Cordata');
-  assert.strictEqual(lead.evidenceLedger.schemaVersion, 'DOS_1440_FIXED_WIDTH');
+assert.strictEqual(lead.providerName, 'Florida_DOS_Cordata');
+
+assert.strictEqual(typeof lead.processedAt, 'string');
+assert.ok(lead.processedAt.length > 0, 'processedAt should be populated');
+
+assert.strictEqual(lead.evidenceLedger.schemaVersion, 'DOS_1440_FIXED_WIDTH');
   assert.strictEqual(lead.evidenceLedger.recordLength, 1440);
 
   // Entity assertions
