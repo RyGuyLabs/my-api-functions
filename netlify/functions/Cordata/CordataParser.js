@@ -1,326 +1,206 @@
 import { CORDATA_FIELD_MAP } from './CordataFieldMap.js';
 
-/**
- * Validate that the incoming Cordata record is exactly the
- * expected fixed-width length.
- */
-function assertRecordLength(rawRecord) {
-  const expectedLength = CORDATA_FIELD_MAP.RECORD_LENGTH;
-
-  if (!rawRecord || rawRecord.length !== expectedLength) {
-    throw new Error(
-      `Invalid record length: expected ${expectedLength}, got ${rawRecord?.length || 0}`
-    );
+function sliceField(record, fieldDef) {
+  if (!fieldDef || typeof fieldDef.start !== 'number' || typeof fieldDef.end !== 'number') {
+    return '';
   }
-}
-
-/**
- * Safely extract and trim a fixed-width field.
- */
-function sliceField(rawRecord, field) {
-  if (!field || typeof field.start !== 'number' || typeof field.end !== 'number') {
-    throw new Error('Invalid field-map definition');
+  if (record.length < fieldDef.end) {
+    return '';
   }
-
-  return rawRecord.slice(field.start, field.end).trim();
+  return record.slice(fieldDef.start, fieldDef.end).trim();
 }
 
-/**
- * Parse a combined state/ZIP region such as:
- *   FL34223
- *   FL 34223
- *   FL34223
- */
-function parseStateAndZip(rawRegion) {
-  const cleaned = String(rawRegion || '').replace(/\s+/g, '');
-
-  const match = cleaned.match(/^([A-Z]{2})(\d{5}(?:-\d{4})?)$/);
-
-  if (match) {
-    return {
-      state: match[1],
-      zip: match[2]
-    };
+function sliceRawField(record, fieldDef) {
+  if (!fieldDef || typeof fieldDef.start !== 'number' || typeof fieldDef.end !== 'number') {
+    return '';
   }
-
-  return {
-    state: cleaned.slice(0, 2) || '',
-    zip: cleaned.slice(2) || ''
-  };
-}
-
-/**
- * Parse corporate header.
- */
-function parseCorporateHeader(rawRecord) {
-  const map = CORDATA_FIELD_MAP.header;
-
-  return {
-    documentNumber: sliceField(rawRecord, map.documentNumber),
-    legalName: sliceField(rawRecord, map.legalName),
-    status: sliceField(rawRecord, map.status),
-    entityType: sliceField(rawRecord, map.entityType),
-    filingDate: sliceField(rawRecord, map.filingDate),
-    effectiveDate: sliceField(rawRecord, map.effectiveDate),
-    feiNumber: sliceField(rawRecord, map.feiNumber),
-    state: sliceField(rawRecord, map.state)
-  };
-}
-
-/**
- * Parse principal address.
- */
-function parsePrincipalAddress(rawRecord) {
-  const map = CORDATA_FIELD_MAP.principalAddress;
-
-  return {
-    street: sliceField(rawRecord, map.address1),
-    city: sliceField(rawRecord, map.city),
-    state: sliceField(rawRecord, map.state),
-    zip: sliceField(rawRecord, map.zip)
-  };
-}
-
-/**
- * Parse mailing address.
- */
-function parseMailingAddress(rawRecord) {
-  const map = CORDATA_FIELD_MAP.mailingAddress;
-
-  return {
-    street: sliceField(rawRecord, map.address1),
-    city: sliceField(rawRecord, map.city),
-    state: sliceField(rawRecord, map.state),
-    zip: sliceField(rawRecord, map.zip)
-  };
-}
-
-/**
- * Parse the primary person slot.
- *
- * Slot 1 occupies the fixed region beginning at offset 536.
- */
-function parseSlot1(rawRecord) {
-  const map = CORDATA_FIELD_MAP.slot1;
-
-  const lastNameOrg = sliceField(rawRecord, map.lastNameOrg);
-
-  if (!lastNameOrg) {
-    return null;
+  if (record.length < fieldDef.end) {
+    return '';
   }
-
-  const stateZipChunk = rawRecord.slice(
-    map.stateZipChunk.start,
-    map.stateZipChunk.end
-  );
-
-  const { state, zip } = parseStateAndZip(stateZipChunk);
-
-  const firstName = sliceField(rawRecord, map.firstName);
-  const middleInitial = sliceField(rawRecord, map.middleInitial);
-  const addressPrefix = sliceField(rawRecord, map.addressPrefix);
-  const streetAddress = sliceField(rawRecord, map.streetAddress);
-  const city = sliceField(rawRecord, map.city);
-
-  return {
-    slot: 1,
-    role: 'PRIMARY',
-
-    // Preserve both normalized and compatibility names.
-    nameRaw: lastNameOrg,
-    lastNameOrg,
-    firstName: firstName || null,
-    middleInitial: middleInitial || null,
-
-    addressPrefix: addressPrefix || null,
-    street: streetAddress,
-    city,
-    state,
-    zip
-  };
+  return record.slice(fieldDef.start, fieldDef.end);
 }
 
-/**
- * Parse repeating relationship slots 2-7.
- *
- * IMPORTANT:
- * The field map now separates:
- *
- *   role
- *   lastNameOrg
- *   firstNameCont
- *
- * Therefore the parser must NOT reference:
- *
- *   rep.subFields.roleAndName
- */
-function parseRepeatingSlots(rawRecord) {
-  const people = [];
-  const map = CORDATA_FIELD_MAP.repeatingSlots;
+function parseStateAndZip(chunk) {
+  if (!chunk) return { state: '', zip: '' };
+  const cleaned = chunk.trim();
+  if (!cleaned) return { state: '', zip: '' };
 
-  for (let i = 0; i < map.count; i++) {
-    const slot = i + 2;
+  const state = cleaned.slice(0, 2).trim();
+  const zip = cleaned.slice(2).trim();
 
-    const slotStart = map.startOffset + (i * map.stride);
-    const slotEnd = slotStart + map.stride;
-
-    const slotChunk = rawRecord.slice(slotStart, slotEnd);
-
-    // Completely empty slot.
-    if (!slotChunk.trim()) {
-      continue;
-    }
-
-    const role = sliceField(
-      slotChunk,
-      map.subFields.role
-    );
-
-    const lastNameOrg = sliceField(
-      slotChunk,
-      map.subFields.lastNameOrg
-    );
-
-    /*
- * CordataFieldMap.js defines this field as `firstName`.
- */
-const firstName = sliceField(
-  slotChunk,
-  map.subFields.firstName
-).replace(/\s+/g, ' ');
-
-    /*
-     * A slot with no identity information is not a person.
-     */
-    if (!role && !lastNameOrg && !firstName) {
-      continue;
-    }
-
-    const addressNum = sliceField(
-      slotChunk,
-      map.subFields.addressNum
-    );
-
-    const streetAddress = sliceField(
-      slotChunk,
-      map.subFields.streetAddress
-    );
-
-    const city = sliceField(
-      slotChunk,
-      map.subFields.city
-    );
-
-    const stateZipChunk = slotChunk.slice(
-      map.subFields.stateZipChunk.start,
-      map.subFields.stateZipChunk.end
-    );
-
-    const { state, zip } = parseStateAndZip(stateZipChunk);
-
-    /*
-     * IMPORTANT:
-     * The source fixed-width format splits the street number
-     * across addressNum + streetAddress.
-     *
-     * Example:
-     *   addressNum    = "1"
-     *   streetAddress = "120 SW 76TH COURT"
-     *
-     * Therefore concatenate with NO separator:
-     *   "1" + "120 SW 76TH COURT"
-     *   -> "1120 SW 76TH COURT"
-     */
-    const street = `${addressNum}${streetAddress}`.trim();
-
-    people.push({
-      slot,
-
-      role: role || null,
-
-      // Normalized surname / organization field.
-      lastNameOrg: lastNameOrg || null,
-
-      // Compatibility field used by existing provider code.
-      nameRaw: lastNameOrg || null,
-
-      firstName: firstName || null,
-
-      // Compatibility field for downstream code that may still expect it.
-      firstNameCont: firstName || null,
-
-      street,
-      city,
-      state,
-      zip,
-
-      // Useful raw identity representation.
-      roleAndNameRaw: [role, lastNameOrg]
-        .filter(Boolean)
-        .join(' ')
-        .trim() || null
-    });
-  }
-
-  return people;
-}
-/**
- * Parse complete 1,440-character Cordata record.
- */
-export function parseCordataRecord(rawRecord) {
-  assertRecordLength(rawRecord);
-
-  const slot1 = parseSlot1(rawRecord);
-  const repeatingPeople = parseRepeatingSlots(rawRecord);
-
-  const people = [
-    ...(slot1 ? [slot1] : []),
-    ...repeatingPeople
-  ];
-
-  return {
-    rawRecord,
-
-    company: parseCorporateHeader(rawRecord),
-
-    principalAddress: parsePrincipalAddress(rawRecord),
-
-    mailingAddress: parseMailingAddress(rawRecord),
-
-    people
-  };
+  return { state, zip };
 }
 
-/**
- * Optional class wrapper for compatibility with the older
- * test-cordata.js architecture.
- *
- * This means BOTH of these forms work:
- *
- *   parseCordataRecord(raw)
- *
- * and:
- *
- *   CordataParser.parseRecord(raw)
- */
 export class CordataParser {
-  static parseRecord(rawRecord) {
-    const parsed = parseCordataRecord(rawRecord);
+  static parseRecord(rawRecord, fieldMap = CORDATA_FIELD_MAP) {
+    if (!rawRecord || rawRecord.length < fieldMap.RECORD_LENGTH) {
+      throw new Error(
+        `Record length ${rawRecord ? rawRecord.length : 0} is less than required ${fieldMap.RECORD_LENGTH}`
+      );
+    }
+
+    const map = fieldMap;
+
+    // Header / Corporate Identification
+    const documentNumber = sliceField(rawRecord, map.header.documentNumber);
+    const legalName = sliceField(rawRecord, map.header.legalName);
+    const classificationCode = sliceField(rawRecord, map.header.classificationCode);
+    const reservedPadding = sliceField(rawRecord, map.header.reservedPadding);
+    const filingDate = sliceField(rawRecord, map.header.filingDate);
+    const feiNumber = sliceField(rawRecord, map.header.feiNumber);
+    const feiStatusRaw = sliceField(rawRecord, map.header.feiStatusRaw);
+    const jurisdictionCode = sliceField(rawRecord, map.header.jurisdictionCode);
+    const reservedTail = sliceField(rawRecord, map.header.reservedTail);
+
+    const company = {
+      documentNumber,
+      legalName,
+      classificationCode,
+      reservedPadding,
+      filingDate,
+      feiNumber,
+      feiStatusRaw,
+      jurisdictionCode,
+      reservedTail
+    };
+
+    // Principal Address
+    const principalAddress = {
+      address1: sliceField(rawRecord, map.principalAddress.address1),
+      city:     sliceField(rawRecord, map.principalAddress.city),
+      state:    sliceField(rawRecord, map.principalAddress.state),
+      zip:      sliceField(rawRecord, map.principalAddress.zip),
+      country:  sliceField(rawRecord, map.principalAddress.country)
+    };
+
+    // Mailing Address
+    const mailingAddress = {
+      address1: sliceField(rawRecord, map.mailingAddress.address1),
+      city:     sliceField(rawRecord, map.mailingAddress.city),
+      state:    sliceField(rawRecord, map.mailingAddress.state),
+      zip:      sliceField(rawRecord, map.mailingAddress.zip),
+      country:  sliceField(rawRecord, map.mailingAddress.country)
+    };
+
+    const people = [];
+
+    // Slot 1 Processing
+    if (map.slot1) {
+      const s1 = map.slot1;
+      const role = sliceField(rawRecord, s1.code);
+      const year = sliceField(rawRecord, s1.year);
+      const lastNameOrg = sliceField(rawRecord, s1.lastNameOrg);
+      const firstName = sliceField(rawRecord, s1.firstName);
+      const middleInitial = sliceField(rawRecord, s1.middleInitial);
+      const addressPrefix = sliceField(rawRecord, s1.addressPrefix);
+      const street = sliceField(rawRecord, s1.streetAddress);
+      const city = sliceField(rawRecord, s1.city);
+      const stateZipChunk = sliceField(rawRecord, s1.stateZipChunk);
+      const stateZip = parseStateAndZip(stateZipChunk);
+
+      if (
+        role ||
+        year ||
+        lastNameOrg ||
+        firstName ||
+        middleInitial ||
+        street ||
+        city ||
+        stateZip.state ||
+        stateZip.zip
+      ) {
+        people.push({
+          slot: 1,
+          role,
+          nameRaw: lastNameOrg,
+          lastNameOrg,
+          firstName,
+          middleInitial,
+          addressPrefix,
+          street,
+          city,
+          state: stateZip.state,
+          zip: stateZip.zip
+        });
+      }
+    }
+
+    // Repeating Slots (Slots 2–7)
+    if (map.repeatingSlots) {
+      const rs = map.repeatingSlots;
+      const sub = rs.subFields;
+      const startOffset = rs.startOffset;
+      const stride = rs.stride;
+      const count = rs.count;
+
+      for (let i = 0; i < count; i++) {
+        const slotStart = startOffset + i * stride;
+        const slotEnd = slotStart + stride;
+
+        if (rawRecord.length < slotEnd) {
+          break;
+        }
+
+        const slotChunk = rawRecord.slice(slotStart, slotEnd);
+
+        const role = sliceField(slotChunk, sub.role);
+        const entityType = sliceField(slotChunk, sub.entityType);
+        const lastNameOrg = sliceField(slotChunk, sub.lastNameOrg);
+        const firstName = sliceField(slotChunk, sub.firstName);
+        const nameQualifier = sliceField(slotChunk, sub.nameQualifier);
+        const addressNumRaw = sliceRawField(slotChunk, sub.addressNum);
+        const streetAddressRaw = sliceRawField(slotChunk, sub.streetAddress);
+        const city = sliceField(slotChunk, sub.city);
+        const stateZipChunk = sliceField(slotChunk, sub.stateZipChunk);
+
+        const roleAndNameRaw = sliceField(slotChunk, {
+          start: sub.role.start,
+          end: sub.nameQualifier.end
+        });
+
+        const street = (addressNumRaw + streetAddressRaw).trim();
+        const stateZip = parseStateAndZip(stateZipChunk);
+
+        if (
+          role ||
+          entityType ||
+          lastNameOrg ||
+          firstName ||
+          nameQualifier ||
+          street ||
+          city ||
+          stateZip.state ||
+          stateZip.zip
+        ) {
+          people.push({
+            slot: i + 2,
+            role,
+            entityType,
+            lastNameOrg,
+            nameRaw: lastNameOrg,
+            firstName,
+            firstNameCont: firstName,
+            nameQualifier,
+            street,
+            city,
+            state: stateZip.state,
+            zip: stateZip.zip,
+            roleAndNameRaw
+          });
+        }
+      }
+    }
 
     return {
-      registrationId: parsed.company.documentNumber,
-      legalName: parsed.company.legalName,
-      status: parsed.company.status,
-      entityType: parsed.company.entityType,
-      filingDate: parsed.company.filingDate,
-      effectiveDate: parsed.company.effectiveDate,
-      feiNumber: parsed.company.feiNumber,
-      state: parsed.company.state,
-
-      principalAddress: parsed.principalAddress,
-      mailingAddress: parsed.mailingAddress,
-
-      associatedPeople: parsed.people
+      rawRecord,
+      company,
+      principalAddress,
+      mailingAddress,
+      people
     };
   }
+}
+
+export function parseCordataRecord(rawRecord) {
+  return CordataParser.parseRecord(rawRecord);
 }
