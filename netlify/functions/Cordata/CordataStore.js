@@ -13,21 +13,21 @@ export class CordataStore {
       recordLength: evidenceLedger?.recordLength || 0
     };
 
-    const entityRecord = {
-      documentNumber: entity.documentNumber,
-      legalName: entity.legalName,
-      status: entity.status || null,
-      entityType: entity.entityType || null,
-      classificationCode: entity.classificationCode || null,
-      filingDate: entity.filingDate || null,
-      effectiveDate: entity.effectiveDate || null,
-      feiNumber: entity.feiNumber || null,
-      feiStatusRaw: entity.feiStatusRaw || null,
-      jurisdictionCode: entity.jurisdictionCode || null,
-      stateOfInc: entity.stateOfInc || null,
-      principalAddress: addresses?.principal || null,
-      mailingAddress: addresses?.mailing || null
-    };
+    entityRecord: {
+  documentNumber: entity.documentNumber,
+  legalName: entity.legalName,
+  status: entity.status,
+  entityType: entity.entityType,
+  filingDate: entity.filingDate,
+  effectiveDate: entity.effectiveDate,
+  feiNumber: entity.feiNumber,
+  classificationCode: entity.classificationCode || null,
+  feiStatusRaw: entity.feiStatusRaw || null,
+  jurisdictionCode: entity.jurisdictionCode || null,
+  stateOfInc: entity.stateOfInc,
+  principalAddress: JSON.stringify(addresses.principal),
+  mailingAddress: JSON.stringify(addresses.mailing)
+};
 
     const officerRecords = (officers || []).map((o) => ({
       documentNumber: entity.documentNumber,
