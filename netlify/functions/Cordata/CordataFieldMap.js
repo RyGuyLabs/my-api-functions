@@ -59,7 +59,6 @@ const CORDATA_FIELD_MAP = {
   }
 };
 
-
 module.exports = {
   CORDATA_FIELD_MAP
 };
