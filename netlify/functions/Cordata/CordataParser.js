@@ -182,11 +182,11 @@ function parseRepeatingSlots(rawRecord) {
     );
 
     /*
- * CordataFieldMap.js defines this field as `firstNameCont`.
+ * CordataFieldMap.js defines this field as `firstName`.
  */
 const firstName = sliceField(
   slotChunk,
-  map.subFields.firstNameCont
+  map.subFields.firstName
 ).replace(/\s+/g, ' ');
 
     /*
