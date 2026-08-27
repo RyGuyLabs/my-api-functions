@@ -45,9 +45,12 @@ class FloridaDatasetArchiveService {
     if (!entryPath) return true;
 
     // Check for symlinks/links in ZIP mode if available (0120000 bitmask for symlink in unix permissions)
-    if (mode && (mode & 0120000) === 0120000) {
-      return true;
-    }
+    if (
+  mode &&
+  (mode & 0o170000) === 0o120000
+) {
+  return true;
+}
 
     const normalized = entryPath.replace(/\\/g, '/');
 
