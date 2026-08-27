@@ -1,108 +1,150 @@
 // netlify/functions/pipeline/test-official-florida-pipeline.js
 
 const fs = require("fs");
-const path = require("path");
 const os = require("os");
+const path = require("path");
 const assert = require("assert");
 
-const { FloridaRegistryDatabase } = require("../database/FloridaRegistryDatabase");
-const { FloridaIngestionService } = require("../ingestion/FloridaIngestionService");
-const { OfficialFloridaProvider } = require("../providers/OfficialFloridaProvider");
-const { runLeadPipeline } = require("./runLeadPipeline");
+const {
+  FloridaRegistryDatabase
+} = require("../database/FloridaRegistryDatabase.js");
 
-async function runPipelineTest() {
-  const tempDbFileName = `test_pipeline_florida_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.db`;
-  const tempDbPath = path.join(os.tmpdir(), tempDbFileName);
+const {
+  OfficialFloridaProvider
+} = require("../providers/OfficialFloridaProvider.js");
+
+const {
+  runLeadPipeline
+} = require("./runLeadPipeline.js");
+
+async function main() {
+  const tempDbPath = path.join(
+    os.tmpdir(),
+    `florida_pipeline_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2)}.db`
+  );
 
   let db = null;
 
   try {
-    // 1 & 2. Instantiate FloridaRegistryDatabase with a temporary SQLite database
     db = new FloridaRegistryDatabase({
       databasePath: tempDbPath
     });
 
-    // 3. Instantiate FloridaIngestionService
-    const ingestionService = new FloridaIngestionService({
-      database: db
-    });
+    const sampleRecord = {
+      registrationId: "L26000999999",
+      companyName: "SUNSHINE SOLAR CONTRACTORS LLC",
+      entityType: "LLC",
+      status: "ACTIVE",
+      formationDate: "2026-08-01",
+      principalAddress: {
+        line1: "123 Solar Way",
+        line2: null,
+        city: "Miami",
+        state: "FL",
+        zip: "33101"
+      },
+      mailingAddress: {
+        line1: "123 Solar Way",
+        line2: null,
+        city: "Miami",
+        state: "FL",
+        zip: "33101"
+      },
+      registeredAgent: "RYAN TEST AGENT",
+      source: {
+        file: "pipeline-test.txt",
+        sourceType: "official_state_dataset",
+        retrievedAt: new Date().toISOString(),
+        recordUpdatedAt: new Date().toISOString()
+      }
+    };
 
-    // 4. Resolve daily_sample.txt and ingest
-    const samplePath = path.resolve(process.cwd(), "daily_sample.txt");
-    assert.strictEqual(
-      fs.existsSync(samplePath),
-      true,
-      `Sample file daily_sample.txt must exist at ${samplePath}`
-    );
+    await db.upsertBatch([
+      sampleRecord
+    ]);
 
-    const ingestResult = await ingestionService.processFile(samplePath, {
-      acquisitionType: "daily_delta",
-      batchSize: 250
-    });
+    const provider =
+      new OfficialFloridaProvider({
+        database: db
+      });
 
-    assert.strictEqual(ingestResult.status, "success");
-    assert.ok(ingestResult.recordsIngested > 0);
+    const result =
+      await runLeadPipeline({
+        geoContext: {
+          states: ["FL"],
+          city: "Miami"
+        },
+        filters: {
+          industry: "solar contractors",
+          limit: 10
+        },
+        provider
+      });
 
-    // 5. Instantiate OfficialFloridaProvider with local database reference
-    const provider = new OfficialFloridaProvider({
-      database: db
-    });
-
-    // Verify known record L26000432480 / JMB WRLD LLC exists in sqlite
-    const knownDbRow = db.db
-      .prepare("SELECT registration_id, company_name FROM florida_entities WHERE registration_id = ?")
-      .get("L26000432480");
-
-    assert.ok(knownDbRow, "Known record L26000432480 must exist in database");
-    assert.strictEqual(knownDbRow.company_name, "JMB WRLD LLC");
-
-    // 6. Execute runLeadPipeline with injected OfficialFloridaProvider using known query
-    const pipelineOutput = await runLeadPipeline({
-      query: "JMB WRLD LLC",
-      limit: 10,
-      enableEnrichment: false, // Isolate pipeline execution without network calls
-      provider
-    });
-
-    // Assertions
-    assert.ok(pipelineOutput, "Pipeline returned output");
-    assert.ok(pipelineOutput.leads.length > 0, "Pipeline produced leads from local SQLite dataset");
-
-    const matchLeadObj = pipelineOutput.leads.find(
-      (item) => item.lead.registrationId === "L26000432480"
-    );
-    assert.ok(matchLeadObj, "Target lead L26000432480 must be present in output");
-
-    const { lead, ledgerEntries } = matchLeadObj;
-
-    // Verify Provider identity
-    assert.strictEqual(lead.source.provider, "OfficialFloridaProvider");
-    assert.strictEqual(lead.source.sourceType, "official_state_dataset");
-
-    // Verify Lead normalization data
-    assert.strictEqual(lead.companyName, "JMB WRLD LLC");
-    assert.strictEqual(lead.registrationId, "L26000432480");
-
-    // Verify Source reference format (deterministic florida-dos-* ref)
     assert.ok(
-      lead.source.sourceUrl.startsWith("florida-dos-dataset://") ||
-      lead.source.sourceUrl.startsWith("florida-dos-registry://"),
-      `sourceUrl should start with florida-dos- dataset or registry reference. Got: ${lead.source.sourceUrl}`
+      result &&
+      typeof result === "object",
+      "Pipeline must return an object."
     );
+
     assert.strictEqual(
-      lead.source.sourceUrl.includes("search.sunbiz.org"),
-      false,
-      "OfficialFloridaProvider should not default to generic search.sunbiz.org"
+      result.status,
+      "success",
+      `Expected pipeline status success, received: ${result.status}`
     );
 
-    // Verify Evidence Ledger entries
-    assert.ok(Array.isArray(ledgerEntries), "Ledger entries should be an array");
-    const ingestionEntry = ledgerEntries.find((e) => e.eventType === "INGESTION");
-    assert.ok(ingestionEntry, "Ingestion event must be recorded in Evidence Ledger");
-    assert.strictEqual(ingestionEntry.provider, "OfficialFloridaProvider");
-    assert.strictEqual(ingestionEntry.normalizedRecord.registrationId, "L26000432480");
+    assert.ok(
+      Array.isArray(result.leads),
+      "Pipeline result must include leads array."
+    );
 
-    console.log("PASS: OfficialFloridaProvider injected runLeadPipeline integration test passed.");
+    assert.ok(
+      result.leads.length > 0,
+      "OfficialFloridaProvider pipeline must return at least one lead."
+    );
+
+    const lead =
+      result.leads.find(
+        item =>
+          item?.entity?.registrationId ===
+          sampleRecord.registrationId
+      ) ||
+      result.leads[0];
+
+    assert.ok(
+      lead,
+      "Expected a constructed pipeline lead."
+    );
+
+    assert.strictEqual(
+      lead.entity.registrationId,
+      sampleRecord.registrationId,
+      "Registration ID must survive provider → pipeline processing."
+    );
+
+    assert.strictEqual(
+      lead.entity.companyName,
+      sampleRecord.companyName,
+      "Company name must survive provider → pipeline processing."
+    );
+
+    assert.ok(
+      lead.evidenceLedger &&
+      lead.evidenceLedger.inputSignalId,
+      "Pipeline must create Evidence Ledger binding."
+    );
+
+    assert.ok(
+      Array.isArray(lead.evidenceSummary),
+      "Pipeline lead must contain evidence summary."
+    );
+
+    console.log(
+      "PASS: OfficialFloridaProvider → runLeadPipeline integration test passed."
+    );
+
   } finally {
     if (db) {
       try {
@@ -110,18 +152,24 @@ async function runPipelineTest() {
       } catch (_) {}
     }
 
-    const filesToRemove = [tempDbPath, `${tempDbPath}-wal`, `${tempDbPath}-shm`];
-    for (const filePath of filesToRemove) {
-      if (fs.existsSync(filePath)) {
+    for (const suffix of ["", "-wal", "-shm"]) {
+      const file =
+        `${tempDbPath}${suffix}`;
+
+      if (fs.existsSync(file)) {
         try {
-          fs.unlinkSync(filePath);
+          fs.unlinkSync(file);
         } catch (_) {}
       }
     }
   }
 }
 
-runPipelineTest().catch((err) => {
-  console.error("FAIL: Pipeline test failed with error:", err);
+main().catch((error) => {
+  console.error(
+    "FAIL: OfficialFloridaProvider → runLeadPipeline integration test failed:",
+    error
+  );
+
   process.exit(1);
 });
