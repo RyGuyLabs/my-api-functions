@@ -97,12 +97,9 @@ async function runLeadPipeline({
     }
 
    const intentQuery =
-  searchGeo?.city &&
   searchGeo?.states?.[0]
-    ? `${queryInput} in ${searchGeo.city}, ${searchGeo.states[0]}`
-    : searchGeo?.states?.[0]
-      ? `${queryInput} in ${searchGeo.states[0]}`
-      : queryInput;
+    ? `${queryInput} in ${searchGeo.states[0]}`
+    : queryInput;
 
 searchIntent =
   intentParser.parse(
