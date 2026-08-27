@@ -585,7 +585,7 @@ searchIntent =
     // ------------------------------------------------------------------------
 
     let sourceUrl =
-      "https://search.sunbiz.org/";
+  "https://search.sunbiz.org/";
 
     try {
 
