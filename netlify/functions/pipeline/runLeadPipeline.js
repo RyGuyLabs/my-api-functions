@@ -110,6 +110,30 @@ searchIntent =
     }
   );
 
+if (
+  searchGeo?.city &&
+  searchIntent?.geography
+) {
+  searchIntent.geography.city =
+    searchGeo.city;
+}
+
+if (
+  searchGeo?.county &&
+  searchIntent?.geography
+) {
+  searchIntent.geography.county =
+    searchGeo.county;
+}
+
+if (
+  searchGeo?.zip &&
+  searchIntent?.geography
+) {
+  searchIntent.geography.zip =
+    searchGeo.zip;
+}
+    
     console.log(
       "[PIPELINE SEARCH INTENT]",
       JSON.stringify(
