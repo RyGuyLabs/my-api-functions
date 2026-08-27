@@ -211,7 +211,11 @@ async function runTests() {
     await assertCleanup(`${baseUrl}/timeout`, "out_timeout.txt", "timed out");
 
     // 10. HTML Rejection (Header)
-    await assertCleanup(`${baseUrl}/html-header`, "out_html_header.txt", "text/html");
+    await assertCleanup(
+  `${baseUrl}/html-header`,
+  "out_html_header.txt",
+  "HTML content-type"
+);
 
     // 11. HTML Rejection (Sniffing)
     await assertCleanup(`${baseUrl}/html-sniff`, "out_html_sniff.txt", "html content detected");
