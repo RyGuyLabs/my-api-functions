@@ -315,11 +315,24 @@ searchIntent =
 
   try {
 
-    searchResult =
-      await provider.search(
-        resolvedGeoContext,
-        providerFilters
-      );
+    if (
+  provider.name ===
+  "OfficialFloridaProvider"
+) {
+
+  searchResult =
+    await provider.search(
+      searchIntent
+    );
+
+} else {
+
+  searchResult =
+    await provider.search(
+      resolvedGeoContext,
+      providerFilters
+    );
+}
 
   } catch (searchError) {
 
