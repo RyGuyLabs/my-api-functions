@@ -129,7 +129,11 @@ class FloridaDatasetArchiveService {
     // Compute original archive SHA-256
     const archiveFileSha256 = await this.calculateSha256(zipFilePath);
 
-    const safeFileName = path.basename(targetEntry.path);
+fs.mkdirSync(outputDirectory, {
+  recursive: true
+});
+
+const safeFileName = path.basename(targetEntry.path);
     const extractedFilePath = path.join(outputDirectory, safeFileName);
 
     // Verify safe containment
