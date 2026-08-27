@@ -203,4 +203,6 @@ if (
   }
 }
 
-module.exports = FloridaDatasetArchiveService;
+module.exports = {
+  FloridaDatasetArchiveService
+};
