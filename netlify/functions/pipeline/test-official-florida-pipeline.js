@@ -10,6 +10,10 @@ const {
 } = require("../database/FloridaRegistryDatabase.js");
 
 const {
+  FloridaIngestionService
+} = require("../ingestion/FloridaIngestionService.js");
+
+const {
   OfficialFloridaProvider
 } = require("../providers/OfficialFloridaProvider.js");
 
@@ -17,146 +21,347 @@ const {
   runLeadPipeline
 } = require("./runLeadPipeline.js");
 
-async function main() {
-  const tempDbPath = path.join(
-    os.tmpdir(),
-    `florida_pipeline_${Date.now()}_${Math.random()
-      .toString(36)
-      .slice(2)}.db`
-  );
+async function runTest() {
+  const tempDbPath =
+    path.join(
+      os.tmpdir(),
+      `florida_pipeline_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2)}.db`
+    );
 
   let db = null;
 
   try {
-    db = new FloridaRegistryDatabase({
-      databasePath: tempDbPath
-    });
+    // ============================================================
+    // 1. CREATE REAL SQLITE DATABASE
+    // ============================================================
 
-    const sampleRecord = {
-      registrationId: "L26000999999",
-      companyName: "SUNSHINE SOLAR CONTRACTORS LLC",
-      entityType: "LLC",
-      status: "ACTIVE",
-      formationDate: "2026-08-01",
-      principalAddress: {
-        line1: "123 Solar Way",
-        line2: null,
-        city: "Miami",
-        state: "FL",
-        zip: "33101"
-      },
-      mailingAddress: {
-        line1: "123 Solar Way",
-        line2: null,
-        city: "Miami",
-        state: "FL",
-        zip: "33101"
-      },
-      registeredAgent: "RYAN TEST AGENT",
-      source: {
-        file: "pipeline-test.txt",
-        sourceType: "official_state_dataset",
-        retrievedAt: new Date().toISOString(),
-        recordUpdatedAt: new Date().toISOString()
-      }
-    };
+    db =
+      new FloridaRegistryDatabase({
+        databasePath:
+          tempDbPath
+      });
 
-    await db.upsertBatch([
-      sampleRecord
-    ]);
+    // ============================================================
+    // 2. INGEST KNOWN SAMPLE DATA
+    // ============================================================
+
+    const samplePath =
+      path.resolve(
+        process.cwd(),
+        "daily_sample.txt"
+      );
+
+    assert.ok(
+      fs.existsSync(samplePath),
+      `Expected daily_sample.txt at ${samplePath}`
+    );
+
+    const ingestionService =
+      new FloridaIngestionService({
+        database:
+          db
+      });
+
+    const ingestionManifest =
+      await ingestionService.processFile(
+        samplePath,
+        {
+          acquisitionType:
+            "daily_delta",
+
+          batchSize:
+            100
+        }
+      );
+
+    assert.strictEqual(
+      ingestionManifest.status,
+      "success",
+      "Sample Florida ingestion must succeed"
+    );
+
+    assert.ok(
+      ingestionManifest.recordsIngested > 0,
+      "Sample ingestion must insert at least one record"
+    );
+
+    // ============================================================
+    // 3. FIND A REAL INGESTED RECORD TO DRIVE THE SEARCH
+    // ============================================================
+
+    const dbRow =
+      db.db
+        .prepare(`
+          SELECT
+            registration_id,
+            company_name,
+            principal_city,
+            principal_state
+          FROM florida_entities
+          WHERE registration_id IS NOT NULL
+            AND company_name IS NOT NULL
+          ORDER BY company_name ASC
+          LIMIT 1
+        `)
+        .get();
+
+    assert.ok(
+      dbRow,
+      "Expected at least one Florida record in SQLite"
+    );
+
+    assert.ok(
+      dbRow.company_name,
+      "Selected SQLite row must contain company_name"
+    );
+
+    // ============================================================
+    // 4. BUILD OFFICIAL PROVIDER
+    // ============================================================
 
     const provider =
       new OfficialFloridaProvider({
-        database: db
+        database:
+          db
       });
+
+    assert.strictEqual(
+      provider.name,
+      "OfficialFloridaProvider"
+    );
+
+    // ============================================================
+    // 5. BUILD A SEARCH TERM THAT FLORIDA DATABASE CAN MATCH
+    //
+    // FloridaRegistryDatabase currently performs registry-name
+    // discovery against company_name, so use a meaningful token
+    // from the actual ingested company name.
+    // ============================================================
+
+    const companyTokens =
+      String(dbRow.company_name)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter(
+          token =>
+            token.length >= 3 &&
+            ![
+              "llc",
+              "inc",
+              "corp",
+              "corporation",
+              "company",
+              "co"
+            ].includes(token)
+        );
+
+    const queryToken =
+      companyTokens[0];
+
+    assert.ok(
+      queryToken,
+      `Unable to derive searchable token from company name: ${dbRow.company_name}`
+    );
+
+    const city =
+      dbRow.principal_city ||
+      "Florida";
+
+    const geoContext =
+      dbRow.principal_city
+        ? {
+            city:
+              dbRow.principal_city,
+
+            states: [
+              "FL"
+            ]
+          }
+        : {
+            states: [
+              "FL"
+            ]
+          };
+
+    // ============================================================
+    // 6. EXECUTE EXISTING PIPELINE WITH PROVIDER INJECTION
+    // ============================================================
 
     const result =
       await runLeadPipeline({
-        geoContext: {
-          states: ["FL"],
-          city: "Miami"
-        },
+        geoContext,
+
         filters: {
-          industry: "solar contractors",
-          limit: 10
+          industry:
+            queryToken,
+
+          limit:
+            20
         },
+
         provider
       });
+
+    // ============================================================
+    // 7. ASSERT PIPELINE CONTRACT
+    // ============================================================
 
     assert.ok(
       result &&
       typeof result === "object",
-      "Pipeline must return an object."
+      "Pipeline must return an object"
     );
 
-    assert.strictEqual(
+    assert.notStrictEqual(
       result.status,
-      "success",
-      `Expected pipeline status success, received: ${result.status}`
+      "invalid_intent",
+      `Pipeline rejected valid test query "${queryToken}"`
+    );
+
+    assert.notStrictEqual(
+      result.status,
+      "unavailable",
+      "Official Florida provider must not be treated as unavailable"
     );
 
     assert.ok(
       Array.isArray(result.leads),
-      "Pipeline result must include leads array."
+      "Pipeline result must expose leads[]"
     );
 
     assert.ok(
       result.leads.length > 0,
-      "OfficialFloridaProvider pipeline must return at least one lead."
+      `Official Florida pipeline returned no leads for token "${queryToken}" in ${city}`
     );
 
-    const lead =
+    // ============================================================
+    // 8. VERIFY KNOWN SQLITE RECORD REACHES PIPELINE OUTPUT
+    // ============================================================
+
+    const matchingLead =
       result.leads.find(
-        item =>
-          item?.entity?.registrationId ===
-          sampleRecord.registrationId
-      ) ||
-      result.leads[0];
+        lead =>
+          lead?.entity?.registrationId ===
+            dbRow.registration_id ||
+          lead?.prospectName ===
+            dbRow.company_name
+      );
 
     assert.ok(
-      lead,
-      "Expected a constructed pipeline lead."
+      matchingLead,
+      `Expected SQLite entity ${dbRow.registration_id} / ${dbRow.company_name} in pipeline output`
     );
 
     assert.strictEqual(
-      lead.entity.registrationId,
-      sampleRecord.registrationId,
-      "Registration ID must survive provider → pipeline processing."
+      matchingLead.entity.registrationId,
+      dbRow.registration_id,
+      "Pipeline registrationId must match SQLite source record"
     );
 
     assert.strictEqual(
-      lead.entity.companyName,
-      sampleRecord.companyName,
-      "Company name must survive provider → pipeline processing."
+      matchingLead.entity.companyName,
+      dbRow.company_name,
+      "Pipeline companyName must match SQLite source record"
+    );
+
+    // ============================================================
+    // 9. VERIFY EVIDENCE LEDGER SURVIVED PROVIDER SWITCH
+    // ============================================================
+
+    assert.ok(
+      matchingLead.evidenceLedger,
+      "Pipeline lead must contain evidenceLedger binding"
     );
 
     assert.ok(
-      lead.evidenceLedger &&
-      lead.evidenceLedger.inputSignalId,
-      "Pipeline must create Evidence Ledger binding."
+      matchingLead.evidenceLedger.inputSignalId,
+      "Evidence ledger must produce inputSignalId"
     );
 
     assert.ok(
-      Array.isArray(lead.evidenceSummary),
-      "Pipeline lead must contain evidence summary."
+      matchingLead.evidenceLedger.sourceContentHash,
+      "Evidence ledger must produce sourceContentHash"
+    );
+
+    // ============================================================
+    // 10. VERIFY QUALIFICATION CONTRACT SURVIVED
+    // ============================================================
+
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(
+        matchingLead,
+        "score"
+      ),
+      "Lead must preserve qualification score field"
+    );
+
+    assert.ok(
+      Array.isArray(
+        matchingLead.qualificationReasons
+      ),
+      "Lead must preserve qualificationReasons[]"
+    );
+
+    assert.ok(
+      Array.isArray(
+        matchingLead.salesSignals
+      ),
+      "Lead must preserve salesSignals[]"
+    );
+
+    // ============================================================
+    // 11. VERIFY ROOT LEGACY CONTRACT SURVIVED
+    // ============================================================
+
+    assert.strictEqual(
+      result.status,
+      "success",
+      "Successful official-provider pipeline should return status=success"
+    );
+
+    assert.strictEqual(
+      result.count,
+      result.leads.length,
+      "Root count must equal leads.length"
+    );
+
+    assert.ok(
+      result.prospectName,
+      "Legacy root prospectName binding must remain available"
     );
 
     console.log(
-      "PASS: OfficialFloridaProvider → runLeadPipeline integration test passed."
+      "PASS: OfficialFloridaProvider → runLeadPipeline real SQLite integration test passed."
     );
 
   } finally {
-    if (db) {
+    if (
+      db &&
+      db.db &&
+      typeof db.db.close ===
+        "function"
+    ) {
       try {
-        db.close();
+        db.db.close();
       } catch (_) {}
     }
 
-    for (const suffix of ["", "-wal", "-shm"]) {
+    for (
+      const suffix of [
+        "",
+        "-wal",
+        "-shm"
+      ]
+    ) {
       const file =
         `${tempDbPath}${suffix}`;
 
-      if (fs.existsSync(file)) {
+      if (
+        fs.existsSync(file)
+      ) {
         try {
           fs.unlinkSync(file);
         } catch (_) {}
@@ -165,11 +370,14 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(
-    "FAIL: OfficialFloridaProvider → runLeadPipeline integration test failed:",
-    error
-  );
+runTest()
+  .catch(
+    error => {
+      console.error(
+        "FAIL: Official Florida pipeline integration test failed:",
+        error
+      );
 
-  process.exit(1);
-});
+      process.exit(1);
+    }
+  );
