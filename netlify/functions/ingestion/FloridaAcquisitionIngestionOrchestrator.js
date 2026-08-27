@@ -1,45 +1,80 @@
 // netlify/functions/ingestion/FloridaAcquisitionIngestionOrchestrator.js
 
+const path = require("path");
+
 /**
  * FloridaAcquisitionIngestionOrchestrator
  *
- * Coordinates end-to-end dataset acquisition and database ingestion
- * for the Florida Division of Corporations registry pipeline.
+ * Coordinates end-to-end dataset acquisition, optional archive extraction,
+ * and database ingestion for the Florida Division of Corporations registry
+ * pipeline.
  *
  * RESPONSIBILITIES:
- * - Validate acquisition parameters and enforce pre-flight guards.
+ * - Validate required service dependencies.
  * - Delegate file retrieval/caching to FloridaDatasetAcquisitionService.
- * - Delegate file parsing/database persistence to FloridaIngestionService.
- * - Return unified { acquisition, ingestion } manifests.
+ * - Extract quarterly master ZIP archives through FloridaDatasetArchiveService.
+ * - Delegate parsed dataset persistence to FloridaIngestionService.
+ * - Return unified acquisition/archive/ingestion manifests.
  */
 class FloridaAcquisitionIngestionOrchestrator {
   /**
    * @param {Object} options
-   * @param {Object} options.acquisitionService - Instance of FloridaDatasetAcquisitionService
-   * @param {Object} options.ingestionService - Instance of FloridaIngestionService
+   * @param {Object} options.acquisitionService
+   * @param {Object} options.ingestionService
+   * @param {Object|null} [options.archiveService]
    */
-  constructor({ acquisitionService, ingestionService } = {}) {
-    if (!acquisitionService || typeof acquisitionService.acquireDataset !== "function") {
-      throw new Error("Orchestrator requires a valid acquisitionService with acquireDataset().");
+  constructor({
+    acquisitionService,
+    ingestionService,
+    archiveService = null
+  } = {}) {
+    if (
+      !acquisitionService ||
+      typeof acquisitionService.acquireDataset !== "function"
+    ) {
+      throw new Error(
+        "Orchestrator requires a valid acquisitionService with acquireDataset()."
+      );
     }
 
-    if (!ingestionService || typeof ingestionService.processFile !== "function") {
-      throw new Error("Orchestrator requires a valid ingestionService with processFile().");
+    if (
+      !ingestionService ||
+      typeof ingestionService.processFile !== "function"
+    ) {
+      throw new Error(
+        "Orchestrator requires a valid ingestionService with processFile()."
+      );
     }
 
-    this.acquisitionService = acquisitionService;
-    this.ingestionService = ingestionService;
+    this.acquisitionService =
+      acquisitionService;
+
+    this.ingestionService =
+      ingestionService;
+
+    this.archiveService =
+      archiveService;
   }
 
   /**
-   * Executes the full acquisition-to-ingestion pipeline.
+   * Executes the acquisition-to-ingestion pipeline.
+   *
+   * Daily:
+   * acquisition -> ingestion
+   *
+   * Quarterly:
+   * acquisition -> ZIP extraction -> ingestion
    *
    * @param {Object} [options]
-   * @param {string} [options.acquisitionType="daily_delta"] - "daily_delta" or "quarterly_master"
-   * @param {string} [options.customSourceUrl] - Optional URL or local path override for acquisition
-   * @param {string} [options.outputFileName] - Optional custom filename for acquired file storage
-   * @param {number} [options.batchSize=2500] - Database transaction batch size
-   * @returns {Promise<{ acquisition: Object, ingestion: Object }>}
+   * @param {string} [options.acquisitionType="daily_delta"]
+   * @param {string} [options.customSourceUrl]
+   * @param {string} [options.outputFileName]
+   * @param {number} [options.batchSize=2500]
+   * @returns {Promise<{
+   *   acquisition: Object,
+   *   archive: Object|null,
+   *   ingestion: Object
+   * }>}
    */
   async runPipeline({
     acquisitionType = "daily_delta",
@@ -47,35 +82,106 @@ class FloridaAcquisitionIngestionOrchestrator {
     outputFileName,
     batchSize = 2500
   } = {}) {
-    // Pre-flight Guard: Reject quarterly_master BEFORE acquisition begins
-    if (acquisitionType === "quarterly_master") {
+    if (
+      acquisitionType !== "daily_delta" &&
+      acquisitionType !== "quarterly_master"
+    ) {
       throw new Error(
-        "Quarterly master processing is currently unsupported: automated ZIP archive extraction is not yet implemented. Pre-acquisition aborted."
+        `Unsupported acquisitionType: ${acquisitionType}`
       );
     }
 
-    // Phase 1: Acquire Dataset (Always executed through FloridaDatasetAcquisitionService)
-    const acquisition = await this.acquisitionService.acquireDataset({
-      acquisitionType,
-      customSourceUrl,
-      outputFileName
-    });
-
-    if (!acquisition || !acquisition.localFilePath) {
-      throw new Error("Acquisition failed to produce a valid localFilePath.");
+    /*
+     * Quarterly ZIP processing requires an archive service.
+     * Reject before acquisition so we do not download/copy an archive
+     * that cannot subsequently be processed.
+     */
+    if (
+      acquisitionType === "quarterly_master" &&
+      (
+        !this.archiveService ||
+        typeof this.archiveService.extractArchive !== "function"
+      )
+    ) {
+      throw new Error(
+        "Quarterly master processing requires a valid archiveService with extractArchive()."
+      );
     }
 
-    // Phase 2: Ingest Dataset into Database
-    const ingestion = await this.ingestionService.processFile(
-      acquisition.localFilePath,
-      {
-        acquisitionType: acquisition.acquisitionType || acquisitionType,
-        batchSize
+    // Phase 1: Acquire dataset.
+    const acquisition =
+      await this.acquisitionService.acquireDataset({
+        acquisitionType,
+        customSourceUrl,
+        outputFileName
+      });
+
+    if (
+      !acquisition ||
+      !acquisition.localFilePath
+    ) {
+      throw new Error(
+        "Acquisition failed to produce a valid localFilePath."
+      );
+    }
+
+    let archive = null;
+
+    let ingestionFilePath =
+      acquisition.localFilePath;
+
+    /*
+     * Phase 2 for quarterly master:
+     * safely extract the single registry data payload.
+     *
+     * Daily delta files bypass archive handling entirely.
+     */
+    if (
+      acquisitionType === "quarterly_master"
+    ) {
+      const extractionDirectory =
+        path.join(
+          path.dirname(
+            acquisition.localFilePath
+          ),
+          "extracted_quarterly"
+        );
+
+      archive =
+        await this.archiveService.extractArchive(
+          acquisition.localFilePath,
+          extractionDirectory
+        );
+
+      if (
+        !archive ||
+        !archive.extractedFilePath
+      ) {
+        throw new Error(
+          "Archive extraction failed to produce a valid extractedFilePath."
+        );
       }
-    );
+
+      ingestionFilePath =
+        archive.extractedFilePath;
+    }
+
+    // Final phase: ingest the raw fixed-width registry file.
+    const ingestion =
+      await this.ingestionService.processFile(
+        ingestionFilePath,
+        {
+          acquisitionType:
+            acquisition.acquisitionType ||
+            acquisitionType,
+
+          batchSize
+        }
+      );
 
     return {
       acquisition,
+      archive,
       ingestion
     };
   }
