@@ -61,8 +61,19 @@ async function runIntegrationTest() {
     assert.strictEqual(profile.acquisitionMode, "local_database");
     assert.strictEqual(profile.requiresInteractiveWebAccess, false);
 
-    // 10. Extract a known row directly from SQLite for deterministic testing
-    const dbRow = db.db.prepare("SELECT company_name, doc_number FROM florida_entities LIMIT 1").get();
+    // 10. Extract a known row directly from SQLite for deterministic testing using verified schema columns
+    const dbRow = db.db
+      .prepare(
+        `SELECT
+          registration_id,
+          company_name
+        FROM florida_entities
+        WHERE registration_id IS NOT NULL
+          AND company_name IS NOT NULL
+        ORDER BY id ASC
+        LIMIT 1`
+      )
+      .get();
     assert.ok(dbRow, "SQLite database should contain at least one ingested row");
 
     const sampleCompanyName = dbRow.company_name;
@@ -97,10 +108,10 @@ async function runIntegrationTest() {
     assert.ok(searchResult.records.length > 0, "searchResult.records should not be empty");
     assert.strictEqual(searchResult.dataset.jurisdiction, "FL");
 
-    // 12. Locate known database record by registrationId and check properties
-    const foundRecord = searchResult.records.find(
-      (r) => r.registrationId === dbRow.doc_number
-    ) || searchResult.records[0];
+    // 12. Locate known database record by registration_id and check properties
+    const foundRecord =
+      searchResult.records.find((r) => r.registrationId === dbRow.registration_id) ||
+      searchResult.records[0];
 
     assert.ok(foundRecord.registrationId, "registrationId should exist");
     assert.ok(foundRecord.companyName, "companyName should exist");
