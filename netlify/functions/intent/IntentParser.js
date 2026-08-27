@@ -10,6 +10,7 @@ const { createSearchIntent } = require("./SearchIntent.js");
  * - Parse industry terminology.
  * - Parse supported geographic terminology.
  * - Resolve known industry aliases.
+ * - Preserve legitimate open-ended industry terminology.
  * - Resolve known Florida cities/counties.
  * - Produce a validated SearchIntent.
  *
@@ -29,12 +30,9 @@ class IntentParser {
     this.name =
       "IntentParser";
 
-    // ------------------------------------------------------------------------
+    // ==========================================================================
     // INDUSTRY VOCABULARY
-    //
-    // This is intentionally explicit and deterministic.
-    // Expand this registry as RyGuyLabs adds industries.
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     this.industryDefinitions = [
 
@@ -120,11 +118,9 @@ class IntentParser {
 
     ];
 
-    // ------------------------------------------------------------------------
+    // ==========================================================================
     // COMMON FLORIDA CITY / COUNTY RESOLUTION
-    //
-    // This can later move into a dedicated geography dictionary.
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     this.floridaGeographies = {
 
@@ -247,43 +243,44 @@ class IntentParser {
       rawInput
         .toLowerCase();
 
-   // ------------------------------------------------------------------------
-// INDUSTRY
-// ------------------------------------------------------------------------
+    // ==========================================================================
+    // INDUSTRY
+    // ==========================================================================
 
-let industry =
-  this.resolveIndustry(
-    normalizedInput
-  );
+    let industry =
+      this.resolveIndustry(
+        normalizedInput
+      );
 
-if (!industry) {
+    if (!industry) {
 
-  const industryQuery =
-    this.extractIndustryQuery(
-      normalizedInput
-    );
+      const industryQuery =
+        this.extractIndustryQuery(
+          normalizedInput
+        );
 
-  if (!industryQuery) {
+      if (!industryQuery) {
 
-    throw new Error(
-      `Unable to determine an industry concept from search: "${rawInput}".`
-    );
-  }
+        throw new Error(
+          `Unable to determine an industry concept from search: "${rawInput}".`
+        );
+      }
 
-  industry = {
-    canonical:
-      industryQuery,
+      industry = {
+        canonical:
+          industryQuery,
 
-    keywords: [
-      industryQuery
-    ],
+        keywords: [
+          industryQuery
+        ],
 
-    classifications: []
-  };
-}
-    // ------------------------------------------------------------------------
+        classifications: []
+      };
+    }
+
+    // ==========================================================================
     // GEOGRAPHY
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     const geography =
       this.resolveGeography(
@@ -297,18 +294,18 @@ if (!industry) {
       );
     }
 
-    // ------------------------------------------------------------------------
+    // ==========================================================================
     // LIMIT
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     const limit =
       options.limit !== undefined
         ? options.limit
         : 10;
 
-    // ------------------------------------------------------------------------
+    // ==========================================================================
     // CREATE VALIDATED SEARCH INTENT
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     return createSearchIntent({
 
@@ -322,72 +319,147 @@ if (!industry) {
   }
 
   /**
-   * Resolve industry vocabulary.
+   * Resolve a known deterministic industry definition.
+   *
+   * @param {string} normalizedInput
+   * @returns {Object|null}
    */
-  const industry =
-  this.resolveIndustry(
+  resolveIndustry(
     normalizedInput
-  );
-
-if (!industry) {
-
-  throw new Error(
-    `Unable to determine an industry concept from search: "${rawInput}".`
-  );
-}
-  // ------------------------------------------------------------------------
-  // OPEN-ENDED INDUSTRY FALLBACK
-  //
-  // Preserve legitimate user-supplied industry terminology even when that
-  // industry has not yet been added to the deterministic vocabulary.
-  //
-  // Do NOT invent classifications here.
-  // ------------------------------------------------------------------------
-
-  const geographyTerms = [
-    ...Object.keys(
-      this.floridaGeographies
-    ),
-    ...Object.values(
-      this.floridaGeographies
-    )
-      .map(
-        geography =>
-          geography.city.toLowerCase()
-      ),
-    "florida",
-    "fl"
-  ];
-
-  let industryText =
-    String(rawInput)
-      .toLowerCase();
-
-  for (
-    const term of geographyTerms
   ) {
 
-    industryText =
-      industryText.replace(
-        new RegExp(
-          `\\b${term.replace(
-            /[.*+?^${}()|[\]\\]/g,
-            "\\$&"
-          )}\\b`,
-          "gi"
-        ),
-        " "
-      );
+    for (
+      const definition of
+        this.industryDefinitions
+    ) {
+
+      const matched =
+        definition.keywords.some(
+          keyword =>
+            normalizedInput.includes(
+              keyword.toLowerCase()
+            )
+        );
+
+      if (matched) {
+
+        return {
+          canonical:
+            definition.canonical,
+
+          keywords:
+            definition.keywords,
+
+          classifications:
+            definition.classifications
+        };
+      }
+    }
+
+    return null;
   }
 
+  /**
+   * Extract an open-ended user-supplied industry concept.
+   *
+   * Known industries are handled by resolveIndustry().
+   * This method exists so the lead platform is not hard-gated
+   * by the small deterministic vocabulary above.
+   *
+   * @param {string} normalizedInput
+   * @returns {string|null}
+   */
+  extractIndustryQuery(
+    normalizedInput
+  ) {
+
+    if (
+      typeof normalizedInput !== "string" ||
+      !normalizedInput.trim()
+    ) {
+      return null;
+    }
+
+    let industryText =
+      normalizedInput
+        .toLowerCase();
+
+    const geographyTerms = [
+      ...Object.keys(
+        this.floridaGeographies
+      )
+        .map(
+          key =>
+            key.replace(
+              /_/g,
+              " "
+            )
+        ),
+
+      ...Object.values(
+        this.floridaGeographies
+      )
+        .map(
+          geography =>
+            geography.city.toLowerCase()
+        ),
+
+      ...Object.values(
+        this.floridaGeographies
+      )
+        .map(
+          geography =>
+            geography.county.toLowerCase()
+        ),
+
+      "florida"
+    ];
+
+    const uniqueGeographyTerms =
+      [
+        ...new Set(
+          geographyTerms
+            .filter(Boolean)
+            .sort(
+              (a, b) =>
+                b.length - a.length
+            )
+        )
+      ];
+
+    for (
+      const term of
+        uniqueGeographyTerms
+    ) {
+
+      const escapedTerm =
+        term.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
+
       industryText =
+        industryText.replace(
+          new RegExp(
+            `\\b${escapedTerm}\\b`,
+            "gi"
+          ),
+          " "
+        );
+    }
+
+    industryText =
       industryText
         .replace(
-          /\s+in\s*$/i,
-          ""
+          /\bfl\b/gi,
+          " "
         )
         .replace(
-          /\s+in\s+/i,
+          /\b\d{5}(?:-\d{4})?\b/g,
+          " "
+        )
+        .replace(
+          /\b(in|near|around|within|at)\b/gi,
           " "
         )
         .replace(
@@ -400,98 +472,25 @@ if (!industry) {
         )
         .trim();
 
-  if (!industryText) {
-    return null;
+    return (
+      industryText ||
+      null
+    );
   }
-
-  return {
-  canonical:
-    industryText,
-
-  keywords: [
-    industryText
-  ],
-
-  classifications: []
-};
-
-  return {
-    canonical:
-      industryText,
-
-    keywords: [
-      industryText
-    ],
-
-    classifications: [],
-
-    resolution:
-      "user_defined"
-  };
-}
-  // ------------------------------------------------------------------------
-  // FALLBACK: Preserve a plausible user-supplied industry concept.
-  //
-  // The IntentParser must not use the small deterministic vocabulary
-  // above as a hard gate for the entire lead-generation platform.
-  //
-  // Industry expansion / relevance logic can enrich this concept later.
-  // ------------------------------------------------------------------------
-
-  const geographyTerms = [
-    ...Object.keys(this.floridaGeographies),
-    ...Object.values(this.floridaGeographies)
-      .map(geo => geo.city.toLowerCase()),
-    "florida",
-    "fl"
-  ];
-
-  let industryText =
-    normalizedInput;
-
-  for (const term of geographyTerms) {
-
-    industryText =
-      industryText.replace(
-        new RegExp(
-          `\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-          "gi"
-        ),
-        " "
-      );
-  }
-
-  industryText =
-    industryText
-      .replace(/\s+/g, " ")
-      .trim();
-
-  if (!industryText) {
-    return null;
-  }
-
-  return {
-    canonical:
-      industryText,
-
-    keywords: [
-      industryText
-    ],
-
-    classifications: []
-  };
-}
 
   /**
    * Resolve geography.
+   *
+   * @param {string} normalizedInput
+   * @returns {Object|null}
    */
   resolveGeography(
     normalizedInput
   ) {
 
-    // ------------------------------------------------------------------------
+    // ==========================================================================
     // CITY NAME MATCH
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     for (
       const key of
@@ -535,9 +534,9 @@ if (!industry) {
       }
     }
 
-    // ------------------------------------------------------------------------
+    // ==========================================================================
     // STATE-ONLY SEARCH
-    // ------------------------------------------------------------------------
+    // ==========================================================================
 
     if (
       /\bfl\b/.test(
