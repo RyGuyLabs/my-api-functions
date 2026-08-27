@@ -1,308 +1,127 @@
-// /providers/OfficialFloridaProvider.js
+// netlify/functions/providers/OfficialFloridaProvider.js
 
-const {
-  BaseProvider
-} = require("./BaseProvider.js");
+const { BaseProvider } = require("./BaseProvider");
 
-/**
- * OfficialFloridaProvider
- *
- * Authoritative Florida corporate-registry acquisition provider.
- *
- * DATA SOURCE:
- * - Locally ingested Florida Department of State
- *   Division of Corporations public datasets.
- *
- * ARCHITECTURAL ROLE:
- *
- *     SearchIntent
- *          ↓
- * OfficialFloridaProvider
- *          ↓
- *    Local Database
- *          ↓
- *   Registry Observations
- *
- * RESPONSIBILITY:
- * - Query the locally ingested Florida registry dataset.
- * - Enforce Florida jurisdiction support.
- * - Return structured acquisition results.
- * - Preserve dataset provenance metadata when available.
- *
- * DOES NOT:
- * - Parse natural-language searches.
- * - Perform enrichment.
- * - Score or qualify prospects.
- * - Perform geographic qualification.
- * - Write to the Evidence Ledger.
- * - Query search.sunbiz.org interactively.
- */
-class OfficialFloridaProvider
-  extends BaseProvider {
-
-  /**
-   * @param {Object} options
-   * @param {Object} options.database
-   * Database service implementing search(searchIntent).
-   */
+class OfficialFloridaProvider extends BaseProvider {
   constructor({ database } = {}) {
+    super();
+    this.database = database || null;
+    this.name = "OfficialFloridaProvider";
+    this.sourceType = "official_state_dataset";
+    this.authority = "Florida Department of State Division of Corporations";
+  }
 
-    super(
-      "OfficialFloridaProvider",
-      ["FL"]
-    );
+  getCapabilityProfile() {
+    return {
+      provider: this.name,
+      geography: ["FL"],
+      sourceType: this.sourceType,
+      acquisitionMode: "local_database",
+      requiresInteractiveWebAccess: false,
+      authority: this.authority
+    };
+  }
 
-    if (
-      !database ||
-      typeof database.search !== "function"
-    ) {
-
-      throw new Error(
-        "OfficialFloridaProvider requires a database client implementing search()."
-      );
+  async search(searchIntent) {
+    if (!this.database) {
+      return {
+        providerStatus: "unavailable",
+        provider: this.name,
+        sourceType: this.sourceType,
+        authority: this.authority,
+        records: [],
+        errorType: "DATABASE_UNAVAILABLE",
+        errorMessage: "FloridaRegistryDatabase reference is not configured."
+      };
     }
 
-    this.database =
-      database;
+    const state = searchIntent?.geography?.state;
+    if (state && state.toUpperCase() !== "FL") {
+      return {
+        providerStatus: "unsupported",
+        provider: this.name,
+        sourceType: this.sourceType,
+        authority: this.authority,
+        records: [],
+        errorType: "UNSUPPORTED_GEOGRAPHY",
+        errorMessage: `OfficialFloridaProvider only supports FL state searches. Received: ${state}`
+      };
+    }
+
+    try {
+      const records = await this.database.search(searchIntent);
+      return {
+        providerStatus: "success",
+        provider: this.name,
+        sourceType: this.sourceType,
+        authority: this.authority,
+        records: Array.isArray(records) ? records : [],
+        dataset: {
+          jurisdiction: "FL",
+          authority: this.authority
+        }
+      };
+    } catch (err) {
+      return {
+        providerStatus: "unavailable",
+        provider: this.name,
+        sourceType: this.sourceType,
+        authority: this.authority,
+        records: [],
+        errorType: "DATABASE_QUERY_ERROR",
+        errorMessage: err.message
+      };
+    }
   }
 
   /**
-   * Return capability profile metadata.
+   * Defensive identity-style normalizer for Florida registry records.
+   * Preserves canonical schema without delegating to BaseProvider.normalize().
    */
-  getCapabilityProfile() {
+  normalize(rawRecord) {
+    if (!rawRecord || typeof rawRecord !== "object" || Array.isArray(rawRecord)) {
+      throw new Error("Invalid raw record: expected a non-null object.");
+    }
+
+    if (!rawRecord.companyName || typeof rawRecord.companyName !== "string" || !rawRecord.companyName.trim()) {
+      throw new Error("Invalid raw record: companyName is required and must be a non-empty string.");
+    }
 
     return {
-
-      provider:
-        this.name,
-
-      geography:
-        this.supportedGeos,
-
-      authority:
-        "Florida Department of State Division of Corporations",
-
-      sourceType:
-        "official_state_dataset",
-
-      acquisitionMode:
-        "local_database",
-
-      requiresInteractiveWebAccess:
-        false,
-
-      capabilities: [
-        "legalName",
-        "registrationId",
-        "status",
-        "entityType",
-        "filingDate",
-        "principalAddress",
-        "mailingAddress",
-        "registeredAgent"
-      ],
-
-      limitations: [
-        "dataset_dependent",
-        "no_direct_email",
-        "no_direct_phone",
-        "no_revenue",
-        "no_employee_count",
-        "no_sales_intent"
-      ]
+      registrationId: rawRecord.registrationId || null,
+      companyName: rawRecord.companyName,
+      entityType: rawRecord.entityType || null,
+      status: rawRecord.status || "UNKNOWN",
+      formationDate: rawRecord.formationDate || null,
+      principalAddress: rawRecord.principalAddress
+        ? { ...rawRecord.principalAddress }
+        : null,
+      mailingAddress: rawRecord.mailingAddress
+        ? { ...rawRecord.mailingAddress }
+        : null,
+      registeredAgent: rawRecord.registeredAgent || null,
+      source: rawRecord.source
+        ? { ...rawRecord.source }
+        : null
     };
   }
 
   /**
-   * Search the locally ingested Florida corporate dataset.
-   *
-   * @param {Object} searchIntent
-   * @returns {Promise<Object>}
+   * Deterministic authoritative Sunbiz source reference link generator.
    */
-  async search(
-    searchIntent
-  ) {
-
-    // ------------------------------------------------------------------------
-    // SEARCH INTENT VALIDATION
-    // ------------------------------------------------------------------------
-
-    if (
-      !searchIntent ||
-      typeof searchIntent !== "object" ||
-      Array.isArray(searchIntent)
-    ) {
-
-      throw new Error(
-        "OfficialFloridaProvider requires a valid SearchIntent object."
-      );
+  getSourceReference(rawRecord = {}, normalizedRecord = {}) {
+    const regId = normalizedRecord.registrationId || rawRecord.registrationId;
+    
+    if (!regId) {
+      return "https://search.sunbiz.org/";
     }
 
-    // ------------------------------------------------------------------------
-    // JURISDICTION VALIDATION
-    // ------------------------------------------------------------------------
+    const compName = normalizedRecord.companyName || rawRecord.companyName || "";
+    const encodedName = encodeURIComponent(compName);
+    const encodedRegId = encodeURIComponent(regId);
 
-    const state =
-      searchIntent
-        ?.geography
-        ?.state;
-
-    if (
-      typeof state !== "string" ||
-      state.toUpperCase() !== "FL"
-    ) {
-
-      return {
-
-        providerStatus:
-          "unsupported",
-
-        provider:
-          this.name,
-
-        records:
-          [],
-
-        errorType:
-          "UNSUPPORTED_GEOGRAPHY",
-
-        errorMessage:
-          "OfficialFloridaProvider only supports Florida (FL)."
-      };
-    }
-
-    // ------------------------------------------------------------------------
-    // DATABASE ACQUISITION
-    // ------------------------------------------------------------------------
-
-    try {
-
-      const result =
-        await this.database.search(
-          searchIntent
-        );
-
-      /*
-       * The database abstraction may eventually return either:
-       *
-       * 1. An array of records
-       *
-       * OR
-       *
-       * 2. A structured database response:
-       *
-       * {
-       *   records: [],
-       *   snapshotDate: "...",
-       *   datasetVersion: "..."
-       * }
-       *
-       * Support both without forcing the database implementation
-       * to be rewritten immediately.
-       */
-
-      const records =
-        Array.isArray(result)
-          ? result
-          : Array.isArray(result?.records)
-            ? result.records
-            : [];
-
-      const snapshotDate =
-        Array.isArray(result)
-          ? null
-          : result?.snapshotDate ||
-            null;
-
-      const datasetVersion =
-        Array.isArray(result)
-          ? null
-          : result?.datasetVersion ||
-            null;
-
-      // ----------------------------------------------------------------------
-      // SUCCESS / EMPTY RESULT
-      // ----------------------------------------------------------------------
-
-      return {
-
-        providerStatus:
-          records.length > 0
-            ? "success"
-            : "empty",
-
-        provider:
-          this.name,
-
-        sourceType:
-          "official_state_dataset",
-
-        authority:
-          "Florida Department of State Division of Corporations",
-
-        records,
-
-        dataset: {
-
-          jurisdiction:
-            "FL",
-
-          snapshotDate,
-
-          datasetVersion
-        },
-
-        errorType:
-          null
-      };
-
-    } catch (error) {
-
-      // ----------------------------------------------------------------------
-      // DATABASE AVAILABILITY FAILURE
-      // ----------------------------------------------------------------------
-
-      console.error(
-        `[${this.name}] DATABASE SEARCH FAILURE`,
-        {
-          message:
-            error?.message ||
-            "Unknown database error",
-
-          searchMode:
-            searchIntent.searchMode ||
-            null
-        }
-      );
-
-      return {
-
-        providerStatus:
-          "unavailable",
-
-        provider:
-          this.name,
-
-        sourceType:
-          "official_state_dataset",
-
-        records:
-          [],
-
-        dataset:
-          null,
-
-        errorType:
-          "DATABASE_QUERY_ERROR",
-
-        errorMessage:
-          error?.message ||
-          "Unknown database error"
-      };
-    }
+    return `https://search.sunbiz.org/Inquiry/CorporationSearch/SearchResultDetail?inquirytype=EntityName&directionType=Initial&searchNameOrder=${encodedName}&aggregateId=${encodedRegId}`;
   }
 }
 
-module.exports = {
-  OfficialFloridaProvider
-};
+module.exports = { OfficialFloridaProvider };
