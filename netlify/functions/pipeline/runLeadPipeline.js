@@ -371,9 +371,9 @@ const resolvedSearchIntent = {
 ) {
 
   searchResult =
-    await provider.search(
-      searchIntent
-    );
+  await provider.search(
+    resolvedSearchIntent
+  );
 
 } else {
 
