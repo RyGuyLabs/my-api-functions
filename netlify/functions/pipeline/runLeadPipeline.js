@@ -252,6 +252,35 @@ searchIntent =
         )
 };
 
+const resolvedSearchIntent = {
+  ...searchIntent,
+
+  geography: {
+    ...searchIntent.geography,
+
+    state:
+      resolvedGeoContext?.state ||
+      resolvedGeoContext?.states?.[0] ||
+      searchIntent?.geography?.state ||
+      "FL",
+
+    city:
+      resolvedGeoContext?.city ||
+      searchIntent?.geography?.city ||
+      null,
+
+    county:
+      resolvedGeoContext?.county ||
+      searchIntent?.geography?.county ||
+      null,
+
+    zip:
+      resolvedGeoContext?.zip ||
+      searchIntent?.geography?.zip ||
+      null
+  }
+};
+  
   // ==========================================================================
   // 1B. BUILD PROVIDER FILTERS
   // ==========================================================================
