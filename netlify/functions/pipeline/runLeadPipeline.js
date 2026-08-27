@@ -50,7 +50,8 @@ const { IntentParser } =
  */
 async function runLeadPipeline({
   geoContext,
-  filters = {}
+  filters = {},
+  provider: injectedProvider = null
 } = {}) {
 
   const provider =
