@@ -137,11 +137,23 @@ const safeFileName = path.basename(targetEntry.path);
     const extractedFilePath = path.join(outputDirectory, safeFileName);
 
     // Verify safe containment
-    const resolvedOutDir = path.resolve(outputDirectory);
-    const resolvedExtractedPath = path.resolve(extractedFilePath);
-    if (!resolvedExtractedPath.startsWith(resolvedOutDir)) {
-      throw new Error(`Destination path security error: path resolves outside output directory.`);
-    }
+    // Verify safe containment
+const resolvedOutDir = path.resolve(outputDirectory);
+const resolvedExtractedPath = path.resolve(extractedFilePath);
+
+const relativeDestination = path.relative(
+  resolvedOutDir,
+  resolvedExtractedPath
+);
+
+if (
+  relativeDestination.startsWith("..") ||
+  path.isAbsolute(relativeDestination)
+) {
+  throw new Error(
+    "Destination path security error: path resolves outside output directory."
+  );
+}
 
     // Stream extraction with byte counter limit validation
     let extractedByteCount = 0;
