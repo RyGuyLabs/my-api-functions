@@ -55,7 +55,8 @@ async function runLeadPipeline({
 } = {}) {
 
   const provider =
-    new SunbizProvider();
+  injectedProvider ||
+  new SunbizProvider();
 
   const ledger =
     new EvidenceLedgerAdapter();
