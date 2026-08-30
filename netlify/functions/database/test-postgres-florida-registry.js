@@ -13,6 +13,7 @@ const IDS = {
   batch1: `${TEST_PREFIX}_BATCH1`,
   batch2: `${TEST_PREFIX}_BATCH2`,
   full: `${TEST_PREFIX}_FULL`,
+  change: `${TEST_PREFIX}_CHANGE`,
   rollback: `${TEST_PREFIX}_ROLLBACK`
 };
 
@@ -167,6 +168,240 @@ async function run() {
     assert.equal(
       result.rows[0].jurisdiction_code,
       'FL'
+    );
+
+    // ------------------------------------------------------------------
+    // TEST 1A: deterministic entity change detection
+    // A -> A -> source metadata change -> B
+    // ------------------------------------------------------------------
+
+    console.log(
+      '2A. entity change detection'
+    );
+
+    const changeA =
+      makeEntity({
+        registrationId: IDS.change,
+        companyName:
+          'RYGUY CHANGE DETECTION TEST LLC'
+      });
+
+    // A1: first observation
+    await db.upsertRecord(changeA);
+
+    let changeResult =
+      await pool.query(
+        `
+          SELECT
+            entity_fingerprint,
+            first_seen_at,
+            last_seen_at,
+            last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.change]
+      );
+
+    assert.equal(
+      changeResult.rowCount,
+      1
+    );
+
+    const firstObservation =
+      changeResult.rows[0];
+
+    assert.match(
+      firstObservation.entity_fingerprint,
+      /^[a-f0-9]{64}$/
+    );
+
+    assert.ok(
+      firstObservation.first_seen_at
+    );
+
+    assert.ok(
+      firstObservation.last_seen_at
+    );
+
+    assert.ok(
+      firstObservation.last_changed_at
+    );
+
+    const fingerprintA =
+      firstObservation.entity_fingerprint;
+
+    const firstSeenA =
+      firstObservation.first_seen_at.getTime();
+
+    const lastSeenA =
+      firstObservation.last_seen_at.getTime();
+
+    const lastChangedA =
+      firstObservation.last_changed_at.getTime();
+
+    // Give PostgreSQL timestamps a clear ordering boundary.
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    // A2: identical business observation
+    await db.upsertRecord(changeA);
+
+    changeResult =
+      await pool.query(
+        `
+          SELECT
+            entity_fingerprint,
+            first_seen_at,
+            last_seen_at,
+            last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.change]
+      );
+
+    const secondObservation =
+      changeResult.rows[0];
+
+    assert.equal(
+      secondObservation.entity_fingerprint,
+      fingerprintA
+    );
+
+    assert.equal(
+      secondObservation.first_seen_at.getTime(),
+      firstSeenA
+    );
+
+    assert.ok(
+      secondObservation.last_seen_at.getTime() >
+      lastSeenA
+    );
+
+    assert.equal(
+      secondObservation.last_changed_at.getTime(),
+      lastChangedA
+    );
+
+    const lastSeenA2 =
+      secondObservation.last_seen_at.getTime();
+
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    // A3: source metadata changes, business state does not.
+    const sourceMetadataOnly = {
+      ...changeA,
+      source: {
+        ...changeA.source,
+        file: `${TEST_PREFIX}_new_source_file.txt`,
+        retrievedAt:
+          '2026-08-30T15:00:00.000Z',
+        recordUpdatedAt:
+          '2026-08-30T15:00:00.000Z'
+      }
+    };
+
+    await db.upsertRecord(
+      sourceMetadataOnly
+    );
+
+    changeResult =
+      await pool.query(
+        `
+          SELECT
+            entity_fingerprint,
+            first_seen_at,
+            last_seen_at,
+            last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.change]
+      );
+
+    const metadataObservation =
+      changeResult.rows[0];
+
+    assert.equal(
+      metadataObservation.entity_fingerprint,
+      fingerprintA
+    );
+
+    assert.equal(
+      metadataObservation.first_seen_at.getTime(),
+      firstSeenA
+    );
+
+    assert.ok(
+      metadataObservation.last_seen_at.getTime() >
+      lastSeenA2
+    );
+
+    assert.equal(
+      metadataObservation.last_changed_at.getTime(),
+      lastChangedA
+    );
+
+    const lastSeenMetadata =
+      metadataObservation.last_seen_at.getTime();
+
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    // B: actual business-state change
+    const changeB = {
+      ...sourceMetadataOnly,
+      status: 'INACTIVE'
+    };
+
+    await db.upsertRecord(changeB);
+
+    changeResult =
+      await pool.query(
+        `
+          SELECT
+            status,
+            entity_fingerprint,
+            first_seen_at,
+            last_seen_at,
+            last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.change]
+      );
+
+    const changedObservation =
+      changeResult.rows[0];
+
+    assert.equal(
+      changedObservation.status,
+      'INACTIVE'
+    );
+
+    assert.notEqual(
+      changedObservation.entity_fingerprint,
+      fingerprintA
+    );
+
+    assert.equal(
+      changedObservation.first_seen_at.getTime(),
+      firstSeenA
+    );
+
+    assert.ok(
+      changedObservation.last_seen_at.getTime() >
+      lastSeenMetadata
+    );
+
+    assert.ok(
+      changedObservation.last_changed_at.getTime() >
+      lastChangedA
     );
 
     // ------------------------------------------------------------------

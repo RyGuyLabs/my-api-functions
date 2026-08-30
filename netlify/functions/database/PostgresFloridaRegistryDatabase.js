@@ -4,6 +4,9 @@
  * PostgreSQL implementation of FloridaRegistryDatabase matching SQLite runtime parity.
  */
 
+const crypto = require("crypto");
+const { toCanonicalString } = require("../source/CanonicalSerializer.js");
+
 let pgModule = null;
 function getPg() {
   if (!pgModule) {
@@ -96,9 +99,42 @@ class PostgresFloridaRegistryDatabase {
           fei_number TEXT,
           fei_status_raw TEXT,
           jurisdiction_code TEXT,
+          entity_fingerprint TEXT,
+          first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+          last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+          last_changed_at TIMESTAMPTZ DEFAULT NOW(),
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+      `);
+
+      await client.query(`
+        ALTER TABLE florida_entities
+          ADD COLUMN IF NOT EXISTS entity_fingerprint TEXT,
+          ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ;
+      `);
+
+      // Bootstrap observation timestamps for rows that existed before
+      // deterministic change detection was introduced.
+      await client.query(`
+        UPDATE florida_entities
+        SET
+          first_seen_at = COALESCE(first_seen_at, created_at),
+          last_seen_at = COALESCE(last_seen_at, updated_at),
+          last_changed_at = COALESCE(last_changed_at, updated_at)
+        WHERE
+          first_seen_at IS NULL
+          OR last_seen_at IS NULL
+          OR last_changed_at IS NULL;
+      `);
+
+      await client.query(`
+        ALTER TABLE florida_entities
+          ALTER COLUMN first_seen_at SET DEFAULT NOW(),
+          ALTER COLUMN last_seen_at SET DEFAULT NOW(),
+          ALTER COLUMN last_changed_at SET DEFAULT NOW();
       `);
 
       await client.query(`
@@ -477,6 +513,43 @@ class PostgresFloridaRegistryDatabase {
     }
   }
 
+  _buildEntityFingerprint(dbRecord) {
+    const canonicalState = {
+      registration_id: dbRecord.registration_id || null,
+      company_name: dbRecord.company_name || null,
+      entity_type: dbRecord.entity_type || null,
+      status: dbRecord.status || null,
+      filing_date: dbRecord.filing_date || null,
+
+      principal_address: {
+        line1: dbRecord.principal_address_line1 || null,
+        line2: dbRecord.principal_address_line2 || null,
+        city: dbRecord.principal_city || null,
+        state: dbRecord.principal_state || null,
+        zip: dbRecord.principal_zip || null
+      },
+
+      mailing_address: {
+        line1: dbRecord.mailing_address_line1 || null,
+        line2: dbRecord.mailing_address_line2 || null,
+        city: dbRecord.mailing_city || null,
+        state: dbRecord.mailing_state || null,
+        zip: dbRecord.mailing_zip || null
+      },
+
+      registered_agent_name: dbRecord.registered_agent_name || null,
+      classification_code: dbRecord.classification_code || null,
+      fei_number: dbRecord.fei_number || null,
+      fei_status_raw: dbRecord.fei_status_raw || null,
+      jurisdiction_code: dbRecord.jurisdiction_code || null
+    };
+
+    return crypto
+      .createHash("sha256")
+      .update(toCanonicalString(canonicalState))
+      .digest("hex");
+  }
+
   async _upsertEntity(client, dbRecord) {
     const upsertSql = `
       INSERT INTO florida_entities (
@@ -484,13 +557,15 @@ class PostgresFloridaRegistryDatabase {
         principal_address_line1, principal_address_line2, principal_city, principal_state, principal_zip,
         mailing_address_line1, mailing_address_line2, mailing_city, mailing_state, mailing_zip,
         registered_agent_name, source_file, source_type, source_retrieved_at, record_updated_at,
-        classification_code, fei_number, fei_status_raw, jurisdiction_code, updated_at
+        classification_code, fei_number, fei_status_raw, jurisdiction_code,
+        entity_fingerprint, first_seen_at, last_seen_at, last_changed_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15,
         $16, $17, COALESCE($18, 'official_state_dataset'), $19, $20,
-        $21, $22, $23, $24, NOW()
+        $21, $22, $23, $24,
+        $25, NOW(), NOW(), NOW(), NOW()
       )
       ON CONFLICT (registration_id) DO UPDATE SET
         company_name = EXCLUDED.company_name,
@@ -516,8 +591,21 @@ class PostgresFloridaRegistryDatabase {
         fei_number = EXCLUDED.fei_number,
         fei_status_raw = EXCLUDED.fei_status_raw,
         jurisdiction_code = EXCLUDED.jurisdiction_code,
+        entity_fingerprint = EXCLUDED.entity_fingerprint,
+        first_seen_at = florida_entities.first_seen_at,
+        last_seen_at = NOW(),
+        last_changed_at = CASE
+          WHEN florida_entities.entity_fingerprint IS NULL
+            THEN florida_entities.last_changed_at
+          WHEN florida_entities.entity_fingerprint IS DISTINCT FROM EXCLUDED.entity_fingerprint
+            THEN NOW()
+          ELSE florida_entities.last_changed_at
+        END,
         updated_at = NOW();
     `;
+
+    const entityFingerprint =
+      this._buildEntityFingerprint(dbRecord);
 
     const values = [
       dbRecord.registration_id,
@@ -543,7 +631,8 @@ class PostgresFloridaRegistryDatabase {
       dbRecord.classification_code,
       dbRecord.fei_number,
       dbRecord.fei_status_raw,
-      dbRecord.jurisdiction_code
+      dbRecord.jurisdiction_code,
+      entityFingerprint
     ];
 
     await client.query(upsertSql, values);
