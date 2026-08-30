@@ -103,6 +103,8 @@ class PostgresFloridaRegistryDatabase {
           first_seen_at TIMESTAMPTZ DEFAULT NOW(),
           last_seen_at TIMESTAMPTZ DEFAULT NOW(),
           last_changed_at TIMESTAMPTZ DEFAULT NOW(),
+          people_fingerprint TEXT,
+          people_last_changed_at TIMESTAMPTZ DEFAULT NOW(),
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
@@ -113,7 +115,9 @@ class PostgresFloridaRegistryDatabase {
           ADD COLUMN IF NOT EXISTS entity_fingerprint TEXT,
           ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ,
           ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ;
+          ADD COLUMN IF NOT EXISTS last_changed_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS people_fingerprint TEXT,
+          ADD COLUMN IF NOT EXISTS people_last_changed_at TIMESTAMPTZ;
       `);
 
       // Bootstrap observation timestamps for rows that existed before
@@ -123,18 +127,21 @@ class PostgresFloridaRegistryDatabase {
         SET
           first_seen_at = COALESCE(first_seen_at, created_at),
           last_seen_at = COALESCE(last_seen_at, updated_at),
-          last_changed_at = COALESCE(last_changed_at, updated_at)
+          last_changed_at = COALESCE(last_changed_at, updated_at),
+          people_last_changed_at = COALESCE(people_last_changed_at, updated_at)
         WHERE
           first_seen_at IS NULL
           OR last_seen_at IS NULL
-          OR last_changed_at IS NULL;
+          OR last_changed_at IS NULL
+          OR people_last_changed_at IS NULL;
       `);
 
       await client.query(`
         ALTER TABLE florida_entities
           ALTER COLUMN first_seen_at SET DEFAULT NOW(),
           ALTER COLUMN last_seen_at SET DEFAULT NOW(),
-          ALTER COLUMN last_changed_at SET DEFAULT NOW();
+          ALTER COLUMN last_changed_at SET DEFAULT NOW(),
+          ALTER COLUMN people_last_changed_at SET DEFAULT NOW();
       `);
 
       await client.query(`
@@ -461,13 +468,37 @@ class PostgresFloridaRegistryDatabase {
           );
         }
 
-        // 3. Delete existing people
+        // 3. Compare deterministic people/officer state.
+        const peopleFingerprint =
+          this._buildPeopleFingerprint(people);
+
+        await client.query(
+          `
+          UPDATE florida_entities
+          SET
+            people_fingerprint = $2,
+            people_last_changed_at = CASE
+              WHEN people_fingerprint IS NULL
+                THEN people_last_changed_at
+              WHEN people_fingerprint IS DISTINCT FROM $2
+                THEN NOW()
+              ELSE people_last_changed_at
+            END
+          WHERE registration_id = $1
+          `,
+          [
+            dbRecord.registration_id,
+            peopleFingerprint
+          ]
+        );
+
+        // 4. Delete existing people
         await client.query(
           'DELETE FROM florida_people WHERE registration_id = $1',
           [dbRecord.registration_id]
         );
 
-        // 4. Insert current people
+        // 5. Insert current people
         if (Array.isArray(people) && people.length > 0) {
           const personInsertSql = `
             INSERT INTO florida_people (
@@ -511,6 +542,88 @@ class PostgresFloridaRegistryDatabase {
     } finally {
       client.release();
     }
+  }
+
+  _normalizePeopleForFingerprint(people = []) {
+    return people
+      .map(person => {
+        const p =
+          typeof person === 'string'
+            ? { name: person }
+            : (person || {});
+
+        const address = p.address || {};
+
+        return {
+          title:
+            p.person_title ||
+            p.title ||
+            p.personTitle ||
+            null,
+
+          name:
+            p.name ||
+            p.person_name ||
+            null,
+
+          address_line1:
+            address.line1 ||
+            address.address1 ||
+            p.address_line1 ||
+            p.addressLine1 ||
+            null,
+
+          address_line2:
+            address.line2 ||
+            address.address2 ||
+            p.address_line2 ||
+            p.addressLine2 ||
+            null,
+
+          city:
+            address.city ||
+            p.city ||
+            null,
+
+          state:
+            address.state ||
+            p.state ||
+            null,
+
+          zip:
+            address.zip ||
+            p.zip ||
+            null
+        };
+      })
+      .filter(person => person.name)
+      .sort((left, right) => {
+        const leftCanonical =
+          toCanonicalString(left);
+
+        const rightCanonical =
+          toCanonicalString(right);
+
+        if (leftCanonical < rightCanonical) {
+          return -1;
+        }
+
+        if (leftCanonical > rightCanonical) {
+          return 1;
+        }
+
+        return 0;
+      });
+  }
+
+  _buildPeopleFingerprint(people = []) {
+    const canonicalPeople =
+      this._normalizePeopleForFingerprint(people);
+
+    return crypto
+      .createHash("sha256")
+      .update(toCanonicalString(canonicalPeople))
+      .digest("hex");
   }
 
   _buildEntityFingerprint(dbRecord) {

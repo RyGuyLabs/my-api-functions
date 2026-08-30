@@ -555,12 +555,101 @@ async function run() {
     );
 
     // ------------------------------------------------------------------
-    // TEST 4: people replacement semantics
+    // TEST 4: deterministic people fingerprint + replacement semantics
     // ------------------------------------------------------------------
 
     console.log(
-      '5. people replacement'
+      '5. people fingerprint and replacement'
     );
+
+    result =
+      await pool.query(
+        `
+          SELECT
+            people_fingerprint,
+            people_last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.full]
+      );
+
+    const initialPeopleFingerprint =
+      result.rows[0].people_fingerprint;
+
+    const initialPeopleChangedAt =
+      result.rows[0].people_last_changed_at.getTime();
+
+    assert.match(
+      initialPeopleFingerprint,
+      /^[a-f0-9]{64}$/
+    );
+
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    // Same people in reverse source order must NOT look changed.
+    await db.upsertFullRecordBatch([
+      {
+        parsed: fullRecord,
+        raw: raw1440,
+
+        people: [
+          {
+            title: 'MGR',
+            name: 'RYAN TEST TWO',
+            address: {
+              line1: '102 TEST STREET',
+              line2: null,
+              city: 'MIAMI',
+              state: 'FL',
+              zip: '33144'
+            }
+          },
+
+          {
+            title: 'AMBR',
+            name: 'RYAN TEST ONE',
+            address: {
+              line1: '101 TEST STREET',
+              line2: null,
+              city: 'MIAMI',
+              state: 'FL',
+              zip: '33144'
+            }
+          }
+        ]
+      }
+    ]);
+
+    result =
+      await pool.query(
+        `
+          SELECT
+            people_fingerprint,
+            people_last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.full]
+      );
+
+    assert.equal(
+      result.rows[0].people_fingerprint,
+      initialPeopleFingerprint
+    );
+
+    assert.equal(
+      result.rows[0].people_last_changed_at.getTime(),
+      initialPeopleChangedAt
+    );
+
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    // Actual people-state change must advance fingerprint/timestamp.
 
     await db.upsertFullRecordBatch([
       {
@@ -607,6 +696,28 @@ async function run() {
     assert.equal(
       result.rows[0].person_title,
       'CEO'
+    );
+
+    result =
+      await pool.query(
+        `
+          SELECT
+            people_fingerprint,
+            people_last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.full]
+      );
+
+    assert.notEqual(
+      result.rows[0].people_fingerprint,
+      initialPeopleFingerprint
+    );
+
+    assert.ok(
+      result.rows[0].people_last_changed_at.getTime() >
+      initialPeopleChangedAt
     );
 
     // ------------------------------------------------------------------
