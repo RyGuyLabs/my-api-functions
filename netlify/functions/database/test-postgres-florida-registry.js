@@ -105,7 +105,7 @@ async function run() {
 
     await db.initializeSchema();
 
-    pool = db.getPool();
+    pool = await db.getPool();
 
     await cleanup(pool);
 
