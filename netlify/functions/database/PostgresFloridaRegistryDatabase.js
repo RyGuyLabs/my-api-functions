@@ -7,6 +7,7 @@
 const crypto = require("crypto");
 const { toCanonicalString } = require("../source/CanonicalSerializer.js");
 const { detectEntityChanges } = require("../events/EntityChangeDetector.js");
+const { detectPeopleChanges } = require("../events/PeopleChangeDetector.js");
 
 let pgModule = null;
 function getPg() {
@@ -497,7 +498,44 @@ class PostgresFloridaRegistryDatabase {
           );
         }
 
-        // 3. Compare deterministic people/officer state.
+        // 3. Capture previous people/officer state before replacement.
+        const previousPeopleResult =
+          await client.query(
+            `
+            SELECT
+              person_title,
+              name,
+              address_line1,
+              address_line2,
+              city,
+              state,
+              zip
+            FROM florida_people
+            WHERE registration_id = $1
+            `,
+            [dbRecord.registration_id]
+          );
+
+        const previousPeople =
+          previousPeopleResult.rows;
+
+        // Capture whether this entity already had an established
+        // people/officer baseline before this observation.
+        const previousPeopleStateResult =
+          await client.query(
+            `
+            SELECT people_fingerprint
+            FROM florida_entities
+            WHERE registration_id = $1
+            `,
+            [dbRecord.registration_id]
+          );
+
+        const previousPeopleFingerprint =
+          previousPeopleStateResult.rows[0]
+            ?.people_fingerprint ?? null;
+
+        // 4. Compare deterministic people/officer state.
         const peopleFingerprint =
           this._buildPeopleFingerprint(people);
 
@@ -521,13 +559,47 @@ class PostgresFloridaRegistryDatabase {
           ]
         );
 
-        // 4. Delete existing people
+        // 5. Derive and persist normalized officer events.
+        // First observation establishes the people baseline.
+        // Only an already-established baseline may emit change events.
+        if (previousPeopleFingerprint !== null) {
+          const peopleEvents =
+            detectPeopleChanges({
+              entityId:
+                dbRecord.registration_id,
+              beforePeople:
+                previousPeople,
+              afterPeople:
+                people,
+              detectedAt:
+                new Date().toISOString(),
+              effectiveAt:
+                null,
+              sourceType:
+                dbRecord.source_type ||
+                "official_state_dataset",
+              sourceReference: {
+                state: "FL",
+                registrationId:
+                  dbRecord.registration_id
+              },
+              evidenceHash:
+                null
+            });
+
+          await this._persistNormalizedChangeEvents(
+            client,
+            peopleEvents
+          );
+        }
+
+        // 6. Delete existing people
         await client.query(
           'DELETE FROM florida_people WHERE registration_id = $1',
           [dbRecord.registration_id]
         );
 
-        // 5. Insert current people
+        // 7. Insert current people
         if (Array.isArray(people) && people.length > 0) {
           const personInsertSql = `
             INSERT INTO florida_people (
@@ -626,6 +698,16 @@ class PostgresFloridaRegistryDatabase {
         };
       })
       .filter(person => person.name)
+      .filter((person, index, allPeople) => {
+        const canonical =
+          toCanonicalString(person);
+
+        return allPeople.findIndex(
+          candidate =>
+            toCanonicalString(candidate) ===
+            canonical
+        ) === index;
+      })
       .sort((left, right) => {
         const leftCanonical =
           toCanonicalString(left);

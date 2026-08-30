@@ -751,6 +751,103 @@ async function run() {
       resolve => setTimeout(resolve, 25)
     );
 
+    // Exact duplicate source rows must not look like a business change.
+    await db.upsertFullRecordBatch([
+      {
+        parsed: fullRecord,
+        raw: raw1440,
+
+        people: [
+          {
+            title: 'AMBR',
+            name: 'RYAN TEST ONE',
+            address: {
+              line1: '101 TEST STREET',
+              line2: null,
+              city: 'MIAMI',
+              state: 'FL',
+              zip: '33144'
+            }
+          },
+
+          {
+            title: 'MGR',
+            name: 'RYAN TEST TWO',
+            address: {
+              line1: '102 TEST STREET',
+              line2: null,
+              city: 'MIAMI',
+              state: 'FL',
+              zip: '33144'
+            }
+          },
+
+          {
+            title: 'MGR',
+            name: 'RYAN TEST TWO',
+            address: {
+              line1: '102 TEST STREET',
+              line2: null,
+              city: 'MIAMI',
+              state: 'FL',
+              zip: '33144'
+            }
+          }
+        ]
+      }
+    ]);
+
+    result =
+      await pool.query(
+        `
+          SELECT
+            people_fingerprint,
+            people_last_changed_at
+          FROM florida_entities
+          WHERE registration_id = $1
+        `,
+        [IDS.full]
+      );
+
+    assert.equal(
+      result.rows[0].people_fingerprint,
+      initialPeopleFingerprint
+    );
+
+    assert.equal(
+      result.rows[0].people_last_changed_at.getTime(),
+      initialPeopleChangedAt
+    );
+
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    // Baseline, reordered people, and an exact duplicate row
+    // must not create officer events.
+    let officerEventResult =
+      await pool.query(
+        `
+          SELECT
+            event_id,
+            event_type,
+            before_state,
+            after_state
+          FROM normalized_change_events
+          WHERE entity_id = $1
+            AND event_type IN (
+              'OFFICER_ADDED',
+              'OFFICER_REMOVED'
+            )
+        `,
+        [IDS.full]
+      );
+
+    assert.equal(
+      officerEventResult.rowCount,
+      0
+    );
+
     // Actual people-state change must advance fingerprint/timestamp.
 
     await db.upsertFullRecordBatch([
@@ -820,6 +917,112 @@ async function run() {
     assert.ok(
       result.rows[0].people_last_changed_at.getTime() >
       initialPeopleChangedAt
+    );
+
+    officerEventResult =
+      await pool.query(
+        `
+          SELECT
+            event_id,
+            event_type,
+            before_state,
+            after_state
+          FROM normalized_change_events
+          WHERE entity_id = $1
+            AND event_type IN (
+              'OFFICER_ADDED',
+              'OFFICER_REMOVED'
+            )
+          ORDER BY event_type, event_id
+        `,
+        [IDS.full]
+      );
+
+    assert.equal(
+      officerEventResult.rowCount,
+      3
+    );
+
+    const removedOfficerEvents =
+      officerEventResult.rows.filter(
+        event =>
+          event.event_type ===
+          'OFFICER_REMOVED'
+      );
+
+    const addedOfficerEvents =
+      officerEventResult.rows.filter(
+        event =>
+          event.event_type ===
+          'OFFICER_ADDED'
+      );
+
+    assert.equal(
+      removedOfficerEvents.length,
+      2
+    );
+
+    assert.equal(
+      addedOfficerEvents.length,
+      1
+    );
+
+    assert.deepEqual(
+      removedOfficerEvents
+        .map(event => event.before_state.name)
+        .sort(),
+      [
+        'RYAN TEST ONE',
+        'RYAN TEST TWO'
+      ]
+    );
+
+    assert.equal(
+      addedOfficerEvents[0].after_state.name,
+      'REPLACEMENT PERSON'
+    );
+
+    // Reprocessing the already-current people state must not
+    // create duplicate officer events.
+    await db.upsertFullRecordBatch([
+      {
+        parsed: fullRecord,
+        raw: raw1440,
+
+        people: [
+          {
+            title: 'CEO',
+            name: 'REPLACEMENT PERSON',
+            address: {
+              line1:
+                '200 REPLACEMENT STREET',
+              line2: null,
+              city: 'MIAMI',
+              state: 'FL',
+              zip: '33144'
+            }
+          }
+        ]
+      }
+    ]);
+
+    officerEventResult =
+      await pool.query(
+        `
+          SELECT event_id
+          FROM normalized_change_events
+          WHERE entity_id = $1
+            AND event_type IN (
+              'OFFICER_ADDED',
+              'OFFICER_REMOVED'
+            )
+        `,
+        [IDS.full]
+      );
+
+    assert.equal(
+      officerEventResult.rowCount,
+      3
     );
 
     // ------------------------------------------------------------------
