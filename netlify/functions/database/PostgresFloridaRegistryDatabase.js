@@ -6,6 +6,7 @@
 
 const crypto = require("crypto");
 const { toCanonicalString } = require("../source/CanonicalSerializer.js");
+const { detectEntityChanges } = require("../events/EntityChangeDetector.js");
 
 let pgModule = null;
 function getPg() {
@@ -191,6 +192,23 @@ class PostgresFloridaRegistryDatabase {
       `);
 
       await client.query(`
+        CREATE TABLE IF NOT EXISTS normalized_change_events (
+          event_id TEXT PRIMARY KEY,
+          entity_id TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          detected_at TIMESTAMPTZ NOT NULL,
+          effective_at TIMESTAMPTZ,
+          source_type TEXT NOT NULL,
+          source_reference JSONB,
+          before_state JSONB,
+          after_state JSONB,
+          evidence_hash TEXT,
+          event_hash TEXT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+
+      await client.query(`
         CREATE TABLE IF NOT EXISTS ingestion_manifests (
           id SERIAL PRIMARY KEY,
           source TEXT,
@@ -244,6 +262,17 @@ class PostgresFloridaRegistryDatabase {
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_fl_people_name ON florida_people (LOWER(name));
+      `);
+
+      // normalized_change_events indexes
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_change_events_entity
+        ON normalized_change_events (entity_id);
+      `);
+
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_change_events_type_detected
+        ON normalized_change_events (event_type, detected_at DESC);
       `);
 
       // ingestion_manifests indexes
@@ -663,7 +692,85 @@ class PostgresFloridaRegistryDatabase {
       .digest("hex");
   }
 
+  async _persistNormalizedChangeEvents(client, events = []) {
+    for (const event of events) {
+      await client.query(
+        `
+        INSERT INTO normalized_change_events (
+          event_id,
+          entity_id,
+          event_type,
+          detected_at,
+          effective_at,
+          source_type,
+          source_reference,
+          before_state,
+          after_state,
+          evidence_hash,
+          event_hash
+        ) VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7::jsonb, $8::jsonb, $9::jsonb,
+          $10, $11
+        )
+        ON CONFLICT (event_id) DO NOTHING
+        `,
+        [
+          event.eventId,
+          event.entityId,
+          event.eventType,
+          event.detectedAt,
+          event.effectiveAt,
+          event.sourceType,
+          event.sourceReference == null
+            ? null
+            : JSON.stringify(event.sourceReference),
+          event.before == null
+            ? null
+            : JSON.stringify(event.before),
+          event.after == null
+            ? null
+            : JSON.stringify(event.after),
+          event.evidenceHash,
+          event.eventHash
+        ]
+      );
+    }
+  }
+
   async _upsertEntity(client, dbRecord) {
+    const previousResult =
+      await client.query(
+        `
+        SELECT
+          registration_id,
+          company_name,
+          entity_type,
+          status,
+          filing_date,
+          principal_address_line1,
+          principal_address_line2,
+          principal_city,
+          principal_state,
+          principal_zip,
+          mailing_address_line1,
+          mailing_address_line2,
+          mailing_city,
+          mailing_state,
+          mailing_zip,
+          registered_agent_name
+        FROM florida_entities
+        WHERE registration_id = $1
+        FOR UPDATE
+        `,
+        [dbRecord.registration_id]
+      );
+
+    const previousRecord =
+      previousResult.rowCount > 0
+        ? previousResult.rows[0]
+        : null;
+
     const upsertSql = `
       INSERT INTO florida_entities (
         registration_id, company_name, entity_type, status, filing_date,
@@ -749,6 +856,30 @@ class PostgresFloridaRegistryDatabase {
     ];
 
     await client.query(upsertSql, values);
+
+    if (previousRecord) {
+      const events =
+        detectEntityChanges({
+          before: previousRecord,
+          after: dbRecord,
+          detectedAt: new Date().toISOString(),
+          effectiveAt: null,
+          sourceType:
+            dbRecord.source_type ||
+            "official_state_dataset",
+          sourceReference: {
+            state: "FL",
+            registrationId:
+              dbRecord.registration_id
+          },
+          evidenceHash: null
+        });
+
+      await this._persistNormalizedChangeEvents(
+        client,
+        events
+      );
+    }
   }
 
   async search(searchIntent = {}) {

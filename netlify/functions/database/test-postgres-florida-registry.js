@@ -70,6 +70,14 @@ function makeEntity({
 async function cleanup(pool) {
   await pool.query(
     `
+      DELETE FROM normalized_change_events
+      WHERE entity_id LIKE $1
+    `,
+    [`${TEST_PREFIX}%`]
+  );
+
+  await pool.query(
+    `
       DELETE FROM ingestion_manifests
       WHERE source_file = $1
     `,
@@ -402,6 +410,100 @@ async function run() {
     assert.ok(
       changedObservation.last_changed_at.getTime() >
       lastChangedA
+    );
+
+    // ------------------------------------------------------------------
+    // TEST 1B: transactional normalized event persistence
+    // ------------------------------------------------------------------
+
+    console.log(
+      '2B. normalized event persistence'
+    );
+
+    let eventResult =
+      await pool.query(
+        `
+          SELECT
+            event_id,
+            entity_id,
+            event_type,
+            before_state,
+            after_state,
+            event_hash
+          FROM normalized_change_events
+          WHERE entity_id = $1
+          ORDER BY created_at ASC
+        `,
+        [IDS.change]
+      );
+
+    // A -> A -> metadata-only A -> B must produce exactly
+    // one durable business-change event.
+    assert.equal(
+      eventResult.rowCount,
+      1
+    );
+
+    assert.equal(
+      eventResult.rows[0].entity_id,
+      IDS.change
+    );
+
+    assert.equal(
+      eventResult.rows[0].event_type,
+      'STATUS_CHANGED'
+    );
+
+    assert.deepEqual(
+      eventResult.rows[0].before_state,
+      {
+        status: 'ACTIVE'
+      }
+    );
+
+    assert.deepEqual(
+      eventResult.rows[0].after_state,
+      {
+        status: 'INACTIVE'
+      }
+    );
+
+    assert.match(
+      eventResult.rows[0].event_hash,
+      /^[a-f0-9]{64}$/
+    );
+
+    const persistedEventId =
+      eventResult.rows[0].event_id;
+
+    // Reprocessing the already-current B state must not create
+    // another event.
+    await new Promise(
+      resolve => setTimeout(resolve, 25)
+    );
+
+    await db.upsertRecord(changeB);
+
+    eventResult =
+      await pool.query(
+        `
+          SELECT
+            event_id,
+            event_type
+          FROM normalized_change_events
+          WHERE entity_id = $1
+        `,
+        [IDS.change]
+      );
+
+    assert.equal(
+      eventResult.rowCount,
+      1
+    );
+
+    assert.equal(
+      eventResult.rows[0].event_id,
+      persistedEventId
     );
 
     // ------------------------------------------------------------------
