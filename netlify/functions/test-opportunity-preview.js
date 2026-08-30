@@ -523,6 +523,86 @@ async function run() {
     400
   );
 
+  console.log(
+    "9. invalid detectedAt is rejected as client error"
+  );
+
+  const invalidTimestamp =
+    await handler(
+      request({
+        ...baseBody,
+        detectedAt:
+          "not-a-date"
+      })
+    );
+
+  assert.equal(
+    invalidTimestamp.statusCode,
+    400
+  );
+
+  console.log(
+    "10. missing customer profile ID is rejected"
+  );
+
+  const missingProfileId =
+    await handler(
+      request({
+        ...baseBody,
+
+        customerProfile: {
+          ...baseBody.customerProfile,
+          profileId:
+            ""
+        }
+      })
+    );
+
+  assert.equal(
+    missingProfileId.statusCode,
+    400
+  );
+
+  console.log(
+    "11. mismatched registration IDs are rejected"
+  );
+
+  const mismatchedEntity =
+    await handler(
+      request({
+        ...baseBody,
+
+        after: {
+          ...baseBody.after,
+          registration_id:
+            "L99999999999"
+        }
+      })
+    );
+
+  assert.equal(
+    mismatchedEntity.statusCode,
+    400
+  );
+
+  console.log(
+    "12. invalid optional asOf timestamp is rejected"
+  );
+
+  const invalidAsOf =
+    await handler(
+      request({
+        ...baseBody,
+        asOf:
+          "definitely-not-a-date"
+      })
+    );
+
+  assert.equal(
+    invalidAsOf.statusCode,
+    400
+  );
+
   console.log("");
   console.log(
     "Opportunity Preview handler test PASSED."

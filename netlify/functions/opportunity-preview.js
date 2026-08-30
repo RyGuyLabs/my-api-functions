@@ -113,6 +113,123 @@ function requireObject(
   return value;
 }
 
+function badRequest(message) {
+  const error =
+    new Error(message);
+
+  error.statusCode = 400;
+
+  return error;
+}
+
+function requireNonEmptyString(
+  value,
+  fieldName
+) {
+  if (
+    typeof value !== "string" ||
+    !value.trim()
+  ) {
+    throw badRequest(
+      `Request requires '${fieldName}'.`
+    );
+  }
+
+  return value.trim();
+}
+
+function validateTimestamp(
+  value,
+  fieldName,
+  {
+    required = false
+  } = {}
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    if (required) {
+      throw badRequest(
+        `Request requires '${fieldName}'.`
+      );
+    }
+
+    return null;
+  }
+
+  if (
+    typeof value !== "string" ||
+    Number.isNaN(
+      new Date(value).getTime()
+    )
+  ) {
+    throw badRequest(
+      `'${fieldName}' must be a valid timestamp.`
+    );
+  }
+
+  return value;
+}
+
+function validateRequestContract({
+  before,
+  after,
+  customerProfile,
+  lead,
+  body
+}) {
+  const beforeRegistrationId =
+    requireNonEmptyString(
+      before.registration_id,
+      "before.registration_id"
+    );
+
+  const afterRegistrationId =
+    requireNonEmptyString(
+      after.registration_id,
+      "after.registration_id"
+    );
+
+  if (
+    beforeRegistrationId !==
+    afterRegistrationId
+  ) {
+    throw badRequest(
+      "before.registration_id and after.registration_id must match."
+    );
+  }
+
+  requireNonEmptyString(
+    customerProfile.profileId,
+    "customerProfile.profileId"
+  );
+
+  requireNonEmptyString(
+    lead.prospectId,
+    "lead.prospectId"
+  );
+
+  validateTimestamp(
+    body.detectedAt,
+    "detectedAt",
+    {
+      required: true
+    }
+  );
+
+  validateTimestamp(
+    body.effectiveAt,
+    "effectiveAt"
+  );
+
+  validateTimestamp(
+    body.asOf,
+    "asOf"
+  );
+}
+
 async function handler(event) {
   const requestHeaders =
     headers();
@@ -179,19 +296,13 @@ async function handler(event) {
         "lead"
       );
 
-    if (
-      typeof body.detectedAt !== "string" ||
-      !body.detectedAt.trim()
-    ) {
-      const error =
-        new Error(
-          "Request requires 'detectedAt'."
-        );
-
-      error.statusCode = 400;
-
-      throw error;
-    }
+    validateRequestContract({
+      before,
+      after,
+      customerProfile,
+      lead,
+      body
+    });
 
     const format =
       String(
@@ -344,5 +455,8 @@ exports.handler =
 
 module.exports._test = {
   parseBody,
-  requireObject
+  requireObject,
+  requireNonEmptyString,
+  validateTimestamp,
+  validateRequestContract
 };
