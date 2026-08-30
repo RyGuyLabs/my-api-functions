@@ -59,7 +59,11 @@ async function runE2ETest() {
 
     assert.ok(rawRow, "Raw record row for L26000432480 must exist in florida_raw_records");
     assert.ok(rawRow.raw_line, "raw_line column must exist");
-    assert.strictEqual(rawRow.raw_line.length, 1440, "raw_line length must be exactly 1440 characters");
+    assert.strictEqual(
+      Buffer.byteLength(rawRow.raw_line, "utf8"),
+      1440,
+      "raw_line length must be exactly 1440 bytes"
+    );
 
     // People/Officer Table Assertions (florida_people)
     const personRow = db.db

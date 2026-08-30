@@ -104,11 +104,30 @@ class PostgresFloridaRegistryDatabase {
       await client.query(`
         CREATE TABLE IF NOT EXISTS florida_raw_records (
           registration_id TEXT PRIMARY KEY REFERENCES florida_entities(registration_id) ON DELETE CASCADE,
-          raw_line TEXT,
+          raw_line BYTEA,
           source_file TEXT,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+      `);
+
+      await client.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'florida_raw_records'
+              AND column_name = 'raw_line'
+              AND data_type = 'text'
+          ) THEN
+            ALTER TABLE florida_raw_records
+              ALTER COLUMN raw_line TYPE BYTEA
+              USING convert_to(raw_line, 'UTF8');
+          END IF;
+        END
+        $$;
       `);
 
       await client.query(`
@@ -377,7 +396,19 @@ class PostgresFloridaRegistryDatabase {
 
         // 2. Upsert Raw Record if present
         if (raw) {
-          const rawLine = typeof raw === 'string' ? raw : raw.raw_line || raw.rawLine || null;
+          const rawLineValue =
+            Buffer.isBuffer(raw)
+              ? raw
+              : typeof raw === 'string'
+                ? raw
+                : raw.raw_line || raw.rawLine || null;
+
+          const rawLine =
+            rawLineValue == null
+              ? null
+              : Buffer.isBuffer(rawLineValue)
+                ? rawLineValue
+                : Buffer.from(String(rawLineValue), 'utf8');
           const rawSourceFile = (typeof raw === 'object' && raw.source_file) || dbRecord.source_file;
 
           await client.query(

@@ -66,9 +66,9 @@ async function runTest() {
 
   // Raw line Assertion
   assert.strictEqual(
-    raw.length,
+    Buffer.byteLength(raw, "utf8"),
     1440,
-    "Raw record line must be exactly 1,440 characters"
+    "Raw record line must be exactly 1,440 bytes"
   );
 
   // People/Officer Assertions

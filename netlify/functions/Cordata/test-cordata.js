@@ -16,13 +16,42 @@ function runValidation() {
 
   const records = fileContent
     .split(/\r?\n/)
-    .filter(line => line.length === 1440);
+    .filter(line => Buffer.byteLength(line, 'utf8') === 1440);
 
-  console.log(`Loaded ${records.length} exact 1,440-character records.\n`);
+  console.log(`Loaded ${records.length} exact 1,440-byte records.\n`);
 
   if (records.length === 0) {
-    console.error('No exact 1,440-character records found.');
+    console.error('No exact 1,440-byte records found.');
     process.exit(1);
+  }
+
+  // Regression: multibyte UTF-8 text must not shift later byte-offset fields.
+  const regressionBuffer = Buffer.alloc(1440, 0x20);
+
+  regressionBuffer.write('T12345678901', 0, 'ascii');
+  regressionBuffer.write('O’BRIEN UTF8 LLC', 12, 'utf8');
+  regressionBuffer.write('TEST ', 204, 'ascii');
+  regressionBuffer.write('08302026', 472, 'ascii');
+  regressionBuffer.write('FL', 503, 'ascii');
+  regressionBuffer.fill(0x00, 1436, 1440);
+
+  const regressionRaw = regressionBuffer.toString('utf8');
+  const regressionParsed = parseCordataRecord(regressionRaw);
+
+  if (Buffer.byteLength(regressionRaw, 'utf8') !== 1440) {
+    throw new Error('UTF-8 regression fixture must remain exactly 1,440 bytes');
+  }
+
+  if (regressionParsed.company.legalName !== 'O’BRIEN UTF8 LLC') {
+    throw new Error(
+      `UTF-8 legal-name regression failed: ${regressionParsed.company.legalName}`
+    );
+  }
+
+  if (regressionParsed.company.filingDate !== '08302026') {
+    throw new Error(
+      `UTF-8 byte-offset regression shifted filingDate: ${regressionParsed.company.filingDate}`
+    );
   }
 
   const sampleCount = Math.min(20, records.length);
@@ -40,9 +69,12 @@ function runValidation() {
         throw new Error('Missing legal name');
       }
 
-      if (parsed.rawRecord.length !== 1440) {
+      const parsedByteLength =
+        Buffer.byteLength(parsed.rawRecord, 'utf8');
+
+      if (parsedByteLength !== 1440) {
         throw new Error(
-          `Raw record length changed: ${parsed.rawRecord.length}`
+          `Raw record byte length changed: ${parsedByteLength}`
         );
       }
     } catch (err) {

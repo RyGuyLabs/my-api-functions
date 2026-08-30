@@ -143,8 +143,8 @@ class FloridaIngestionService {
       return null;
     }
 
-    // Require exactly 1,440 characters for state fixed-width specification
-    if (line.length !== this.expectedRecordLength) {
+    // Require exactly 1,440 bytes for the state fixed-width specification.
+    if (Buffer.byteLength(line, 'utf8') !== this.expectedRecordLength) {
       return null;
     }
 

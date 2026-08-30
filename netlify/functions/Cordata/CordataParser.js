@@ -7,7 +7,12 @@ function sliceField(record, fieldDef) {
   if (record.length < fieldDef.end) {
     return '';
   }
-  return record.slice(fieldDef.start, fieldDef.end).trim();
+
+  const chunk = record.slice(fieldDef.start, fieldDef.end);
+
+  return Buffer.isBuffer(chunk)
+    ? chunk.toString('utf8').trim()
+    : chunk.trim();
 }
 
 function sliceRawField(record, fieldDef) {
@@ -17,7 +22,12 @@ function sliceRawField(record, fieldDef) {
   if (record.length < fieldDef.end) {
     return '';
   }
-  return record.slice(fieldDef.start, fieldDef.end);
+
+  const chunk = record.slice(fieldDef.start, fieldDef.end);
+
+  return Buffer.isBuffer(chunk)
+    ? chunk.toString('utf8')
+    : chunk;
 }
 
 function parseStateAndZip(chunk) {
@@ -33,24 +43,29 @@ function parseStateAndZip(chunk) {
 
 export class CordataParser {
   static parseRecord(rawRecord, fieldMap = CORDATA_FIELD_MAP) {
-    if (!rawRecord || rawRecord.length < fieldMap.RECORD_LENGTH) {
+    const recordBuffer =
+      Buffer.isBuffer(rawRecord)
+        ? rawRecord
+        : Buffer.from(String(rawRecord || ''), 'utf8');
+
+    if (recordBuffer.length < fieldMap.RECORD_LENGTH) {
       throw new Error(
-        `Record length ${rawRecord ? rawRecord.length : 0} is less than required ${fieldMap.RECORD_LENGTH}`
+        `Record byte length ${recordBuffer.length} is less than required ${fieldMap.RECORD_LENGTH}`
       );
     }
 
     const map = fieldMap;
 
     // Header / Corporate Identification
-    const documentNumber = sliceField(rawRecord, map.header.documentNumber);
-    const legalName = sliceField(rawRecord, map.header.legalName);
-    const classificationCode = sliceField(rawRecord, map.header.classificationCode);
-    const reservedPadding = sliceField(rawRecord, map.header.reservedPadding);
-    const filingDate = sliceField(rawRecord, map.header.filingDate);
-    const feiNumber = sliceField(rawRecord, map.header.feiNumber);
-    const feiStatusRaw = sliceField(rawRecord, map.header.feiStatusRaw);
-    const jurisdictionCode = sliceField(rawRecord, map.header.jurisdictionCode);
-    const reservedTail = sliceField(rawRecord, map.header.reservedTail);
+    const documentNumber = sliceField(recordBuffer, map.header.documentNumber);
+    const legalName = sliceField(recordBuffer, map.header.legalName);
+    const classificationCode = sliceField(recordBuffer, map.header.classificationCode);
+    const reservedPadding = sliceField(recordBuffer, map.header.reservedPadding);
+    const filingDate = sliceField(recordBuffer, map.header.filingDate);
+    const feiNumber = sliceField(recordBuffer, map.header.feiNumber);
+    const feiStatusRaw = sliceField(recordBuffer, map.header.feiStatusRaw);
+    const jurisdictionCode = sliceField(recordBuffer, map.header.jurisdictionCode);
+    const reservedTail = sliceField(recordBuffer, map.header.reservedTail);
 
     const company = {
       documentNumber,
@@ -66,20 +81,20 @@ export class CordataParser {
 
     // Principal Address
     const principalAddress = {
-      address1: sliceField(rawRecord, map.principalAddress.address1),
-      city:     sliceField(rawRecord, map.principalAddress.city),
-      state:    sliceField(rawRecord, map.principalAddress.state),
-      zip:      sliceField(rawRecord, map.principalAddress.zip),
-      country:  sliceField(rawRecord, map.principalAddress.country)
+      address1: sliceField(recordBuffer, map.principalAddress.address1),
+      city:     sliceField(recordBuffer, map.principalAddress.city),
+      state:    sliceField(recordBuffer, map.principalAddress.state),
+      zip:      sliceField(recordBuffer, map.principalAddress.zip),
+      country:  sliceField(recordBuffer, map.principalAddress.country)
     };
 
     // Mailing Address
     const mailingAddress = {
-      address1: sliceField(rawRecord, map.mailingAddress.address1),
-      city:     sliceField(rawRecord, map.mailingAddress.city),
-      state:    sliceField(rawRecord, map.mailingAddress.state),
-      zip:      sliceField(rawRecord, map.mailingAddress.zip),
-      country:  sliceField(rawRecord, map.mailingAddress.country)
+      address1: sliceField(recordBuffer, map.mailingAddress.address1),
+      city:     sliceField(recordBuffer, map.mailingAddress.city),
+      state:    sliceField(recordBuffer, map.mailingAddress.state),
+      zip:      sliceField(recordBuffer, map.mailingAddress.zip),
+      country:  sliceField(recordBuffer, map.mailingAddress.country)
     };
 
     const people = [];
@@ -87,15 +102,15 @@ export class CordataParser {
     // Slot 1 Processing
     if (map.slot1) {
       const s1 = map.slot1;
-      const role = sliceField(rawRecord, s1.code);
-      const year = sliceField(rawRecord, s1.year);
-      const lastNameOrg = sliceField(rawRecord, s1.lastNameOrg);
-      const firstName = sliceField(rawRecord, s1.firstName);
-      const middleInitial = sliceField(rawRecord, s1.middleInitial);
-      const addressPrefix = sliceField(rawRecord, s1.addressPrefix);
-      const street = sliceField(rawRecord, s1.streetAddress);
-      const city = sliceField(rawRecord, s1.city);
-      const stateZipChunk = sliceField(rawRecord, s1.stateZipChunk);
+      const role = sliceField(recordBuffer, s1.code);
+      const year = sliceField(recordBuffer, s1.year);
+      const lastNameOrg = sliceField(recordBuffer, s1.lastNameOrg);
+      const firstName = sliceField(recordBuffer, s1.firstName);
+      const middleInitial = sliceField(recordBuffer, s1.middleInitial);
+      const addressPrefix = sliceField(recordBuffer, s1.addressPrefix);
+      const street = sliceField(recordBuffer, s1.streetAddress);
+      const city = sliceField(recordBuffer, s1.city);
+      const stateZipChunk = sliceField(recordBuffer, s1.stateZipChunk);
       const stateZip = parseStateAndZip(stateZipChunk);
 
       if (
@@ -137,11 +152,11 @@ export class CordataParser {
         const slotStart = startOffset + i * stride;
         const slotEnd = slotStart + stride;
 
-        if (rawRecord.length < slotEnd) {
+        if (recordBuffer.length < slotEnd) {
           break;
         }
 
-        const slotChunk = rawRecord.slice(slotStart, slotEnd);
+        const slotChunk = recordBuffer.slice(slotStart, slotEnd);
 
         const role = sliceField(slotChunk, sub.role);
         const entityType = sliceField(slotChunk, sub.entityType);

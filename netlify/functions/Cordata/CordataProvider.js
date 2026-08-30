@@ -7,8 +7,13 @@ export class CordataProvider {
   }
 
   processRecord(rawRecord) {
-    if (!rawRecord || rawRecord.length !== 1440) {
-      throw new Error(`Invalid record length: ${rawRecord ? rawRecord.length : 0}. Expected 1440.`);
+    const recordByteLength =
+      Buffer.isBuffer(rawRecord)
+        ? rawRecord.length
+        : Buffer.byteLength(String(rawRecord || ''), 'utf8');
+
+    if (!rawRecord || recordByteLength !== 1440) {
+      throw new Error(`Invalid record byte length: ${recordByteLength}. Expected 1440.`);
     }
 
     const parsed = parseCordataRecord(rawRecord);
@@ -72,7 +77,9 @@ export class CordataProvider {
     const evidenceLedger = {
       rawRecord: parsed.rawRecord,
       schemaVersion: 'DOS_1440_FIXED_WIDTH',
-      recordLength: parsed.rawRecord.length
+      recordLength: Buffer.isBuffer(parsed.rawRecord)
+        ? parsed.rawRecord.length
+        : Buffer.byteLength(parsed.rawRecord, 'utf8')
     };
 
    return {

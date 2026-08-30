@@ -225,7 +225,7 @@ async function run() {
     );
 
     const raw1440 =
-      'R'.repeat(1440);
+      'R'.repeat(1436) + '\0'.repeat(4);
 
     const fullRecord =
       makeEntity({
@@ -289,12 +289,17 @@ async function run() {
     );
 
     assert.equal(
+      Buffer.isBuffer(result.rows[0].raw_line),
+      true
+    );
+
+    assert.equal(
       result.rows[0].raw_line.length,
       1440
     );
 
     assert.equal(
-      result.rows[0].raw_line,
+      result.rows[0].raw_line.toString('utf8'),
       raw1440
     );
 
