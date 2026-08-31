@@ -964,6 +964,109 @@ class PostgresFloridaRegistryDatabase {
     }
   }
 
+  async findCompanyMatches({
+    companyName,
+    city = null,
+    state = "FL",
+    limit = 10
+  } = {}) {
+    const cleanName =
+      String(companyName || "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!cleanName) {
+      return [];
+    }
+
+    const cleanState =
+      String(state || "FL")
+        .trim()
+        .toUpperCase();
+
+    if (cleanState !== "FL") {
+      return [];
+    }
+
+    let normalizedLimit =
+      Number.parseInt(limit, 10);
+
+    if (!Number.isFinite(normalizedLimit)) {
+      normalizedLimit = 10;
+    }
+
+    normalizedLimit =
+      Math.min(
+        Math.max(normalizedLimit, 1),
+        25
+      );
+
+    const pool =
+      await this.getPool();
+
+    const params = [
+      cleanName,
+      `%${cleanName}%`
+    ];
+
+    let cityClause = "";
+
+    if (
+      typeof city === "string" &&
+      city.trim()
+    ) {
+      params.push(
+        city.trim()
+      );
+
+      cityClause = `
+        AND (
+          TRIM(LOWER(principal_city)) = LOWER($3)
+          OR TRIM(LOWER(mailing_city)) = LOWER($3)
+        )
+      `;
+    }
+
+    params.push(
+      normalizedLimit
+    );
+
+    const limitParam =
+      `$${params.length}`;
+
+    const querySql = `
+      SELECT *
+      FROM florida_entities
+      WHERE
+        (
+          LOWER(company_name) = LOWER($1)
+          OR LOWER(company_name) LIKE LOWER($2)
+        )
+        ${cityClause}
+      ORDER BY
+        CASE
+          WHEN LOWER(company_name) = LOWER($1)
+            THEN 0
+          ELSE 1
+        END,
+        LENGTH(company_name) ASC,
+        company_name ASC
+      LIMIT ${limitParam};
+    `;
+
+    const result =
+      await pool.query(
+        querySql,
+        params
+      );
+
+    return result.rows
+      .map(row =>
+        this.normalizeRecord(row)
+      )
+      .filter(Boolean);
+  }
+
   async search(searchIntent = {}) {
     const geography = searchIntent.geography || {};
 
