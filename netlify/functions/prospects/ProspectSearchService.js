@@ -1,7 +1,8 @@
 class ProspectSearchService {
   constructor({
     discoveryProvider,
-    registryReconciler = null
+    registryReconciler = null,
+    enrichmentProvider = null
   } = {}) {
     if (!discoveryProvider) {
       throw new Error(
@@ -14,6 +15,9 @@ class ProspectSearchService {
 
     this.registryReconciler =
       registryReconciler;
+
+    this.enrichmentProvider =
+      enrichmentProvider;
   }
 
   normalizeText(value) {
@@ -158,7 +162,8 @@ class ProspectSearchService {
     industry,
     city,
     state = "FL",
-    discoveryLimit = 10
+    discoveryLimit = 10,
+    autoEnrichLimit = 0
   } = {}) {
     const cleanIndustry =
       this.normalizeText(
@@ -370,6 +375,107 @@ class ProspectSearchService {
           )
     );
 
+    let normalizedAutoEnrichLimit =
+      Number.parseInt(
+        autoEnrichLimit,
+        10
+      );
+
+    if (
+      !Number.isFinite(
+        normalizedAutoEnrichLimit
+      )
+    ) {
+      normalizedAutoEnrichLimit = 0;
+    }
+
+    normalizedAutoEnrichLimit =
+      Math.min(
+        Math.max(
+          normalizedAutoEnrichLimit,
+          0
+        ),
+        10
+      );
+
+    const enrichCount =
+      this.enrichmentProvider
+        ? Math.min(
+            normalizedAutoEnrichLimit,
+            prospects.length
+          )
+        : 0;
+
+    for (
+      let index = 0;
+      index < enrichCount;
+      index++
+    ) {
+      const prospect =
+        prospects[index];
+
+      try {
+        const entity =
+          prospect?.registry?.entity ||
+          {
+            companyName:
+              prospect.prospectName,
+
+            website:
+              prospect.website,
+
+            location: {
+              city:
+                cleanCity || null,
+
+              state:
+                cleanState
+            }
+          };
+
+        const candidateInfo = {
+          candidateName:
+            prospect.candidateName,
+
+          candidateDomain:
+            prospect.candidateDomain,
+
+          formattedUrl:
+            prospect.website,
+
+          website:
+            prospect.website
+        };
+
+        const enrichmentResult =
+          await this.enrichmentProvider.enrich(
+            entity,
+            candidateInfo
+          );
+
+        prospect.enrichment = {
+          status:
+            enrichmentResult?.enrichmentStatus ||
+            enrichmentResult?.status ||
+            "complete",
+
+          data:
+            enrichmentResult ||
+            null
+        };
+
+      } catch (error) {
+        prospect.enrichment = {
+          status:
+            "failed",
+
+          error:
+            error?.message ||
+            "Enrichment failed."
+        };
+      }
+    }
+
     return {
       status:
         "success",
@@ -393,6 +499,12 @@ class ProspectSearchService {
 
       excludedCount:
         excludedSources.length,
+
+      autoEnrichLimit:
+        normalizedAutoEnrichLimit,
+
+      enrichedCount:
+        enrichCount,
 
       prospects,
 

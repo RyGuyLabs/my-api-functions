@@ -83,6 +83,34 @@ const fakeDiscoveryProvider = {
   }
 };
 
+const enrichmentCalls = [];
+
+const fakeEnrichmentProvider = {
+  async enrich(entity, candidateInfo) {
+    enrichmentCalls.push({
+      companyName:
+        entity?.companyName ||
+        null,
+
+      candidateName:
+        candidateInfo?.candidateName ||
+        null
+    });
+
+    return {
+      enrichmentStatus:
+        "complete",
+
+      website:
+        candidateInfo?.formattedUrl ||
+        null,
+
+      emails: [],
+      phones: []
+    };
+  }
+};
+
 const fakeRegistryReconciler = {
   async reconcile(candidate) {
     if (
@@ -131,7 +159,10 @@ const fakeRegistryReconciler = {
         fakeDiscoveryProvider,
 
       registryReconciler:
-        fakeRegistryReconciler
+        fakeRegistryReconciler,
+
+      enrichmentProvider:
+        fakeEnrichmentProvider
     });
 
   console.log(
@@ -216,7 +247,83 @@ const fakeRegistryReconciler = {
   );
 
   console.log(
-    "5. missing industry is rejected"
+    "5. ranking completes before selective enrichment"
+  );
+
+  enrichmentCalls.length = 0;
+
+  const enrichedResult =
+    await service.search({
+      industry:
+        "solar contractor",
+      city:
+        "Tampa",
+      state:
+        "FL",
+      autoEnrichLimit:
+        1
+    });
+
+  assert.strictEqual(
+    enrichedResult.enrichedCount,
+    1
+  );
+
+  assert.strictEqual(
+    enrichmentCalls.length,
+    1
+  );
+
+  assert.strictEqual(
+    enrichmentCalls[0].candidateName,
+    enrichedResult.prospects[0].candidateName
+  );
+
+  assert.strictEqual(
+    enrichedResult.prospects[0].enrichment.status,
+    "complete"
+  );
+
+  assert.strictEqual(
+    enrichedResult.prospects[1].enrichment.status,
+    "not_attempted"
+  );
+
+  console.log(
+    "6. auto enrichment is capped at ten prospects"
+  );
+
+  enrichmentCalls.length = 0;
+
+  const cappedResult =
+    await service.search({
+      industry:
+        "solar contractor",
+      city:
+        "Tampa",
+      state:
+        "FL",
+      autoEnrichLimit:
+        999
+    });
+
+  assert.strictEqual(
+    cappedResult.autoEnrichLimit,
+    10
+  );
+
+  assert.strictEqual(
+    cappedResult.enrichedCount,
+    2
+  );
+
+  assert.strictEqual(
+    enrichmentCalls.length,
+    2
+  );
+
+  console.log(
+    "7. missing industry is rejected"
   );
 
   await assert.rejects(
