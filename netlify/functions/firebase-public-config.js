@@ -53,7 +53,12 @@ function buildFirebasePublicConfig(
     env.FIREBASE_API_KEY || null;
 
   const projectId =
-    env.FIREBASE_PROJECT_ID || null;
+    env.FIREBASE_PROJECT_ID ||
+    env.FIRESTORE_PROJECT_ID ||
+    env.GOOGLE_CLOUD_PROJECT ||
+    env.GCLOUD_PROJECT ||
+    env.GCP_PROJECT ||
+    null;
 
   const appId =
     env.FIREBASE_APP_ID || null;

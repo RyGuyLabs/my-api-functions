@@ -25,3 +25,6 @@ Thumbs.db
 # Temporary SQLite artifacts
 *.db-wal
 *.db-shm
+
+# Local Netlify folder
+.netlify
