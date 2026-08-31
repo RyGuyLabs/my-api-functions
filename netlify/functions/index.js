@@ -3,6 +3,8 @@ const admin = require("firebase-admin");
 const crypto = require("crypto");
 
 const { runLeadPipeline } = require("./pipeline/runLeadPipeline.js");
+const { OfficialFloridaProvider } = require("./providers/OfficialFloridaProvider.js");
+const { PostgresFloridaRegistryDatabase } = require("./database/PostgresFloridaRegistryDatabase.js");
 
 if (!admin.apps.length) {
   const serviceAccount = JSON.parse(
@@ -210,18 +212,60 @@ function normalizePipelineInput(params = {}) {
 // Firebase and Netlify both call this exact same function.
 // ============================================================================
 
+let floridaRegistryDatabase = null;
+let officialFloridaProvider = null;
+
+function getOfficialFloridaProvider() {
+  if (!process.env.DATABASE_URL) {
+    return null;
+  }
+
+  if (!floridaRegistryDatabase) {
+    floridaRegistryDatabase =
+      new PostgresFloridaRegistryDatabase({
+        connectionString:
+          process.env.DATABASE_URL
+      });
+  }
+
+  if (!officialFloridaProvider) {
+    officialFloridaProvider =
+      new OfficialFloridaProvider({
+        database:
+          floridaRegistryDatabase
+      });
+  }
+
+  return officialFloridaProvider;
+}
+
 async function executeCorePipeline(
   params = {}
 ) {
   const normalizedInput =
     normalizePipelineInput(params);
 
+  const requestedState =
+    String(
+      normalizedInput?.geoContext?.states?.[0] ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const provider =
+    requestedState === "FL"
+      ? getOfficialFloridaProvider()
+      : null;
+
   return await runLeadPipeline({
     geoContext:
       normalizedInput.geoContext,
 
     filters:
-      normalizedInput.filters
+      normalizedInput.filters,
+
+    provider
   });
 }
 
