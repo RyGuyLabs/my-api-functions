@@ -1,8 +1,31 @@
 const assert = require("node:assert/strict");
 
+const opportunityPreview =
+  require("./opportunity-preview.js");
+
 const {
-  handler
-} = require("./opportunity-preview.js");
+  createHandler
+} = opportunityPreview._test;
+
+const handler =
+  createHandler({
+    verifyIdToken:
+      async token => {
+        if (
+          token !==
+          "valid-test-token"
+        ) {
+          throw new Error(
+            "Invalid test token."
+          );
+        }
+
+        return {
+          uid:
+            "test-user-001"
+        };
+      }
+  });
 
 const baseBody = {
   before: {
@@ -250,10 +273,19 @@ const baseBody = {
 
 function request(
   body,
-  httpMethod = "POST"
+  httpMethod = "POST",
+  token = "valid-test-token"
 ) {
   return {
     httpMethod,
+
+    headers: token
+      ? {
+          Authorization:
+            `Bearer ${token}`
+        }
+      : {},
+
     body:
       typeof body === "string"
         ? body
@@ -308,7 +340,43 @@ async function run() {
   );
 
   console.log(
-    "3. invalid JSON is rejected"
+    "3. POST without authentication is rejected"
+  );
+
+  const missingAuth =
+    await handler(
+      request(
+        baseBody,
+        "POST",
+        null
+      )
+    );
+
+  assert.equal(
+    missingAuth.statusCode,
+    401
+  );
+
+  console.log(
+    "4. POST with invalid Firebase token is rejected"
+  );
+
+  const invalidAuth =
+    await handler(
+      request(
+        baseBody,
+        "POST",
+        "invalid-test-token"
+      )
+    );
+
+  assert.equal(
+    invalidAuth.statusCode,
+    401
+  );
+
+  console.log(
+    "5. invalid JSON is rejected after authentication"
   );
 
   const invalidJson =
@@ -324,7 +392,7 @@ async function run() {
   );
 
   console.log(
-    "4. matched activation returns JSON opportunity"
+    "6. matched activation returns JSON opportunity"
   );
 
   const jsonResponse =
@@ -384,7 +452,7 @@ async function run() {
   );
 
   console.log(
-    "5. non-matching customer profile filters opportunity"
+    "7. non-matching customer profile filters opportunity"
   );
 
   const mismatchBody = {
@@ -435,7 +503,7 @@ async function run() {
   );
 
   console.log(
-    "6. replay returns deterministic opportunity identity"
+    "8. replay returns deterministic opportunity identity"
   );
 
   const replayResponse =
@@ -458,7 +526,7 @@ async function run() {
   );
 
   console.log(
-    "7. CSV format returns downloadable CSV"
+    "9. CSV format returns downloadable CSV"
   );
 
   const csvBody = {
@@ -506,7 +574,7 @@ async function run() {
   );
 
   console.log(
-    "8. invalid format is rejected"
+    "10. invalid format is rejected"
   );
 
   const invalidFormat =
@@ -524,7 +592,7 @@ async function run() {
   );
 
   console.log(
-    "9. invalid detectedAt is rejected as client error"
+    "11. invalid detectedAt is rejected as client error"
   );
 
   const invalidTimestamp =
@@ -542,7 +610,7 @@ async function run() {
   );
 
   console.log(
-    "10. missing customer profile ID is rejected"
+    "12. missing customer profile ID is rejected"
   );
 
   const missingProfileId =
@@ -564,7 +632,7 @@ async function run() {
   );
 
   console.log(
-    "11. mismatched registration IDs are rejected"
+    "13. mismatched registration IDs are rejected"
   );
 
   const mismatchedEntity =
@@ -586,7 +654,7 @@ async function run() {
   );
 
   console.log(
-    "12. invalid optional asOf timestamp is rejected"
+    "14. invalid optional asOf timestamp is rejected"
   );
 
   const invalidAsOf =

@@ -1,3 +1,5 @@
+const admin = require("firebase-admin");
+
 const {
   detectEntityChanges
 } = require("./events/EntityChangeDetector.js");
@@ -19,6 +21,27 @@ const {
   opportunitiesToCsv
 } = require("./exports/OpportunityExport.js");
 
+try {
+  if (
+    !admin.apps.length &&
+    process.env.FIREBASE_SERVICE_ACCOUNT
+  ) {
+    admin.initializeApp({
+      credential:
+        admin.credential.cert(
+          JSON.parse(
+            process.env.FIREBASE_SERVICE_ACCOUNT
+          )
+        )
+    });
+  }
+} catch (error) {
+  console.error(
+    "Opportunity preview Firebase initialization failed:",
+    error.message
+  );
+}
+
 const ALLOWED_ORIGIN =
   "https://www.ryguylabs.com";
 
@@ -28,7 +51,7 @@ function headers(contentType = "application/json") {
       ALLOWED_ORIGIN,
 
     "Access-Control-Allow-Headers":
-      "Content-Type",
+      "Content-Type, Authorization",
 
     "Access-Control-Allow-Methods":
       "POST, OPTIONS",
@@ -230,7 +253,56 @@ function validateRequestContract({
   );
 }
 
-async function handler(event) {
+async function verifyFirebaseIdToken(
+  idToken
+) {
+  if (!admin.apps.length) {
+    throw new Error(
+      "Firebase Admin is not initialized."
+    );
+  }
+
+  return admin
+    .auth()
+    .verifyIdToken(
+      idToken,
+      true
+    );
+}
+
+function getBearerToken(event) {
+  const authorization =
+    event &&
+    event.headers &&
+    (
+      event.headers.authorization ||
+      event.headers.Authorization
+    );
+
+  if (
+    typeof authorization !== "string" ||
+    !authorization.startsWith(
+      "Bearer "
+    )
+  ) {
+    return null;
+  }
+
+  const token =
+    authorization
+      .substring(
+        "Bearer ".length
+      )
+      .trim();
+
+  return token || null;
+}
+
+function createHandler({
+  verifyIdToken =
+    verifyFirebaseIdToken
+} = {}) {
+  return async function handler(event) {
   const requestHeaders =
     headers();
 
@@ -256,6 +328,60 @@ async function handler(event) {
         status: "error",
         error:
           "Method Not Allowed"
+      }
+    );
+  }
+
+  const idToken =
+    getBearerToken(
+      event
+    );
+
+  if (!idToken) {
+    return jsonResponse(
+      401,
+      {
+        status: "error",
+        error:
+          "Authentication required.",
+        opportunities: [],
+        exportRows: []
+      }
+    );
+  }
+
+  let decodedUser;
+
+  try {
+    decodedUser =
+      await verifyIdToken(
+        idToken
+      );
+  } catch {
+    return jsonResponse(
+      401,
+      {
+        status: "error",
+        error:
+          "Invalid Firebase token.",
+        opportunities: [],
+        exportRows: []
+      }
+    );
+  }
+
+  if (
+    !decodedUser ||
+    !decodedUser.uid
+  ) {
+    return jsonResponse(
+      401,
+      {
+        status: "error",
+        error:
+          "Invalid Firebase token.",
+        opportunities: [],
+        exportRows: []
       }
     );
   }
@@ -448,7 +574,11 @@ async function handler(event) {
       }
     );
   }
+  };
 }
+
+const handler =
+  createHandler();
 
 exports.handler =
   handler;
@@ -458,5 +588,7 @@ module.exports._test = {
   requireObject,
   requireNonEmptyString,
   validateTimestamp,
-  validateRequestContract
+  validateRequestContract,
+  getBearerToken,
+  createHandler
 };
