@@ -24,3 +24,14 @@
     "SOCIAL_PRO_CSE_ID",
     "DIR_INFO_CSE_ID"
   ]
+
+[functions.opportunity-preview]
+environment = ["FIREBASE_SERVICE_ACCOUNT"]
+
+[functions.firebase-public-config]
+environment = [
+  "FIREBASE_API_KEY",
+  "FIREBASE_PROJECT_ID",
+  "FIREBASE_APP_ID",
+  "FIREBASE_AUTH_DOMAIN"
+]
