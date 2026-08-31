@@ -11,13 +11,23 @@ class GoogleDiscoveryProvider {
       "bbb.org",
       "yellowpages.com",
       "mapquest.com",
-      "facebook.com",
-      "linkedin.com",
-      "instagram.com",
-      "nextdoor.com",
       "manta.com",
       "porch.com",
       "houzz.com"
+    ]);
+
+    this.communityDomains = new Set([
+      "reddit.com",
+      "diysolarforum.com",
+      "facebook.com",
+      "linkedin.com",
+      "instagram.com",
+      "nextdoor.com"
+    ]);
+
+    this.editorialDomains = new Set([
+      "energysage.com",
+      "solarreviews.com"
     ]);
   }
 
@@ -301,13 +311,36 @@ class GoogleDiscoveryProvider {
    * Classify search result source.
    */
   classifyDomain(domain) {
-    for (const directory of this.directoryDomains) {
-      if (
-        domain === directory ||
-        domain.endsWith(`.${directory}`)
-      ) {
-        return "directory";
+    if (
+      domain.endsWith(".gov") ||
+      domain.endsWith(".edu")
+    ) {
+      return "institutional";
+    }
+
+    const matchesDomainSet = (domainSet) => {
+      for (const candidateDomain of domainSet) {
+        if (
+          domain === candidateDomain ||
+          domain.endsWith(`.${candidateDomain}`)
+        ) {
+          return true;
+        }
       }
+
+      return false;
+    };
+
+    if (matchesDomainSet(this.directoryDomains)) {
+      return "directory";
+    }
+
+    if (matchesDomainSet(this.communityDomains)) {
+      return "community";
+    }
+
+    if (matchesDomainSet(this.editorialDomains)) {
+      return "editorial";
     }
 
     return "business_candidate";
