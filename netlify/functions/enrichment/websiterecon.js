@@ -271,18 +271,143 @@ class WebsiteReconProvider {
   }
 
   _extractPhones(html) {
-    const matches =
-      html.match(
-        /(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}/g
+    if (
+      typeof html !== "string" ||
+      !html
+    ) {
+      return [];
+    }
+
+    const candidates = [];
+
+    /*
+     * 1. Explicit telephone links are the strongest website signal.
+     */
+    const telRegex =
+      /href=["']tel:([^"'?#]+)["']/gi;
+
+    let telMatch;
+
+    while (
+      (telMatch = telRegex.exec(html)) !== null
+    ) {
+      candidates.push(
+        telMatch[1]
+      );
+    }
+
+    /*
+     * 2. Remove code-heavy regions before scanning page text.
+     *
+     * Minified JavaScript, JSON-LD, analytics payloads and CSS frequently
+     * contain long digit sequences that resemble North American phone
+     * numbers but are not public contact observations.
+     */
+    const visibleHtml =
+      html
+        .replace(
+          /<script\b[^>]*>[\s\S]*?<\/script>/gi,
+          " "
+        )
+        .replace(
+          /<style\b[^>]*>[\s\S]*?<\/style>/gi,
+          " "
+        )
+        .replace(
+          /<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi,
+          " "
+        )
+        .replace(
+          /<svg\b[^>]*>[\s\S]*?<\/svg>/gi,
+          " "
+        );
+
+    const textOnly =
+      visibleHtml
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&#160;/gi, " ")
+        .replace(/\s+/g, " ");
+
+    const visibleMatches =
+      textOnly.match(
+        /(?:\+?1[\s().-]*)?(?:\(\d{3}\)|\d{3})[\s.-]*\d{3}[\s.-]*\d{4}/g
       ) || [];
 
-    return [
-      ...new Set(
-        matches.map(
-          phone => phone.trim()
-        )
-      )
-    ];
+    candidates.push(
+      ...visibleMatches
+    );
+
+    const normalized = [];
+    const seen = new Set();
+
+    for (
+      const candidate of
+      candidates
+    ) {
+      let digits =
+        String(candidate || "")
+          .replace(/\D/g, "");
+
+      if (
+        digits.length === 11 &&
+        digits.startsWith("1")
+      ) {
+        digits =
+          digits.slice(1);
+      }
+
+      /*
+       * Beta scope: US/Canada-style 10-digit public business phones.
+       */
+      if (
+        digits.length !== 10
+      ) {
+        continue;
+      }
+
+      const areaCode =
+        digits.slice(0, 3);
+
+      const exchange =
+        digits.slice(3, 6);
+
+      /*
+       * Basic NANP sanity checks.
+       */
+      if (
+        areaCode.startsWith("0") ||
+        areaCode.startsWith("1") ||
+        exchange.startsWith("0") ||
+        exchange.startsWith("1")
+      ) {
+        continue;
+      }
+
+      if (
+        seen.has(digits)
+      ) {
+        continue;
+      }
+
+      seen.add(digits);
+
+      normalized.push(
+        `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+      );
+
+      /*
+       * A single business website returning hundreds of alleged phone
+       * numbers is not useful contact evidence. Preserve a bounded set.
+       */
+      if (
+        normalized.length >= 20
+      ) {
+        break;
+      }
+    }
+
+    return normalized;
   }
 
   _extractTitle(html) {
