@@ -15,6 +15,9 @@ const CONFIG_ENDPOINT =
 const SEARCH_ENDPOINT =
   "/.netlify/functions/prospect-search";
 
+const ENRICH_ENDPOINT =
+  "/.netlify/functions/prospect-enrich";
+
 const elements = {
   email:
     document.getElementById("email"),
@@ -250,6 +253,87 @@ async function authenticatedSearch(
   );
 }
 
+async function authenticatedEnrich(
+  prospect
+) {
+  if (!currentUser) {
+    throw new Error(
+      "You must be signed in."
+    );
+  }
+
+  if (!prospect?.website) {
+    throw new Error(
+      "This prospect does not have a discovered website to enrich."
+    );
+  }
+
+  const idToken =
+    await currentUser
+      .getIdToken();
+
+  const response =
+    await fetch(
+      ENRICH_ENDPOINT,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${idToken}`
+        },
+
+        body:
+          JSON.stringify({
+            prospectName:
+              prospect.prospectName,
+
+            candidateName:
+              prospect.candidateName,
+
+            candidateDomain:
+              prospect.candidateDomain,
+
+            website:
+              prospect.website,
+
+            city:
+              elements.city.value
+                .trim(),
+
+            state:
+              elements.state.value
+                .trim()
+                .toUpperCase(),
+
+            registryEntity:
+              prospect.registry?.entity ||
+              null
+          })
+      }
+    );
+
+  const payload =
+    await response.json();
+
+  if (
+    !response.ok ||
+    payload.status !==
+      "success"
+  ) {
+    throw new Error(
+      payload.error ||
+      "Prospect enrichment failed."
+    );
+  }
+
+  return payload.enrichment;
+}
+
 function addSummaryItem(
   label,
   value
@@ -330,6 +414,8 @@ function addMetaItem(
   container.appendChild(
     box
   );
+
+  return content;
 }
 
 function renderContactValues(
@@ -519,11 +605,12 @@ function renderProspect(
     prospect.registry?.status
   );
 
-  addMetaItem(
-    meta,
-    "Enrichment",
-    prospect.enrichment?.status
-  );
+  const enrichmentStatusValue =
+    addMetaItem(
+      meta,
+      "Enrichment",
+      prospect.enrichment?.status
+    );
 
   addMetaItem(
     meta,
@@ -622,11 +709,22 @@ function renderProspect(
     );
   }
 
-  const enrichmentData =
-    prospect.enrichment?.data;
+  let contacts =
+    null;
 
-  if (enrichmentData) {
-    const contacts =
+  function renderEnrichmentContacts(
+    enrichmentData
+  ) {
+    if (contacts) {
+      contacts.remove();
+      contacts = null;
+    }
+
+    if (!enrichmentData) {
+      return;
+    }
+
+    contacts =
       document.createElement(
         "div"
       );
@@ -650,6 +748,110 @@ function renderProspect(
       contacts
     );
   }
+
+  renderEnrichmentContacts(
+    prospect.enrichment?.data
+  );
+
+  const cardActions =
+    document.createElement(
+      "div"
+    );
+
+  cardActions.className =
+    "actions";
+
+  const enrichButton =
+    document.createElement(
+      "button"
+    );
+
+  enrichButton.type =
+    "button";
+
+  enrichButton.className =
+    "secondary";
+
+  const alreadyEnriched =
+    prospect.enrichment?.status &&
+    prospect.enrichment.status !==
+      "not_attempted";
+
+  enrichButton.textContent =
+    alreadyEnriched
+      ? "ENRICHED"
+      : "ENRICH";
+
+  enrichButton.disabled =
+    Boolean(
+      alreadyEnriched
+    );
+
+  enrichButton.addEventListener(
+    "click",
+    async () => {
+      enrichButton.disabled =
+        true;
+
+      enrichButton.textContent =
+        "ENRICHING…";
+
+      enrichmentStatusValue.textContent =
+        "in_progress";
+
+      try {
+        const enrichment =
+          await authenticatedEnrich(
+            prospect
+          );
+
+        prospect.enrichment = {
+          status:
+            enrichment.enrichmentStatus ||
+            "complete",
+
+          data:
+            enrichment
+        };
+
+        enrichmentStatusValue.textContent =
+          prospect.enrichment.status;
+
+        renderEnrichmentContacts(
+          enrichment
+        );
+
+        enrichButton.textContent =
+          "ENRICHED";
+
+      } catch (error) {
+        prospect.enrichment = {
+          status:
+            "failed",
+
+          error:
+            error.message
+        };
+
+        enrichmentStatusValue.textContent =
+          "failed";
+
+        enrichButton.textContent =
+          "RETRY ENRICH";
+
+        enrichButton.disabled =
+          false;
+      }
+    }
+  );
+
+  cardActions.appendChild(
+    enrichButton
+  );
+
+  card.appendChild(
+    cardActions
+  );
 
   elements.results
     .appendChild(
