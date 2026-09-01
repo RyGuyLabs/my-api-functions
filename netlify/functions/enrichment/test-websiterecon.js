@@ -117,5 +117,50 @@ assert.strictEqual(
 );
 
 console.log(
-  "Website Recon phone extraction test PASSED."
+  "7. legitimate public emails are preserved"
+);
+
+assert.deepStrictEqual(
+  provider._extractEmails(`
+    <p>info@business.com</p>
+    <p>sales@business.com</p>
+  `),
+  [
+    "info@business.com",
+    "sales@business.com"
+  ]
+);
+
+console.log(
+  "8. placeholder emails are rejected"
+);
+
+assert.deepStrictEqual(
+  provider._extractEmails(`
+    <p>your@email.com</p>
+    <p>test@example.com</p>
+    <p>name@domain.com</p>
+    <p>info@business.com</p>
+  `),
+  [
+    "info@business.com"
+  ]
+);
+
+console.log(
+  "9. duplicate emails normalize to one observation"
+);
+
+assert.deepStrictEqual(
+  provider._extractEmails(`
+    <p>INFO@BUSINESS.COM</p>
+    <p>info@business.com</p>
+  `),
+  [
+    "info@business.com"
+  ]
+);
+
+console.log(
+  "Website Recon contact extraction test PASSED."
 );

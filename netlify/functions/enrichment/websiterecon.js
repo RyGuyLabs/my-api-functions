@@ -245,29 +245,117 @@ class WebsiteReconProvider {
   }
 
   _extractEmails(html) {
+    if (
+      typeof html !== "string" ||
+      !html
+    ) {
+      return [];
+    }
+
     const matches =
       html.match(
         /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
       ) || [];
 
-    return [
-      ...new Set(
-        matches
-          .map(
-            email =>
-              email
-                .trim()
-                .toLowerCase()
-          )
-          .filter(
-            email =>
-              !email.endsWith(".png") &&
-              !email.endsWith(".jpg") &&
-              !email.endsWith(".jpeg") &&
-              !email.includes("wixpress")
-          )
-      )
-    ];
+    const placeholderLocalParts =
+      new Set([
+        "your",
+        "you",
+        "name",
+        "email",
+        "example",
+        "test",
+        "username",
+        "user"
+      ]);
+
+    const placeholderDomains =
+      new Set([
+        "email.com",
+        "example.com",
+        "example.org",
+        "example.net",
+        "test.com",
+        "test.org",
+        "domain.com"
+      ]);
+
+    const normalized = [];
+    const seen = new Set();
+
+    for (
+      const match of matches
+    ) {
+      const email =
+        String(match || "")
+          .trim()
+          .toLowerCase();
+
+      if (!email) {
+        continue;
+      }
+
+      if (
+        email.endsWith(".png") ||
+        email.endsWith(".jpg") ||
+        email.endsWith(".jpeg") ||
+        email.includes("wixpress")
+      ) {
+        continue;
+      }
+
+      const atIndex =
+        email.lastIndexOf("@");
+
+      if (
+        atIndex <= 0 ||
+        atIndex === email.length - 1
+      ) {
+        continue;
+      }
+
+      const localPart =
+        email.slice(
+          0,
+          atIndex
+        );
+
+      const domain =
+        email.slice(
+          atIndex + 1
+        );
+
+      if (
+        placeholderLocalParts.has(
+          localPart
+        ) ||
+        placeholderDomains.has(
+          domain
+        )
+      ) {
+        continue;
+      }
+
+      if (
+        seen.has(email)
+      ) {
+        continue;
+      }
+
+      seen.add(email);
+
+      normalized.push(
+        email
+      );
+
+      if (
+        normalized.length >= 20
+      ) {
+        break;
+      }
+    }
+
+    return normalized;
   }
 
   _extractPhones(html) {
