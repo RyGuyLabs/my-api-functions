@@ -18,6 +18,9 @@ const SEARCH_ENDPOINT =
 const ENRICH_ENDPOINT =
   "/.netlify/functions/prospect-enrich";
 
+const QUALIFY_ENDPOINT =
+  "/.netlify/functions/prospect-qualify";
+
 const elements = {
   email:
     document.getElementById("email"),
@@ -332,6 +335,80 @@ async function authenticatedEnrich(
   }
 
   return payload.enrichment;
+}
+
+async function authenticatedQualify(
+  prospect,
+  qualification
+) {
+  if (!currentUser) {
+    throw new Error(
+      "You must be signed in."
+    );
+  }
+
+  const idToken =
+    await currentUser
+      .getIdToken();
+
+  const response =
+    await fetch(
+      QUALIFY_ENDPOINT,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${idToken}`
+        },
+
+        body:
+          JSON.stringify({
+            prospect: {
+              prospectName:
+                prospect.prospectName,
+
+              candidateName:
+                prospect.candidateName,
+
+              candidateDomain:
+                prospect.candidateDomain,
+
+              website:
+                prospect.website,
+
+              registrationId:
+                prospect.registry?.entity
+                  ?.registrationId ||
+                prospect.registry?.entity
+                  ?.documentNumber ||
+                null
+            },
+
+            qualification
+          })
+      }
+    );
+
+  const payload =
+    await response.json();
+
+  if (
+    !response.ok ||
+    payload.status !==
+      "success"
+  ) {
+    throw new Error(
+      payload.error ||
+      "Prospect qualification failed."
+    );
+  }
+
+  return payload;
 }
 
 function addSummaryItem(
@@ -847,6 +924,620 @@ function renderProspect(
 
   cardActions.appendChild(
     enrichButton
+  );
+
+  const qualifyButton =
+    document.createElement(
+      "button"
+    );
+
+  qualifyButton.type =
+    "button";
+
+  qualifyButton.className =
+    "secondary";
+
+  qualifyButton.textContent =
+    prospect.customerState
+      ? "QUALIFIED"
+      : "QUALIFY";
+
+  cardActions.appendChild(
+    qualifyButton
+  );
+
+  let customerStateBox =
+    null;
+
+  function renderCustomerState(
+    customerState
+  ) {
+    if (customerStateBox) {
+      customerStateBox.remove();
+      customerStateBox = null;
+    }
+
+    if (
+      !customerState ||
+      !customerState.salesState
+    ) {
+      return;
+    }
+
+    customerStateBox =
+      document.createElement(
+        "div"
+      );
+
+    customerStateBox.className =
+      "meta";
+
+    addMetaItem(
+      customerStateBox,
+      "Customer Status",
+      customerState.salesState
+        .status
+    );
+
+    addMetaItem(
+      customerStateBox,
+      "Customer Priority",
+      customerState.salesState
+        .priority
+    );
+
+    addMetaItem(
+      customerStateBox,
+      "Est. Value",
+      customerState.salesState
+        .estimatedValue === null ||
+      customerState.salesState
+        .estimatedValue === undefined
+        ? "—"
+        : `$${Number(
+            customerState.salesState
+              .estimatedValue
+          ).toLocaleString()}`
+    );
+
+    addMetaItem(
+      customerStateBox,
+      "Follow-up",
+      customerState.salesState
+        .followUpDate
+    );
+
+    if (
+      cardActions.parentNode ===
+      card
+    ) {
+      card.insertBefore(
+        customerStateBox,
+        cardActions
+      );
+    } else {
+      card.appendChild(
+        customerStateBox
+      );
+    }
+  }
+
+  renderCustomerState(
+    prospect.customerState
+  );
+
+  qualifyButton.addEventListener(
+    "click",
+    () => {
+      const overlay =
+        document.createElement(
+          "div"
+        );
+
+      overlay.style.position =
+        "fixed";
+
+      overlay.style.inset =
+        "0";
+
+      overlay.style.background =
+        "rgba(0, 0, 0, 0.72)";
+
+      overlay.style.display =
+        "flex";
+
+      overlay.style.alignItems =
+        "center";
+
+      overlay.style.justifyContent =
+        "center";
+
+      overlay.style.zIndex =
+        "9999";
+
+      overlay.style.padding =
+        "20px";
+
+      const modal =
+        document.createElement(
+          "div"
+        );
+
+      modal.style.width =
+        "min(680px, 100%)";
+
+      modal.style.maxHeight =
+        "90vh";
+
+      modal.style.overflow =
+        "auto";
+
+      modal.style.background =
+        "#08111f";
+
+      modal.style.border =
+        "1px solid rgba(255,255,255,0.15)";
+
+      modal.style.borderRadius =
+        "16px";
+
+      modal.style.padding =
+        "24px";
+
+      const heading =
+        document.createElement(
+          "h3"
+        );
+
+      heading.textContent =
+        `Qualify ${
+          prospect.prospectName ||
+          "Prospect"
+        }`;
+
+      modal.appendChild(
+        heading
+      );
+
+      const form =
+        document.createElement(
+          "form"
+        );
+
+      form.style.display =
+        "grid";
+
+      form.style.gap =
+        "14px";
+
+      const existing =
+        prospect.customerState
+          ?.salesState ||
+        {};
+
+      function makeField(
+        labelText,
+        type,
+        name,
+        value = ""
+      ) {
+        const wrapper =
+          document.createElement(
+            "label"
+          );
+
+        wrapper.style.display =
+          "grid";
+
+        wrapper.style.gap =
+          "6px";
+
+        const label =
+          document.createElement(
+            "span"
+          );
+
+        label.textContent =
+          labelText;
+
+        const input =
+          document.createElement(
+            "input"
+          );
+
+        input.type =
+          type;
+
+        input.name =
+          name;
+
+        input.value =
+          value ?? "";
+
+        input.style.width =
+          "100%";
+
+        wrapper.append(
+          label,
+          input
+        );
+
+        return {
+          wrapper,
+          input
+        };
+      }
+
+      function makeSelect(
+        labelText,
+        name,
+        options,
+        selectedValue
+      ) {
+        const wrapper =
+          document.createElement(
+            "label"
+          );
+
+        wrapper.style.display =
+          "grid";
+
+        wrapper.style.gap =
+          "6px";
+
+        const label =
+          document.createElement(
+            "span"
+          );
+
+        label.textContent =
+          labelText;
+
+        const select =
+          document.createElement(
+            "select"
+          );
+
+        select.name =
+          name;
+
+        for (
+          const optionValue
+          of options
+        ) {
+          const option =
+            document.createElement(
+              "option"
+            );
+
+          option.value =
+            optionValue;
+
+          option.textContent =
+            optionValue;
+
+          if (
+            optionValue ===
+            selectedValue
+          ) {
+            option.selected =
+              true;
+          }
+
+          select.appendChild(
+            option
+          );
+        }
+
+        wrapper.append(
+          label,
+          select
+        );
+
+        return {
+          wrapper,
+          select
+        };
+      }
+
+      const statusField =
+        makeSelect(
+          "Status",
+          "status",
+          [
+            "NEW",
+            "QUALIFIED",
+            "CONTACTED",
+            "FOLLOW_UP",
+            "WON",
+            "LOST"
+          ],
+          existing.status ||
+          "QUALIFIED"
+        );
+
+      const priorityField =
+        makeSelect(
+          "Priority",
+          "priority",
+          [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ],
+          existing.priority ||
+          "MEDIUM"
+        );
+
+      const valueField =
+        makeField(
+          "Estimated Value",
+          "number",
+          "estimatedValue",
+          existing.estimatedValue ??
+          ""
+        );
+
+      valueField.input.min =
+        "0";
+
+      valueField.input.step =
+        "0.01";
+
+      const timingField =
+        makeField(
+          "Timing",
+          "text",
+          "timing",
+          existing.timing ||
+          ""
+        );
+
+      const nextActionField =
+        makeField(
+          "Next Action",
+          "text",
+          "nextAction",
+          existing.nextAction ||
+          ""
+        );
+
+      const followUpField =
+        makeField(
+          "Follow-up Date",
+          "date",
+          "followUpDate",
+          existing.followUpDate ||
+          ""
+        );
+
+      const contactNameField =
+        makeField(
+          "Contact Name",
+          "text",
+          "contactName",
+          existing.contactName ||
+          ""
+        );
+
+      const contactRoleField =
+        makeField(
+          "Contact Role",
+          "text",
+          "contactRole",
+          existing.contactRole ||
+          ""
+        );
+
+      const notesWrapper =
+        document.createElement(
+          "label"
+        );
+
+      notesWrapper.style.display =
+        "grid";
+
+      notesWrapper.style.gap =
+        "6px";
+
+      const notesLabel =
+        document.createElement(
+          "span"
+        );
+
+      notesLabel.textContent =
+        "Notes";
+
+      const notes =
+        document.createElement(
+          "textarea"
+        );
+
+      notes.name =
+        "notes";
+
+      notes.rows =
+        4;
+
+      notes.value =
+        existing.notes ||
+        "";
+
+      notesWrapper.append(
+        notesLabel,
+        notes
+      );
+
+      form.append(
+        statusField.wrapper,
+        priorityField.wrapper,
+        valueField.wrapper,
+        timingField.wrapper,
+        nextActionField.wrapper,
+        followUpField.wrapper,
+        contactNameField.wrapper,
+        contactRoleField.wrapper,
+        notesWrapper
+      );
+
+      const modalActions =
+        document.createElement(
+          "div"
+        );
+
+      modalActions.className =
+        "actions";
+
+      const cancelButton =
+        document.createElement(
+          "button"
+        );
+
+      cancelButton.type =
+        "button";
+
+      cancelButton.className =
+        "secondary";
+
+      cancelButton.textContent =
+        "CANCEL";
+
+      const saveButton =
+        document.createElement(
+          "button"
+        );
+
+      saveButton.type =
+        "submit";
+
+      saveButton.textContent =
+        "SAVE QUALIFICATION";
+
+      modalActions.append(
+        cancelButton,
+        saveButton
+      );
+
+      form.appendChild(
+        modalActions
+      );
+
+      modal.appendChild(
+        form
+      );
+
+      overlay.appendChild(
+        modal
+      );
+
+      document.body
+        .appendChild(
+          overlay
+        );
+
+      cancelButton.addEventListener(
+        "click",
+        () =>
+          overlay.remove()
+      );
+
+      overlay.addEventListener(
+        "click",
+        event => {
+          if (
+            event.target ===
+            overlay
+          ) {
+            overlay.remove();
+          }
+        }
+      );
+
+      form.addEventListener(
+        "submit",
+        async event => {
+          event.preventDefault();
+
+          saveButton.disabled =
+            true;
+
+          saveButton.textContent =
+            "SAVING…";
+
+          try {
+            const result =
+              await authenticatedQualify(
+                prospect,
+                {
+                  status:
+                    statusField.select
+                      .value,
+
+                  priority:
+                    priorityField.select
+                      .value,
+
+                  estimatedValue:
+                    valueField.input
+                      .value === ""
+                      ? null
+                      : Number(
+                          valueField.input
+                            .value
+                        ),
+
+                  timing:
+                    timingField.input
+                      .value,
+
+                  nextAction:
+                    nextActionField.input
+                      .value,
+
+                  followUpDate:
+                    followUpField.input
+                      .value,
+
+                  contactName:
+                    contactNameField.input
+                      .value,
+
+                  contactRole:
+                    contactRoleField.input
+                      .value,
+
+                  notes:
+                    notes.value
+                }
+              );
+
+            prospect.customerState =
+              result.customerState;
+
+            renderCustomerState(
+              prospect.customerState
+            );
+
+            qualifyButton.textContent =
+              "QUALIFIED";
+
+            overlay.remove();
+
+          } catch (error) {
+            saveButton.disabled =
+              false;
+
+            saveButton.textContent =
+              "SAVE QUALIFICATION";
+
+            alert(
+              error.message
+            );
+          }
+        }
+      );
+    }
   );
 
   card.appendChild(
