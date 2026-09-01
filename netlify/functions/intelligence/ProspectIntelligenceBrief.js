@@ -111,6 +111,21 @@ function normalizeSource(
     summary:
       cleanString(
         source.summary
+      ),
+
+    sourceType:
+      cleanString(
+        source.sourceType
+      ),
+
+    sourceQuality:
+      cleanString(
+        source.sourceQuality
+      ),
+
+    intent:
+      cleanString(
+        source.intent
       )
   };
 }

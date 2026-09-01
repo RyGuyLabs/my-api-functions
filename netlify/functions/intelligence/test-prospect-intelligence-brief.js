@@ -101,7 +101,16 @@ const {
             "2026-09-01T14:00:00.000Z",
 
           summary:
-            "Company announced a recent local project."
+            "Company announced a recent local project.",
+
+          sourceType:
+            "company_owned",
+
+          sourceQuality:
+            "FIRST_PARTY",
+
+          intent:
+            "COMPANY_OWNED"
         }
       ]
     });
@@ -132,6 +141,21 @@ const {
   assert.strictEqual(
     brief.sources[0].url,
     "https://example.com/news"
+  );
+
+  assert.strictEqual(
+    brief.sources[0].sourceType,
+    "company_owned"
+  );
+
+  assert.strictEqual(
+    brief.sources[0].sourceQuality,
+    "FIRST_PARTY"
+  );
+
+  assert.strictEqual(
+    brief.sources[0].intent,
+    "COMPANY_OWNED"
   );
 
   console.log(
