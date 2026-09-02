@@ -21,6 +21,15 @@ const ENRICH_ENDPOINT =
 const QUALIFY_ENDPOINT =
   "/.netlify/functions/prospect-qualify";
 
+const INTELLIGENCE_CACHE_ENDPOINT =
+  "/.netlify/functions/prospect-intelligence";
+
+const INTELLIGENCE_BACKGROUND_ENDPOINT =
+  "/.netlify/functions/prospect-intelligence-background";
+
+const INTELLIGENCE_STATUS_ENDPOINT =
+  "/.netlify/functions/prospect-intelligence-status";
+
 const elements = {
   email:
     document.getElementById("email"),
@@ -411,6 +420,454 @@ async function authenticatedQualify(
   return payload;
 }
 
+function createIdempotencyKey() {
+  if (
+    globalThis.crypto &&
+    typeof globalThis.crypto
+      .randomUUID ===
+        "function"
+  ) {
+    return globalThis.crypto
+      .randomUUID();
+  }
+
+  return [
+    Date.now(),
+    Math.random()
+      .toString(36)
+      .slice(2),
+    Math.random()
+      .toString(36)
+      .slice(2)
+  ].join("-");
+}
+
+function cleanProspectKeyPart(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      "-"
+    )
+    .replace(
+      /^-+|-+$/g,
+      ""
+    );
+}
+
+function buildFrontendProspectKey(
+  prospect
+) {
+  const registrationId =
+    prospect?.registry
+      ?.entity
+      ?.registrationId ||
+    prospect?.registry
+      ?.entity
+      ?.documentNumber ||
+    null;
+
+  if (registrationId) {
+    return (
+      "registry-" +
+      cleanProspectKeyPart(
+        registrationId
+      )
+    );
+  }
+
+  if (
+    prospect?.candidateDomain
+  ) {
+    return (
+      "domain-" +
+      cleanProspectKeyPart(
+        prospect.candidateDomain
+      )
+    );
+  }
+
+  const name =
+    cleanProspectKeyPart(
+      prospect?.prospectName ||
+      prospect?.candidateName ||
+      "prospect"
+    );
+
+  const city =
+    cleanProspectKeyPart(
+      elements.city.value
+    );
+
+  const state =
+    cleanProspectKeyPart(
+      elements.state.value
+    );
+
+  return [
+    "prospect",
+    name,
+    city,
+    state
+  ]
+    .filter(Boolean)
+    .join("-");
+}
+
+function buildIntelligenceRequest(
+  prospect
+) {
+  return {
+    prospectKey:
+      buildFrontendProspectKey(
+        prospect
+      ),
+
+    prospect: {
+      prospectName:
+        prospect.prospectName ||
+        prospect.candidateName ||
+        null,
+
+      candidateName:
+        prospect.candidateName ||
+        null,
+
+      candidateDomain:
+        prospect.candidateDomain ||
+        null,
+
+      website:
+        prospect.website ||
+        null,
+
+      location: {
+        city:
+          elements.city.value
+            .trim(),
+
+        state:
+          elements.state.value
+            .trim()
+            .toUpperCase()
+      }
+    },
+
+    evidence: {
+      rankingReasons:
+        Array.isArray(
+          prospect.rankingReasons
+        )
+          ? prospect.rankingReasons
+          : [],
+
+      registryStatus:
+        prospect.registry?.status ||
+        null,
+
+      enrichmentStatus:
+        prospect.enrichment?.status ||
+        null
+    },
+
+    salesContext: {
+      contextId:
+        "general-sales-preparation-v1",
+
+      contextName:
+        "General Sales Preparation",
+
+      offering:
+        "Sales conversation preparation",
+
+      valueProposition:
+        "Help prepare a relevant, evidence-grounded prospect conversation.",
+
+      targetRoles:
+        [],
+
+      desiredOutcome:
+        "Prepare an informed first conversation",
+
+      preferredOutreachChannel:
+        null
+    }
+  };
+}
+
+async function authenticatedIntelligenceCache(
+  body,
+  idempotencyKey
+) {
+  if (!currentUser) {
+    throw new Error(
+      "You must be signed in."
+    );
+  }
+
+  const idToken =
+    await currentUser
+      .getIdToken();
+
+  return fetch(
+    INTELLIGENCE_CACHE_ENDPOINT,
+    {
+      method:
+        "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+
+        Authorization:
+          `Bearer ${idToken}`,
+
+        "Idempotency-Key":
+          idempotencyKey
+      },
+
+      body:
+        JSON.stringify(
+          body
+        )
+    }
+  );
+}
+
+async function authenticatedIntelligenceBackground(
+  body,
+  idempotencyKey
+) {
+  if (!currentUser) {
+    throw new Error(
+      "You must be signed in."
+    );
+  }
+
+  const idToken =
+    await currentUser
+      .getIdToken();
+
+  return fetch(
+    INTELLIGENCE_BACKGROUND_ENDPOINT,
+    {
+      method:
+        "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+
+        Authorization:
+          `Bearer ${idToken}`,
+
+        "Idempotency-Key":
+          idempotencyKey
+      },
+
+      body:
+        JSON.stringify(
+          body
+        )
+    }
+  );
+}
+
+async function authenticatedIntelligenceStatus(
+  jobId
+) {
+  if (!currentUser) {
+    throw new Error(
+      "You must be signed in."
+    );
+  }
+
+  const idToken =
+    await currentUser
+      .getIdToken();
+
+  return fetch(
+    INTELLIGENCE_STATUS_ENDPOINT,
+    {
+      method:
+        "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+
+        Authorization:
+          `Bearer ${idToken}`
+      },
+
+      body:
+        JSON.stringify({
+          jobId
+        })
+    }
+  );
+}
+
+function wait(
+  milliseconds
+) {
+  return new Promise(
+    resolve =>
+      setTimeout(
+        resolve,
+        milliseconds
+      )
+  );
+}
+
+async function pollIntelligenceJob(
+  jobId,
+  {
+    intervalMs =
+      3000,
+
+    maxAttempts =
+      25
+  } = {}
+) {
+  for (
+    let attempt = 1;
+    attempt <=
+      maxAttempts;
+    attempt += 1
+  ) {
+    await wait(
+      intervalMs
+    );
+
+    const response =
+      await authenticatedIntelligenceStatus(
+        jobId
+      );
+
+    const payload =
+      await response.json();
+
+    if (
+      response.status ===
+        404 &&
+      attempt <=
+        5
+    ) {
+      continue;
+    }
+
+    if (
+      response.status ===
+        202
+    ) {
+      continue;
+    }
+
+    if (
+      response.ok &&
+      response.status ===
+        200 &&
+      payload.status ===
+        "success" &&
+      payload.brief
+    ) {
+      return payload;
+    }
+
+    throw new Error(
+      payload.error ||
+      "Prospect intelligence generation failed."
+    );
+  }
+
+  throw new Error(
+    "Prospect intelligence generation did not complete in time."
+  );
+}
+
+async function buildProspectIntelligence(
+  prospect
+) {
+  const request =
+    buildIntelligenceRequest(
+      prospect
+    );
+
+  const idempotencyKey =
+    createIdempotencyKey();
+
+  const cacheResponse =
+    await authenticatedIntelligenceCache(
+      request,
+      idempotencyKey
+    );
+
+  const cachePayload =
+    await cacheResponse.json();
+
+  if (
+    cacheResponse.ok &&
+    cacheResponse.status ===
+      200 &&
+    cachePayload.brief
+  ) {
+    return cachePayload;
+  }
+
+  if (
+    cacheResponse.status !==
+      404 ||
+    cachePayload.status !==
+      "miss" ||
+    !cachePayload.jobId
+  ) {
+    throw new Error(
+      cachePayload.error ||
+      "Prospect intelligence cache check failed."
+    );
+  }
+
+  const backgroundResponse =
+    await authenticatedIntelligenceBackground(
+      request,
+      idempotencyKey
+    );
+
+  if (
+    backgroundResponse.status !==
+      202
+  ) {
+    let backgroundPayload =
+      null;
+
+    try {
+      backgroundPayload =
+        await backgroundResponse
+          .json();
+    } catch {}
+
+    throw new Error(
+      backgroundPayload?.error ||
+      "Prospect intelligence generation could not be started."
+    );
+  }
+
+  return pollIntelligenceJob(
+    cachePayload.jobId
+  );
+}
+
 function addSummaryItem(
   label,
   value
@@ -571,6 +1028,84 @@ function renderContactValues(
 
   container.appendChild(
     box
+  );
+}
+
+function appendIntelligenceList(
+  container,
+  headingText,
+  items
+) {
+  const values =
+    Array.isArray(
+      items
+    )
+      ? items.filter(Boolean)
+      : [];
+
+  if (
+    values.length === 0
+  ) {
+    return;
+  }
+
+  const section =
+    document.createElement(
+      "section"
+    );
+
+  section.style.display =
+    "grid";
+
+  section.style.gap =
+    "8px";
+
+  const heading =
+    document.createElement(
+      "strong"
+    );
+
+  heading.textContent =
+    headingText;
+
+  const list =
+    document.createElement(
+      "ul"
+    );
+
+  list.className =
+    "reasons";
+
+  for (
+    const value
+    of values
+  ) {
+    const item =
+      document.createElement(
+        "li"
+      );
+
+    item.textContent =
+      typeof value ===
+        "string"
+        ? value
+        : value?.statement ||
+          JSON.stringify(
+            value
+          );
+
+    list.appendChild(
+      item
+    );
+  }
+
+  section.append(
+    heading,
+    list
+  );
+
+  container.appendChild(
+    section
   );
 }
 
@@ -945,6 +1480,655 @@ function renderProspect(
   cardActions.appendChild(
     qualifyButton
   );
+
+  const intelligenceButton =
+    document.createElement(
+      "button"
+    );
+
+  intelligenceButton.type =
+    "button";
+
+  intelligenceButton.className =
+    "secondary";
+
+  intelligenceButton.textContent =
+    prospect.intelligence?.brief
+      ? "INTELLIGENCE READY"
+      : "BUILD INTELLIGENCE BRIEF";
+
+  cardActions.appendChild(
+    intelligenceButton
+  );
+
+  let intelligenceStatusBox =
+    null;
+
+  function renderIntelligenceStatus(
+    message,
+    type = ""
+  ) {
+    if (
+      intelligenceStatusBox
+    ) {
+      intelligenceStatusBox
+        .remove();
+
+      intelligenceStatusBox =
+        null;
+    }
+
+    if (!message) {
+      return;
+    }
+
+    intelligenceStatusBox =
+      document.createElement(
+        "div"
+      );
+
+    intelligenceStatusBox
+      .className =
+        "meta";
+
+    const statusValue =
+      addMetaItem(
+        intelligenceStatusBox,
+        "Intelligence",
+        message
+      );
+
+    if (
+      type ===
+        "error"
+    ) {
+      statusValue.style.color =
+        "#ff9b9b";
+    }
+
+    if (
+      type ===
+        "success"
+    ) {
+      statusValue.style.color =
+        "#7ee7b7";
+    }
+
+    if (
+      cardActions.parentNode ===
+        card
+    ) {
+      card.insertBefore(
+        intelligenceStatusBox,
+        cardActions
+      );
+    } else {
+      card.appendChild(
+        intelligenceStatusBox
+      );
+    }
+  }
+
+  let intelligenceBriefBox =
+    null;
+
+  function renderIntelligenceBrief(
+    brief,
+    sources = []
+  ) {
+    if (
+      intelligenceBriefBox
+    ) {
+      intelligenceBriefBox
+        .remove();
+
+      intelligenceBriefBox =
+        null;
+    }
+
+    if (
+      !brief ||
+      typeof brief !==
+        "object"
+    ) {
+      return;
+    }
+
+    intelligenceBriefBox =
+      document.createElement(
+        "div"
+      );
+
+    intelligenceBriefBox.style.display =
+      "grid";
+
+    intelligenceBriefBox.style.gap =
+      "16px";
+
+    intelligenceBriefBox.style.padding =
+      "18px";
+
+    intelligenceBriefBox.style.marginTop =
+      "14px";
+
+    intelligenceBriefBox.style.border =
+      "1px solid rgba(255,255,255,0.12)";
+
+    intelligenceBriefBox.style.borderRadius =
+      "14px";
+
+    intelligenceBriefBox.style.background =
+      "rgba(255,255,255,0.03)";
+
+    const heading =
+      document.createElement(
+        "h4"
+      );
+
+    heading.textContent =
+      "Prospect Intelligence Brief";
+
+    heading.style.margin =
+      "0";
+
+    intelligenceBriefBox.appendChild(
+      heading
+    );
+
+    const factualContext =
+      brief.factualContext ||
+      {};
+
+    const salesAnalysis =
+      brief.salesAnalysis ||
+      {};
+
+    if (
+      factualContext.companySummary
+    ) {
+      const summarySection =
+        document.createElement(
+          "section"
+        );
+
+      summarySection.style.display =
+        "grid";
+
+      summarySection.style.gap =
+        "8px";
+
+      const summaryHeading =
+        document.createElement(
+          "strong"
+        );
+
+      summaryHeading.textContent =
+        "Company Context";
+
+      const summaryText =
+        document.createElement(
+          "p"
+        );
+
+      summaryText.textContent =
+        factualContext.companySummary;
+
+      summaryText.style.margin =
+        "0";
+
+      summarySection.append(
+        summaryHeading,
+        summaryText
+      );
+
+      intelligenceBriefBox
+        .appendChild(
+          summarySection
+        );
+    }
+
+    appendIntelligenceList(
+      intelligenceBriefBox,
+      "Company Facts",
+      factualContext.companyFacts
+    );
+
+    appendIntelligenceList(
+      intelligenceBriefBox,
+      "Current Developments",
+      factualContext.currentDevelopments
+    );
+
+    appendIntelligenceList(
+      intelligenceBriefBox,
+      "Conversation Starters",
+      factualContext.conversationStarters
+    );
+
+    appendIntelligenceList(
+      intelligenceBriefBox,
+      "Sales Relevance",
+      salesAnalysis.salesRelevance
+    );
+
+    const hypotheses =
+      Array.isArray(
+        salesAnalysis.needHypotheses
+      )
+        ? salesAnalysis.needHypotheses
+        : [];
+
+    if (
+      hypotheses.length > 0
+    ) {
+      const hypothesisSection =
+        document.createElement(
+          "section"
+        );
+
+      hypothesisSection.style.display =
+        "grid";
+
+      hypothesisSection.style.gap =
+        "8px";
+
+      const hypothesisHeading =
+        document.createElement(
+          "strong"
+        );
+
+      hypothesisHeading.textContent =
+        "Need Hypotheses";
+
+      hypothesisSection.appendChild(
+        hypothesisHeading
+      );
+
+      for (
+        const hypothesis
+        of hypotheses
+      ) {
+        const box =
+          document.createElement(
+            "div"
+          );
+
+        box.style.display =
+          "grid";
+
+        box.style.gap =
+          "5px";
+
+        const statement =
+          document.createElement(
+            "span"
+          );
+
+        statement.textContent =
+          hypothesis?.statement ||
+          "Hypothesis";
+
+        box.appendChild(
+          statement
+        );
+
+        if (
+          hypothesis?.confidence
+        ) {
+          const confidence =
+            document.createElement(
+              "small"
+            );
+
+          confidence.textContent =
+            `Confidence: ${hypothesis.confidence}`;
+
+          box.appendChild(
+            confidence
+          );
+        }
+
+        const basis =
+          Array.isArray(
+            hypothesis?.basis
+          )
+            ? hypothesis.basis
+            : [];
+
+        if (
+          basis.length > 0
+        ) {
+          const basisText =
+            document.createElement(
+              "small"
+            );
+
+          basisText.textContent =
+            `Basis: ${basis.join("; ")}`;
+
+          box.appendChild(
+            basisText
+          );
+        }
+
+        hypothesisSection
+          .appendChild(
+            box
+          );
+      }
+
+      intelligenceBriefBox
+        .appendChild(
+          hypothesisSection
+        );
+    }
+
+    appendIntelligenceList(
+      intelligenceBriefBox,
+      "Discovery Questions",
+      salesAnalysis.discoveryQuestions
+    );
+
+    appendIntelligenceList(
+      intelligenceBriefBox,
+      "Objection Preparation",
+      salesAnalysis.objectionPreparation
+    );
+
+    if (
+      salesAnalysis.recommendedApproach
+    ) {
+      const approachSection =
+        document.createElement(
+          "section"
+        );
+
+      approachSection.style.display =
+        "grid";
+
+      approachSection.style.gap =
+        "8px";
+
+      const approachHeading =
+        document.createElement(
+          "strong"
+        );
+
+      approachHeading.textContent =
+        "Recommended Approach";
+
+      const approachText =
+        document.createElement(
+          "p"
+        );
+
+      approachText.textContent =
+        salesAnalysis
+          .recommendedApproach;
+
+      approachText.style.margin =
+        "0";
+
+      approachSection.append(
+        approachHeading,
+        approachText
+      );
+
+      intelligenceBriefBox
+        .appendChild(
+          approachSection
+        );
+    }
+
+    if (
+      salesAnalysis.outreachIdea
+    ) {
+      const outreachSection =
+        document.createElement(
+          "section"
+        );
+
+      outreachSection.style.display =
+        "grid";
+
+      outreachSection.style.gap =
+        "8px";
+
+      const outreachHeading =
+        document.createElement(
+          "strong"
+        );
+
+      outreachHeading.textContent =
+        "Outreach Idea";
+
+      const outreachText =
+        document.createElement(
+          "p"
+        );
+
+      outreachText.textContent =
+        salesAnalysis.outreachIdea;
+
+      outreachText.style.margin =
+        "0";
+
+      outreachSection.append(
+        outreachHeading,
+        outreachText
+      );
+
+      intelligenceBriefBox
+        .appendChild(
+          outreachSection
+        );
+    }
+
+    const sourceList =
+      Array.isArray(
+        sources
+      ) &&
+      sources.length > 0
+        ? sources
+        : Array.isArray(
+            brief.sources
+          )
+          ? brief.sources
+          : [];
+
+    if (
+      sourceList.length > 0
+    ) {
+      const sourceSection =
+        document.createElement(
+          "section"
+        );
+
+      sourceSection.style.display =
+        "grid";
+
+      sourceSection.style.gap =
+        "8px";
+
+      const sourceHeading =
+        document.createElement(
+          "strong"
+        );
+
+      sourceHeading.textContent =
+        "Sources";
+
+      sourceSection.appendChild(
+        sourceHeading
+      );
+
+      const sourceListElement =
+        document.createElement(
+          "ul"
+        );
+
+      sourceListElement.className =
+        "reasons";
+
+      for (
+        const source
+        of sourceList
+      ) {
+        const item =
+          document.createElement(
+            "li"
+          );
+
+        const sourceTitle =
+          source?.title ||
+          source?.domain ||
+          source?.url ||
+          "Source";
+
+        if (
+          typeof source?.url ===
+            "string" &&
+          /^https?:\/\//i.test(
+            source.url
+          )
+        ) {
+          const link =
+            document.createElement(
+              "a"
+            );
+
+          link.href =
+            source.url;
+
+          link.target =
+            "_blank";
+
+          link.rel =
+            "noopener noreferrer";
+
+          link.textContent =
+            sourceTitle;
+
+          item.appendChild(
+            link
+          );
+        } else {
+          item.textContent =
+            sourceTitle;
+        }
+
+        sourceListElement
+          .appendChild(
+            item
+          );
+      }
+
+      sourceSection.appendChild(
+        sourceListElement
+      );
+
+      intelligenceBriefBox
+        .appendChild(
+          sourceSection
+        );
+    }
+
+    if (
+      cardActions.parentNode ===
+        card
+    ) {
+      card.insertBefore(
+        intelligenceBriefBox,
+        cardActions
+      );
+    } else {
+      card.appendChild(
+        intelligenceBriefBox
+      );
+    }
+  }
+
+  if (
+    prospect.intelligence?.brief
+  ) {
+    renderIntelligenceStatus(
+      "Brief ready",
+      "success"
+    );
+
+    renderIntelligenceBrief(
+      prospect.intelligence.brief,
+      prospect.intelligence.sources
+    );
+  }
+
+  intelligenceButton
+    .addEventListener(
+      "click",
+      async () => {
+        intelligenceButton.disabled =
+          true;
+
+        intelligenceButton.textContent =
+          "BUILDING INTELLIGENCE…";
+
+        renderIntelligenceStatus(
+          "Building intelligence…"
+        );
+
+        try {
+          const result =
+            await buildProspectIntelligence(
+              prospect
+            );
+
+          prospect.intelligence = {
+            brief:
+              result.brief,
+
+            sources:
+              Array.isArray(
+                result.sources
+              )
+                ? result.sources
+                : [],
+
+            cached:
+              Boolean(
+                result.cached
+              )
+          };
+
+          intelligenceButton.textContent =
+            "INTELLIGENCE READY";
+
+          renderIntelligenceStatus(
+            result.cached
+              ? "Brief ready from cache"
+              : "Brief ready",
+            "success"
+          );
+
+          renderIntelligenceBrief(
+            prospect.intelligence.brief,
+            prospect.intelligence.sources
+          );
+
+        } catch (error) {
+          intelligenceButton.disabled =
+            false;
+
+          intelligenceButton.textContent =
+            "RETRY INTELLIGENCE";
+
+          renderIntelligenceStatus(
+            error.message ||
+            "Prospect intelligence generation failed.",
+            "error"
+          );
+        }
+      }
+    );
 
   let customerStateBox =
     null;
