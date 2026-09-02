@@ -259,6 +259,96 @@ const {
   );
 
   console.log(
+    "7. independent research queries execute concurrently"
+  );
+
+  let activeCalls =
+    0;
+
+  let peakConcurrentCalls =
+    0;
+
+  const concurrentDiscovery = {
+    async discoverCandidates(
+      query
+    ) {
+      activeCalls += 1;
+
+      peakConcurrentCalls =
+        Math.max(
+          peakConcurrentCalls,
+          activeCalls
+        );
+
+      await new Promise(
+        resolve =>
+          setTimeout(
+            resolve,
+            25
+          )
+      );
+
+      activeCalls -= 1;
+
+      return [
+        {
+          title:
+            `Result for ${query}`,
+
+          snippet:
+            "Concurrent research result.",
+
+          formattedUrl:
+            `https://example.com/${encodeURIComponent(query)}`,
+
+          candidateDomain:
+            "example.com",
+
+          sourceType:
+            "public_web"
+        }
+      ];
+    }
+  };
+
+  const concurrentProvider =
+    new CurrentCompanyResearchProvider({
+      googleDiscoveryProvider:
+        concurrentDiscovery,
+
+      clock:
+        () =>
+          new Date(
+            "2026-09-01T16:00:00.000Z"
+          )
+    });
+
+  const concurrentResult =
+    await concurrentProvider.research({
+      prospectName:
+        "Concurrent Prospect",
+
+      candidateDomain:
+        "concurrent.example.com",
+
+      city:
+        "Tampa",
+
+      state:
+        "FL"
+    });
+
+  assert.strictEqual(
+    concurrentResult.queries.length,
+    3
+  );
+
+  assert.ok(
+    peakConcurrentCalls >=
+      2
+  );
+
+  console.log(
     "Current Company Research Provider test PASSED."
   );
 })().catch(error => {

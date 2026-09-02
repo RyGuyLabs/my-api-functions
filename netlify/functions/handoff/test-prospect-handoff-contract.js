@@ -79,7 +79,85 @@ const {
           "registry_matched",
 
         enrichmentStatus:
-          "complete"
+          "complete",
+
+        brief: {
+          briefVersion:
+            "1.0",
+
+          generatedAt:
+            "2026-09-01T12:05:00.000Z",
+
+          salesContextId:
+            "commercial_insurance_v1",
+
+          factualContext: {
+            companySummary:
+              "Tampa Bay Solar is a Florida solar company.",
+
+            companyFacts: [
+              "The company website describes commercial solar work."
+            ],
+
+            currentDevelopments: [
+              "The company published a recent project update."
+            ],
+
+            conversationStarters: [
+              "Ask about the recent project update."
+            ]
+          },
+
+          salesAnalysis: {
+            salesRelevance: [
+              "Recent project activity may warrant reviewing operational exposures."
+            ],
+
+            needHypotheses: [
+              {
+                statement:
+                  "Operational exposures may have changed.",
+
+                basis: [
+                  "Recent project activity"
+                ],
+
+                confidence:
+                  "MEDIUM"
+              }
+            ],
+
+            discoveryQuestions: [
+              "Have your operational exposures changed recently?"
+            ],
+
+            objectionPreparation: [
+              "Do not assume current coverage is inadequate."
+            ],
+
+            recommendedApproach:
+              "Lead with a consultative review.",
+
+            outreachIdea:
+              "Reference the recent project."
+          },
+
+          sources: [
+            {
+              title:
+                "Company Update",
+
+              url:
+                "https://example.com/update",
+
+              sourceType:
+                "company_owned",
+
+              sourceQuality:
+                "FIRST_PARTY"
+            }
+          ]
+        }
       },
 
       assignment: {
@@ -127,6 +205,30 @@ const {
   assert.strictEqual(
     handoff.intelligence.priorityScore,
     77
+  );
+
+  assert.strictEqual(
+    handoff.intelligence
+      .brief
+      .briefVersion,
+    "1.0"
+  );
+
+  assert.strictEqual(
+    handoff.intelligence
+      .brief
+      .salesAnalysis
+      .needHypotheses[0]
+      .confidence,
+    "MEDIUM"
+  );
+
+  assert.strictEqual(
+    handoff.intelligence
+      .brief
+      .sources[0]
+      .sourceType,
+    "company_owned"
   );
 
   assert.strictEqual(
@@ -245,6 +347,24 @@ const {
     separated.intelligence
       .priorityScore,
     90
+  );
+
+  console.log(
+    "6. malformed intelligence brief is rejected"
+  );
+
+  assert.throws(
+    () =>
+      buildProspectHandoff({
+        prospectKey:
+          "prospect_789",
+
+        intelligence: {
+          brief:
+            "not-an-object"
+        }
+      }),
+    /intelligence.brief must be an object/
   );
 
   console.log(

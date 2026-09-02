@@ -226,99 +226,128 @@ class CurrentCompanyResearchProvider {
         state
       });
 
-    const items = [];
-    const errors = [];
+    const queryResults =
+      await Promise.all(
+        queries.map(
+          async querySpec => {
+            try {
+              const result =
+                await this
+                  .googleDiscoveryProvider
+                  .discoverCandidates(
+                    querySpec.query,
+                    {
+                      city,
+                      state
+                    },
+                    {
+                      limit:
+                        Math.max(
+                          1,
+                          Math.min(
+                            Number(
+                              perQueryLimit
+                            ) || 3,
+                            3
+                          )
+                        ),
 
-    for (
-      const querySpec
-      of queries
-    ) {
-      try {
-        const result =
-          await this
-            .googleDiscoveryProvider
-            .discoverCandidates(
-              querySpec.query,
-              {
-                city,
-                state
-              },
-              {
-                limit:
-                  Math.max(
-                    1,
-                    Math.min(
-                      Number(
-                        perQueryLimit
-                      ) || 3,
-                      3
+                      dateRestrict:
+                        querySpec.dateRestrict
+                    }
+                  );
+
+              const candidates =
+                Array.isArray(result)
+                  ? result
+                  : Array.isArray(
+                      result?.candidates
                     )
-                  ),
+                    ? result.candidates
+                    : [];
 
-                dateRestrict:
-                  querySpec.dateRestrict
-              }
-            );
+              const normalizedItems =
+                candidates
+                  .map(candidate => {
+                    const normalized =
+                      this.normalizeResult(
+                        candidate
+                      );
 
-        const candidates =
-          Array.isArray(result)
-            ? result
-            : Array.isArray(
-                result?.candidates
-              )
-              ? result.candidates
-              : [];
+                    if (!normalized) {
+                      return null;
+                    }
 
-        for (
-          const candidate
-          of candidates
-        ) {
-          const normalized =
-            this.normalizeResult(
-              candidate
-            );
+                    const companyOwned =
+                      querySpec.intent ===
+                        "COMPANY_OWNED";
 
-          if (normalized) {
-            const companyOwned =
-              querySpec.intent ===
-                "COMPANY_OWNED";
+                    return {
+                      intent:
+                        querySpec.intent,
 
-            items.push({
-              intent:
-                querySpec.intent,
+                      query:
+                        querySpec.query,
 
-              query:
-                querySpec.query,
+                      ...normalized,
 
-              ...normalized,
+                      sourceType:
+                        companyOwned
+                          ? "company_owned"
+                          : normalized.sourceType,
 
-              sourceType:
-                companyOwned
-                  ? "company_owned"
-                  : normalized.sourceType,
+                      sourceQuality:
+                        companyOwned
+                          ? "FIRST_PARTY"
+                          : normalized.sourceQuality
+                    };
+                  })
+                  .filter(Boolean);
 
-              sourceQuality:
-                companyOwned
-                  ? "FIRST_PARTY"
-                  : normalized.sourceQuality
-            });
+              return {
+                items:
+                  normalizedItems,
+
+                error:
+                  null
+              };
+
+            } catch (error) {
+              return {
+                items:
+                  [],
+
+                error: {
+                  intent:
+                    querySpec.intent,
+
+                  query:
+                    querySpec.query,
+
+                  message:
+                    error?.message ||
+                    String(error)
+                }
+              };
+            }
           }
-        }
+        )
+      );
 
-      } catch (error) {
-        errors.push({
-          intent:
-            querySpec.intent,
+    const items =
+      queryResults
+        .flatMap(
+          result =>
+            result.items
+        );
 
-          query:
-            querySpec.query,
-
-          message:
-            error?.message ||
-            String(error)
-        });
-      }
-    }
+    const errors =
+      queryResults
+        .map(
+          result =>
+            result.error
+        )
+        .filter(Boolean);
 
     const deduped = [];
     const seenUrls =

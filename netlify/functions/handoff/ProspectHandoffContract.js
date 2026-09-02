@@ -56,6 +56,125 @@ function normalizeArray(
     : [];
 }
 
+function normalizeIntelligenceBrief(
+  value
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return null;
+  }
+
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    throw new Error(
+      "intelligence.brief must be an object."
+    );
+  }
+
+  const factualContext =
+    value.factualContext &&
+    typeof value.factualContext ===
+      "object" &&
+    !Array.isArray(
+      value.factualContext
+    )
+      ? value.factualContext
+      : {};
+
+  const salesAnalysis =
+    value.salesAnalysis &&
+    typeof value.salesAnalysis ===
+      "object" &&
+    !Array.isArray(
+      value.salesAnalysis
+    )
+      ? value.salesAnalysis
+      : {};
+
+  const sources =
+    normalizeArray(
+      value.sources
+    );
+
+  return {
+    briefVersion:
+      cleanString(
+        value.briefVersion
+      ),
+
+    generatedAt:
+      cleanString(
+        value.generatedAt
+      ),
+
+    salesContextId:
+      cleanString(
+        value.salesContextId
+      ),
+
+    factualContext: {
+      companySummary:
+        cleanString(
+          factualContext.companySummary
+        ),
+
+      companyFacts:
+        normalizeArray(
+          factualContext.companyFacts
+        ),
+
+      currentDevelopments:
+        normalizeArray(
+          factualContext.currentDevelopments
+        ),
+
+      conversationStarters:
+        normalizeArray(
+          factualContext.conversationStarters
+        )
+    },
+
+    salesAnalysis: {
+      salesRelevance:
+        normalizeArray(
+          salesAnalysis.salesRelevance
+        ),
+
+      needHypotheses:
+        normalizeArray(
+          salesAnalysis.needHypotheses
+        ),
+
+      discoveryQuestions:
+        normalizeArray(
+          salesAnalysis.discoveryQuestions
+        ),
+
+      objectionPreparation:
+        normalizeArray(
+          salesAnalysis.objectionPreparation
+        ),
+
+      recommendedApproach:
+        cleanString(
+          salesAnalysis.recommendedApproach
+        ),
+
+      outreachIdea:
+        cleanString(
+          salesAnalysis.outreachIdea
+        )
+    },
+
+    sources
+  };
+}
+
 function normalizeScore(
   value
 ) {
@@ -426,6 +545,11 @@ function buildProspectHandoff({
       enrichmentStatus:
         cleanString(
           intelligence.enrichmentStatus
+        ),
+
+      brief:
+        normalizeIntelligenceBrief(
+          intelligence.brief
         )
     },
 
@@ -495,6 +619,7 @@ module.exports = {
   _test: {
     cleanString,
     normalizeScore,
+    normalizeIntelligenceBrief,
     normalizeQualificationStatus,
     normalizeCustomerPriority,
     normalizeRequestedActions

@@ -621,6 +621,173 @@ function makeAnalysis() {
   );
 
   console.log(
+    "10. guarded term explicitly present in research remains permitted"
+  );
+
+  const researchGroundedInput =
+    makeReasoningInput();
+
+  researchGroundedInput
+    .research
+    .results[0]
+    .snippet =
+      "The supplied research explicitly references property damage.";
+
+  const researchGroundedAnalysis =
+    makeAnalysis();
+
+  researchGroundedAnalysis
+    .salesRelevance = [
+      "The supplied research references property damage, so the topic may warrant a discovery question."
+    ];
+
+  const researchGroundedProvider =
+    new GeminiProspectReasoningProvider({
+      apiKey:
+        "test-key",
+
+      maxRetries:
+        0,
+
+      fetchImpl:
+        async () => ({
+          ok:
+            true,
+
+          async json() {
+            return {
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text:
+                          JSON.stringify(
+                            researchGroundedAnalysis
+                          )
+                      }
+                    ]
+                  }
+                }
+              ]
+            };
+          }
+        })
+    });
+
+  const researchGroundedResult =
+    await researchGroundedProvider
+      .generateBriefAnalysis(
+        researchGroundedInput
+      );
+
+  assert.ok(
+    researchGroundedResult
+      .salesRelevance[0]
+      .includes(
+        "property damage"
+      )
+  );
+
+  console.log(
+    "11. guarded term present only in unrelated metadata is not treated as evidence"
+  );
+
+  const metadataOnlyInput =
+    makeReasoningInput();
+
+  metadataOnlyInput
+    .epistemicRules = {
+      internalExample:
+        "property damage"
+    };
+
+  const metadataOnlyAnalysis =
+    makeAnalysis();
+
+  metadataOnlyAnalysis
+    .salesRelevance = [
+      "Property damage may be relevant to this prospect."
+    ];
+
+  const metadataOnlyProvider =
+    new GeminiProspectReasoningProvider({
+      apiKey:
+        "test-key",
+
+      maxRetries:
+        0,
+
+      fetchImpl:
+        async () => ({
+          ok:
+            true,
+
+          async json() {
+            return {
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text:
+                          JSON.stringify(
+                            metadataOnlyAnalysis
+                          )
+                      }
+                    ]
+                  }
+                }
+              ]
+            };
+          }
+        })
+    });
+
+  await assert.rejects(
+    () =>
+      metadataOnlyProvider
+        .generateBriefAnalysis(
+          metadataOnlyInput
+        ),
+
+    /unsupported domain terms: property damage/
+  );
+
+  console.log(
+    "12. prompt forbids extrapolated equipment systems and damage concepts"
+  );
+
+  const promptProvider =
+    new GeminiProspectReasoningProvider({
+      apiKey:
+        "test-key"
+    });
+
+  const tightenedPrompt =
+    promptProvider.buildPrompt(
+      makeReasoningInput()
+    );
+
+  assert.ok(
+    tightenedPrompt.includes(
+      "Do not extrapolate equipment, systems, infrastructure, failure modes, damage types"
+    )
+  );
+
+  assert.ok(
+    tightenedPrompt.includes(
+      "A named domain-specific concept may be used only when that concept is explicitly present"
+    )
+  );
+
+  assert.ok(
+    tightenedPrompt.includes(
+      "Do not convert general industry knowledge into a prospect-specific named risk"
+    )
+  );
+
+  console.log(
     "Gemini Prospect Reasoning Provider test PASSED."
   );
 })().catch(error => {

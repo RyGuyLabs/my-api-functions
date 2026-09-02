@@ -171,7 +171,49 @@ function normalizeGroundingText(
     value || {}
   )
     .toLowerCase()
-    .replace(/\\s+/g, " ");
+    .replace(/[’]/g, "'")
+    .replace(/[^a-z0-9' ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildGroundingEvidenceCorpus(
+  reasoningInput
+) {
+  const request =
+    reasoningInput &&
+    typeof reasoningInput ===
+      "object"
+      ? reasoningInput.request
+      : null;
+
+  const research =
+    reasoningInput &&
+    typeof reasoningInput ===
+      "object"
+      ? reasoningInput.research
+      : null;
+
+  return normalizeGroundingText({
+    prospect:
+      request?.prospect ||
+      null,
+
+    evidence:
+      request?.evidence ||
+      null,
+
+    salesContext:
+      request?.salesContext ||
+      null,
+
+    researchResults:
+      Array.isArray(
+        research?.results
+      )
+        ? research.results
+        : []
+  });
 }
 
 function assertGroundedDomainTerms(
@@ -179,7 +221,7 @@ function assertGroundedDomainTerms(
   analysis
 ) {
   const supplied =
-    normalizeGroundingText(
+    buildGroundingEvidenceCorpus(
       reasoningInput
     );
 
@@ -191,13 +233,21 @@ function assertGroundedDomainTerms(
   const matchedTerms =
     GUARDED_DOMAIN_TERMS
       .filter(
-        term =>
-          generated.includes(
-            term
-          ) &&
-          !supplied.includes(
-            term
-          )
+        term => {
+          const normalizedTerm =
+            normalizeGroundingText(
+              term
+            );
+
+          return (
+            generated.includes(
+              normalizedTerm
+            ) &&
+            !supplied.includes(
+              normalizedTerm
+            )
+          );
+        }
       )
       .sort(
         (a, b) =>
@@ -207,18 +257,26 @@ function assertGroundedDomainTerms(
 
   const violations =
     matchedTerms.filter(
-      (term, index) =>
-        !matchedTerms
+      (term, index) => {
+        const normalizedTerm =
+          normalizeGroundingText(
+            term
+          );
+
+        return !matchedTerms
           .slice(
             0,
             index
           )
           .some(
             longerTerm =>
-              longerTerm.includes(
-                term
+              normalizeGroundingText(
+                longerTerm
+              ).includes(
+                normalizedTerm
               )
-          )
+          );
+      }
     );
 
   if (
@@ -259,7 +317,9 @@ class GeminiProspectReasoningProvider {
     fetchImpl =
       global.fetch,
     maxRetries = 2,
-    retryDelayMs = 250
+    retryDelayMs = 250,
+    requestTimeoutMs =
+      5000
   } = {}) {
     this.apiKey =
       cleanString(
@@ -301,6 +361,14 @@ class GeminiProspectReasoningProvider {
         Number(
           retryDelayMs
         ) || 0
+      );
+
+    this.requestTimeoutMs =
+      Math.max(
+        500,
+        Number(
+          requestTimeoutMs
+        ) || 5000
       );
   }
 
@@ -428,8 +496,12 @@ class GeminiProspectReasoningProvider {
       "- Conversation starters should help the seller sound informed without overstating certainty.",
       "- Sales relevance is analysis, not fact. When connecting observed company activity to possible risk, need, exposure, opportunity, or insurance implications, use cautious language such as may, might, could, or may warrant asking.",
       "- Do not state that an offering, activity, technology, policy change, or business development creates a specific risk or need unless the supplied evidence explicitly establishes that fact.",
-      "- Do not introduce prospect-specific risk categories, hazards, liabilities, insurance coverages, regulatory problems, operational problems, or technical failure modes that are not explicitly present in the supplied evidence.",
-      "- General domain knowledge may inform discovery questions, but it must not be presented as something this prospect specifically faces.",
+      "- Do not introduce prospect-specific risk categories, hazards, liabilities, insurance coverages, regulatory problems, operational problems, technical failure modes, equipment names, system names, or technical capabilities that are not explicitly present in the supplied evidence.",
+      "- Do not extrapolate equipment, systems, infrastructure, failure modes, damage types, insurance exposures, regulatory exposures, or technical capabilities from the prospect's industry or activities.",
+      "- A named domain-specific concept may be used only when that concept is explicitly present in the supplied prospect evidence, Sales Context, or research results.",
+      "- Do not convert general industry knowledge into a prospect-specific named risk, hazard, coverage, system, exposure, or damage category.",
+      "- General domain knowledge may inform the structure of a discovery question, but it must not supply a named prospect-specific concept that is absent from the evidence.",
+      "- If a specific concept is not explicitly supported, use generic language such as 'operational considerations', 'areas worth reviewing', 'risk profile', 'coverage considerations', or 'business exposures'.",
       "- If the evidence only shows that the prospect performs an activity, say that the activity may warrant asking about related exposures rather than naming unsupplied exposures as facts.",
       "- In salesRelevance and needHypotheses, do not introduce a named insurance coverage, named liability category, named hazard, named technical failure mode, or named regulatory exposure unless that exact concept already appears in the supplied prospect evidence, research, or Sales Context.",
       "- When a specific risk or coverage category is not supplied, use generic language only: 'operational exposures', 'coverage considerations', 'risk profile', 'insurance needs', or 'areas worth reviewing'.",
@@ -474,7 +546,15 @@ class GeminiProspectReasoningProvider {
           RESPONSE_SCHEMA,
 
         temperature:
-          0.2
+          0.2,
+
+        maxOutputTokens:
+          3000,
+
+        thinkingConfig: {
+          thinkingBudget:
+            0
+        }
       },
 
       systemInstruction: {
@@ -516,6 +596,16 @@ class GeminiProspectReasoningProvider {
         this.maxRetries;
       attempt += 1
     ) {
+      const controller =
+        new AbortController();
+
+      const timeout =
+        setTimeout(
+          () =>
+            controller.abort(),
+          this.requestTimeoutMs
+        );
+
       try {
         const response =
           await this
@@ -533,7 +623,10 @@ class GeminiProspectReasoningProvider {
                 body:
                   JSON.stringify(
                     payload
-                  )
+                  ),
+
+                signal:
+                  controller.signal
               }
             );
 
@@ -575,6 +668,21 @@ class GeminiProspectReasoningProvider {
 
       } catch (error) {
         if (
+          error?.name ===
+            "AbortError"
+        ) {
+          const timeoutError =
+            new Error(
+              "Gemini reasoning request timed out."
+            );
+
+          timeoutError.code =
+            "GEMINI_TIMEOUT";
+
+          throw timeoutError;
+        }
+
+        if (
           error?.status &&
           !this.shouldRetry(
             error.status
@@ -592,6 +700,10 @@ class GeminiProspectReasoningProvider {
         ) {
           throw error;
         }
+      } finally {
+        clearTimeout(
+          timeout
+        );
       }
 
       if (
@@ -619,10 +731,13 @@ class GeminiProspectReasoningProvider {
   parseResponse(
     payload
   ) {
-    const text =
+    const candidate =
       payload
         ?.candidates
-        ?.[0]
+        ?.[0];
+
+    const text =
+      candidate
         ?.content
         ?.parts
         ?.[0]

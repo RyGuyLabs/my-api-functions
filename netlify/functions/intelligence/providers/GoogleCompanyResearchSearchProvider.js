@@ -1,7 +1,18 @@
 class GoogleCompanyResearchSearchProvider {
-  constructor() {
+  constructor({
+    timeoutMs =
+      2500
+  } = {}) {
     this.name =
       "GoogleCompanyResearchSearchProvider";
+
+    this.timeoutMs =
+      Math.max(
+        500,
+        Number(
+          timeoutMs
+        ) || 2500
+      );
 
     this.directoryDomains =
       new Set([
@@ -204,7 +215,7 @@ class GoogleCompanyResearchSearchProvider {
       setTimeout(
         () =>
           controller.abort(),
-        8000
+        this.timeoutMs
       );
 
     try {
